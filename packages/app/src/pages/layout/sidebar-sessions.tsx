@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
+import { createMemo, createSignal, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useParams } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/util/encode"
@@ -19,7 +19,7 @@ import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { sessionTitle } from "@/utils/session-title"
-import { displayName, hasProjectPermissions, sortedRootSessions, workspaceKey } from "./helpers"
+import { displayName, hasProjectPermissions, oneTimeRows, sortedRootSessions, workspaceKey } from "./helpers"
 import { ActiveSessions } from "./sidebar-active"
 import { SessionItem, SessionSkeleton } from "./sidebar-items"
 import { type WorkspaceSidebarContext } from "./sidebar-workspace"
@@ -220,6 +220,16 @@ const Group = (props: {
     return sessions().filter((session) => (sessionTitle(session.title) ?? "").toLowerCase().includes(props.query))
   })
   const visible = createMemo(() => (props.query ? matches() : matches().slice(0, props.shown)))
+  // Parents whose archived one-time sessions are shown.
+  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set())
+  const rows = createMemo(() => oneTimeRows(visible(), opened()))
+  const flip = (id: string) =>
+    setOpened((cur) => {
+      const next = new Set(cur)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   const loading = createMemo(() => workspace().store.status !== "complete" && sessions().length === 0)
   const more = createMemo(
     () => !props.query && (sessions().length > props.shown || workspace().store.sessionTotal > sessions().length),
@@ -330,21 +340,34 @@ const Group = (props: {
             <Show when={!loading() && sessions().length === 0}>
               <div class="px-2 py-1 text-12-regular text-text-weak">{language.t("agent.sessions.empty")}</div>
             </Show>
-            <For each={visible()}>
-              {(session) => (
-                <SessionItem
-                  session={session}
-                  list={sessions()}
-                  navList={props.ctx.navList}
-                  slug={slug()}
-                  mobile={props.mobile}
-                  showChild
-                  sidebarExpanded={props.ctx.sidebarExpanded}
-                  clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
-                  prefetchSession={props.ctx.prefetchSession}
-                  archiveSession={props.ctx.archiveSession}
-                />
-              )}
+            <For each={rows()}>
+              {(row) =>
+                "archived" in row ? (
+                  <button
+                    type="button"
+                    data-action="one-time-archived"
+                    aria-expanded={row.open}
+                    class="ml-2 pl-3 py-0.5 flex items-center gap-1 text-left text-12-regular text-text-weak hover:text-text-base border-l border-dashed border-border-weak-base"
+                    onClick={() => flip(row.archived)}
+                  >
+                    <Icon name={row.open ? "chevron-down" : "chevron-right"} size="small" />
+                    {language.t("oneTime.sidebar.archived", { count: row.count })}
+                  </button>
+                ) : (
+                  <SessionItem
+                    session={row.session}
+                    list={sessions()}
+                    navList={props.ctx.navList}
+                    slug={slug()}
+                    mobile={props.mobile}
+                    showChild
+                    sidebarExpanded={props.ctx.sidebarExpanded}
+                    clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
+                    prefetchSession={props.ctx.prefetchSession}
+                    archiveSession={props.ctx.archiveSession}
+                  />
+                )
+              }
             </For>
             <Show when={more()}>
               <Button

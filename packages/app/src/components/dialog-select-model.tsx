@@ -87,18 +87,9 @@ const ModelList: Component<{
     >
       {(i) => (
         <div class="w-full flex items-center gap-x-2 text-13-regular">
-          <Show when={i.oneSession} fallback={<span class="truncate">{i.name}</span>}>
-            {(info) => (
-              <span class="min-w-0 flex flex-col items-start">
-                <span class="truncate">{i.name}</span>
-                <span class="flex items-center gap-1.5 min-w-0">
-                  <OnceTag />
-                  <Show when={info().price}>
-                    <span class="truncate text-12-regular text-text-weak">{info().price}</span>
-                  </Show>
-                </span>
-              </span>
-            )}
+          <span class="truncate">{i.name}</span>
+          <Show when={i.oneSession}>
+            <OnceTag />
           </Show>
           <Show when={isFree(i.provider.id, i.cost)}>
             <Tag>{language.t("model.tag.free")}</Tag>

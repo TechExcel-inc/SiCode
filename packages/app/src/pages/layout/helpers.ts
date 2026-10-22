@@ -46,6 +46,36 @@ export function nestOneTime<T extends { id: string; oneTime?: { originSessionID?
     .flatMap((item) => [item, ...list.filter((child) => nested(child) && child.oneTime?.originSessionID === item.id)])
 }
 
+export type SessionRow<T> = { session: T } | { archived: string; count: number; open: boolean }
+
+/**
+ * The sidebar rows for a list already nested by nestOneTime: each parent is followed by its open one-time
+ * sessions, then an "Archived (n)" row when some are closed. Closed ones show only while that row is open.
+ * A one-time session whose parent isn't listed stays as an ordinary row.
+ */
+export function oneTimeRows<T extends { id: string; oneTime?: { originSessionID?: string; status?: string } }>(
+  list: T[],
+  open: ReadonlySet<string>,
+): SessionRow<T>[] {
+  const ids = new Set(list.map((item) => item.id))
+  const parent = (item: T) => {
+    const id = item.oneTime?.originSessionID
+    return id && ids.has(id) ? id : undefined
+  }
+  return list.flatMap((item): SessionRow<T>[] => {
+    if (parent(item)) return []
+    const kids = list.filter((child) => parent(child) === item.id)
+    const closed = kids.filter((child) => child.oneTime?.status === "closed")
+    const shown = open.has(item.id)
+    return [
+      { session: item },
+      ...kids.filter((child) => child.oneTime?.status !== "closed").map((session) => ({ session })),
+      ...(closed.length ? [{ archived: item.id, count: closed.length, open: shown }] : []),
+      ...(shown ? closed.map((session) => ({ session })) : []),
+    ]
+  })
+}
+
 export const sortedRootSessions = (store: SessionStore, now: number) =>
   nestOneTime(roots(store).sort(sortSessions(now)))
 

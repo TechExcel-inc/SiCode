@@ -22,8 +22,8 @@ import { Auth } from "@/auth"
 import { Installation } from "@/installation"
 import { makeRuntime } from "@/effect/run-service"
 import { Todo } from "./todo"
-import { Database, eq } from "@/storage/db"
-import { SessionTable } from "./session.sql"
+import { Database, desc, eq } from "@/storage/db"
+import { MessageTable, SessionTable } from "./session.sql"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -54,12 +54,35 @@ export namespace LLM {
       const id = own ? sessionID : parentID && find(parentID) ? parentID : undefined
       if (!id) return {}
       const one = own ?? find(id)
+      const plan = one?.originSessionID ? originPlan(one.originSessionID) : undefined
       return {
         "x-sicode-one-time": id,
         ...(one?.originSessionID ? { "x-sicode-one-time-origin": one.originSessionID } : {}),
+        // The gateway reads images with this plan's vision model when the one-time model can't see them.
+        ...(plan ? { "x-sicode-origin-plan": plan } : {}),
       }
     } catch {
       return {}
+    }
+  }
+
+  /** The EAD plan the parent session last used, such as "EAD 3.2"; undefined when it used no EAD plan. */
+  function originPlan(sessionID: string) {
+    const rows = Database.use((db) =>
+      db
+        .select({ data: MessageTable.data })
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, SessionID.make(sessionID)))
+        .orderBy(desc(MessageTable.time_created))
+        .limit(50)
+        .all(),
+    )
+    for (const row of rows) {
+      const info = row.data as { role?: string; model?: { providerID?: string; modelID?: string } }
+      if (info.role !== "user" || !info.model) continue
+      if (info.model.providerID !== "ead") return
+      // Header values must be ASCII; plan names are, but stay safe.
+      return /^[\x20-\x7e]+$/.test(info.model.modelID ?? "") ? info.model.modelID : undefined
     }
   }
 

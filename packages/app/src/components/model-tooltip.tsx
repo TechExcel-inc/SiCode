@@ -21,6 +21,28 @@ type ModelInfo = {
   limit: {
     context: number
   }
+  oneSession?: { description?: string; price?: string; limit?: number }
+}
+
+/** What a one-session-only model is for and its price: shown on hover, not in the row. */
+export const OnceDetails: Component<{ info?: { description?: string; price?: string; limit?: number } }> = (props) => {
+  const language = useLanguage()
+  return (
+    <Show when={props.info}>
+      {(info) => (
+        <>
+          <Show when={info().description}>
+            <div class="text-12-regular text-text-invert-base">{info().description}</div>
+          </Show>
+          <Show when={info().price}>
+            <div class="text-12-regular text-text-invert-base">
+              {language.t("model.tooltip.price", { price: info().price ?? "" })}
+            </div>
+          </Show>
+        </>
+      )}
+    </Show>
+  )
 }
 
 export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?: boolean }> = (props) => {
@@ -86,6 +108,7 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
       </Show>
       <div class="text-12-regular text-text-invert-base">{reasoning()}</div>
       <div class="text-12-regular text-text-invert-base">{context()}</div>
+      <OnceDetails info={props.model.oneSession} />
     </div>
   )
 }

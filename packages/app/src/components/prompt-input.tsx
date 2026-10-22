@@ -27,7 +27,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
-import { DialogOneTimeOpen, OnceTag, draftText, type OnceModel } from "@/components/one-time"
+import { OnceTag, useOpenOnce, type OnceModel } from "@/components/one-time"
 import { useProviders } from "@/hooks/use-providers"
 import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
@@ -107,6 +107,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const local = useLocal()
   const files = useFile()
   const prompt = usePrompt()
+  const openOnce = useOpenOnce()
   const layout = useLayout()
   const comments = useComments()
   const dialog = useDialog()
@@ -1561,12 +1562,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         >
                           <ModelSelectorPopover
                             model={local.model}
-                            onOnce={(item: OnceModel) => {
-                              const draft = draftText(prompt.current())
-                              dialog.show(() => (
-                                <DialogOneTimeOpen model={item} draft={draft} onDraftSent={() => prompt.reset()} />
-                              ))
-                            }}
+                            onOnce={(item: OnceModel) => void openOnce(item)}
                             triggerAs={Button}
                             triggerProps={{
                               variant: "ghost",

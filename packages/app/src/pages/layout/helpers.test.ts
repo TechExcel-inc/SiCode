@@ -19,7 +19,7 @@ import {
   latestRootSession,
   workspaceKey,
 } from "./helpers"
-import { nestOneTime } from "./helpers"
+import { nestOneTime, oneTimeRows } from "./helpers"
 import { activeSessions, runStopSteps, sessionAttention, stopSteps, type ActiveSource } from "./active-sessions"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 
@@ -525,5 +525,28 @@ describe("nestOneTime", () => {
   test("keeps a one-time session in place when its origin isn't listed", () => {
     const list = [row("t1", "gone"), row("a")]
     expect(nestOneTime(list).map((item) => item.id)).toEqual(["t1", "a"])
+  })
+})
+
+describe("oneTimeRows", () => {
+  const row = (id: string, origin?: string, status = "open") => ({
+    id,
+    oneTime: origin ? { originSessionID: origin, status } : undefined,
+  })
+  const ids = (rows: ReturnType<typeof oneTimeRows<ReturnType<typeof row>>>) =>
+    rows.map((r) => ("session" in r ? r.session.id : `archived:${r.archived}:${r.count}`))
+
+  test("hides closed one-time sessions behind an Archived row under their parent", () => {
+    const list = nestOneTime([row("a"), row("t1", "a"), row("t2", "a", "closed"), row("t3", "a", "closed"), row("b")])
+    expect(ids(oneTimeRows(list, new Set()))).toEqual(["a", "t1", "archived:a:2", "b"])
+  })
+
+  test("shows them once the Archived row is open", () => {
+    const list = nestOneTime([row("a"), row("t2", "a", "closed")])
+    expect(ids(oneTimeRows(list, new Set(["a"])))).toEqual(["a", "archived:a:1", "t2"])
+  })
+
+  test("keeps a one-time session whose parent isn't listed", () => {
+    expect(ids(oneTimeRows([row("t1", "gone", "closed"), row("b")], new Set()))).toEqual(["t1", "b"])
   })
 })

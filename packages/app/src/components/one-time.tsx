@@ -1,18 +1,16 @@
-import { createSignal, For, Show, type JSX } from "solid-js"
+import { createSignal, Show, type JSX } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import type { Session } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { usePrompt } from "@/context/prompt"
 import { useProviders } from "@/hooks/use-providers"
-import { draftText, errorText } from "@/utils/one-time"
-
-export { draftText }
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { OnceDetails } from "./model-tooltip"
+import { errorText, findOpenOnce } from "@/utils/one-time"
 
 /** A one-session-only model as the picker lists it. */
 export type OnceModel = {
@@ -25,17 +23,6 @@ export type OnceModel = {
 type OneTime = NonNullable<Session["oneTime"]>
 
 const fail = (title: string, err: unknown) => showToast({ title, description: errorText(err) })
-
-/** "1 of 3 requests" / "2 requests" for a one-time session. */
-function useUsage() {
-  const language = useLanguage()
-  return (one: OneTime) => {
-    const plural = one.requests === 1 ? "one" : "other"
-    return one.limit
-      ? language.t(`oneTime.banner.usageLimit.${plural}`, { count: one.requests, limit: one.limit })
-      : language.t(`oneTime.banner.usage.${plural}`, { count: one.requests })
-  }
-}
 
 /** The display name of a session's locked model. */
 function useModelName() {
@@ -62,211 +49,132 @@ export function OnceTag(props: { closed?: boolean; class?: string }) {
 }
 
 /**
- * Confirms opening a one-time session for a one-session-only model. The current session keeps its model;
- * the new session is locked to this one and remembers where it came from.
+ * Picking a one-session-only model: go to this session's open one-time session on that model, or open a new one,
+ * with no confirmation in between. Whatever is typed in the composer goes along, unsent, so it is sent only when the
+ * person presses Send in the one-time session.
  */
-export function DialogOneTimeOpen(props: { model: OnceModel; draft: string; onDraftSent: () => void }): JSX.Element {
+export function useOpenOnce() {
   const sdk = useSDK()
-  const dialog = useDialog()
-  const language = useLanguage()
-  const params = useParams()
-  const navigate = useNavigate()
-  const [carry, setCarry] = createSignal(!!props.draft)
-  const [busy, setBusy] = createSignal(false)
-  const info = () => props.model.oneSession ?? {}
-
-  const open = async () => {
-    setBusy(true)
-    const session = await sdk.client.session.oneTime
-      .open({
-        originSessionID: params.id || undefined,
-        model: { providerID: props.model.provider.id, modelID: props.model.id },
-      })
-      .then((res) => {
-        if (!res.data) throw new Error(language.t("common.requestFailed"))
-        return res.data
-      })
-      .catch((err: unknown) => {
-        setBusy(false)
-        fail(language.t("oneTime.open.failed"), err)
-      })
-    if (!session) return
-    if (carry() && props.draft) {
-      await sdk.client.session
-        .promptAsync({ sessionID: session.id, parts: [{ type: "text", text: props.draft }] })
-        .then(() => props.onDraftSent())
-        .catch((err: unknown) => fail(language.t("oneTime.open.sendFailed"), err))
-    }
-    dialog.close()
-    navigate(`/${params.dir}/session/${session.id}`)
-  }
-
-  return (
-    <Dialog title={language.t("oneTime.open.title", { model: props.model.name })} fit>
-      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 max-w-[440px]" data-component="one-time-open">
-        <span class="text-14-regular text-text-base">{language.t("oneTime.open.body")}</span>
-        <div class="flex flex-col gap-1 text-13-regular text-text-base">
-          <Show when={info().description}>
-            <span>{info().description}</span>
-          </Show>
-          <Show when={info().price}>
-            <span class="text-text-on-warning-base">{info().price}</span>
-          </Show>
-          <Show when={info().limit}>
-            <span class="text-text-weak">{language.t("oneTime.open.limit", { count: info().limit ?? 0 })}</span>
-          </Show>
-        </div>
-        <Show when={props.draft}>
-          <Checkbox checked={carry()} onChange={(value: boolean) => setCarry(value)}>
-            {language.t("oneTime.open.carry")}
-          </Checkbox>
-        </Show>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button variant="primary" size="large" data-action="one-time-open" disabled={busy()} onClick={open}>
-            {language.t("oneTime.open.confirm")}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
-  )
-}
-
-/** Asks where to go when a one-time session is done, and whether to carry the result there. */
-export function DialogOneTimeDone(props: { session: Session; origin?: Session }): JSX.Element {
-  const sdk = useSDK()
-  const usage = useUsage()
-  const model = useModelName()
-  const dialog = useDialog()
-  const language = useLanguage()
-  const params = useParams()
-  const navigate = useNavigate()
-  const one = () => props.session.oneTime as OneTime
-  const [goTo, setGoTo] = createSignal<"origin" | "new">(props.origin ? "origin" : "new")
-  const [add, setAdd] = createSignal(true)
-  const [busy, setBusy] = createSignal(false)
-
-  const choices = () =>
-    [
-      props.origin
-        ? {
-            value: "origin" as const,
-            label: language.t("oneTime.done.origin", { title: props.origin.title }),
-          }
-        : undefined,
-      { value: "new" as const, label: language.t("oneTime.done.new") },
-    ].filter((item) => !!item)
-
-  const finish = async () => {
-    setBusy(true)
-    const result = await sdk.client.session.oneTime
-      .done({ sessionID: props.session.id, goTo: goTo(), addResult: add() })
-      .then((res) => {
-        if (!res.data) throw new Error(language.t("common.requestFailed"))
-        return res.data
-      })
-      .catch((err: unknown) => {
-        setBusy(false)
-        fail(language.t("oneTime.done.failed"), err)
-      })
-    if (!result) return
-    dialog.close()
-    if (result.fallback) showToast({ title: language.t("oneTime.done.fallback") })
-    navigate(`/${params.dir}/session/${result.targetSessionID}`)
-  }
-
-  return (
-    <Dialog title={language.t("oneTime.done.title")} fit>
-      <div class="flex flex-col gap-3 pl-6 pr-2.5 pb-3 max-w-[440px]" data-component="one-time-done">
-        <span class="text-13-regular text-text-weak">
-          {language.t("oneTime.done.body", { model: model(one()), usage: usage(one()) })}
-        </span>
-        <div class="flex flex-col gap-1.5" role="radiogroup">
-          <For each={choices()}>
-            {(choice) => (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={goTo() === choice.value}
-                data-action={`one-time-done-${choice.value}`}
-                class="text-left px-3 py-2 rounded-md border text-14-regular transition-colors"
-                classList={{
-                  "border-border-warning-base bg-surface-warning-weak text-text-strong": goTo() === choice.value,
-                  "border-border-weak-base text-text-base hover:bg-surface-base-hover": goTo() !== choice.value,
-                }}
-                onClick={() => setGoTo(choice.value)}
-              >
-                {choice.label}
-              </button>
-            )}
-          </For>
-        </div>
-        <Checkbox checked={add()} onChange={(value: boolean) => setAdd(value)}>
-          {language.t("oneTime.done.addResult")}
-        </Checkbox>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button variant="primary" size="large" data-action="one-time-done" disabled={busy()} onClick={finish}>
-            {language.t("oneTime.done.confirm")}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
-  )
-}
-
-/** The bar above the composer in an open one-time session. */
-export function OneTimeBanner(props: { session: Session }): JSX.Element {
   const sync = useSync()
-  const providers = useProviders()
-  const dialog = useDialog()
+  const prompt = usePrompt()
   const language = useLanguage()
   const params = useParams()
   const navigate = useNavigate()
+
+  return async (model: OnceModel) => {
+    const origin = params.id || undefined
+    const pick = { providerID: model.provider.id, modelID: model.id }
+    const existing = origin ? findOpenOnce(sync.data.session ?? [], origin, pick) : undefined
+    const id =
+      existing?.id ??
+      (await sdk.client.session.oneTime
+        .open({ originSessionID: origin, model: pick })
+        .then((res) => {
+          if (!res.data) throw new Error(language.t("common.requestFailed"))
+          return res.data.id
+        })
+        .catch((err: unknown) => {
+          fail(language.t("oneTime.open.failed"), err)
+          return undefined
+        }))
+    if (!id) return
+    const draft = prompt.current()
+    if (prompt.dirty()) {
+      const scope = { dir: params.dir!, id }
+      prompt.set(draft, undefined, scope)
+      prompt.reset()
+    }
+    navigate(`/${params.dir}/session/${id}`)
+  }
+}
+
+/** The bar above the composer in an open one-time session: the model, its price and usage, and the two ways out. */
+export function OneTimeBanner(props: { session: Session }): JSX.Element {
+  const sdk = useSDK()
+  const sync = useSync()
+  const prompt = usePrompt()
+  const providers = useProviders()
+  const language = useLanguage()
+  const params = useParams()
+  const navigate = useNavigate()
+  const [busy, setBusy] = createSignal(false)
   const one = () => props.session.oneTime as OneTime
   const origin = () => {
     const id = one().originSessionID
     return id ? sync.session.get(id) : undefined
   }
   const model = useModelName()
-  const count = useUsage()
-  const name = () => model(one())
-  const usage = () => count(one())
+  const info = () =>
+    providers.all().find((p) => p.id === one().model.providerID)?.models[one().model.modelID]?.oneSession
+
+  /** Close the session, add its answer to where the person goes next, and go there. */
+  const finish = async (goTo: "origin" | "new") => {
+    setBusy(true)
+    const result = await sdk.client.session.oneTime
+      .done({ sessionID: props.session.id, goTo, addResult: true })
+      .then((res) => {
+        if (!res.data) throw new Error(language.t("common.requestFailed"))
+        return res.data
+      })
+      .catch((err: unknown) => {
+        fail(language.t("oneTime.done.failed"), err)
+        return undefined
+      })
+    setBusy(false)
+    if (!result) return
+    if (result.fallback) showToast({ title: language.t("oneTime.done.fallback") })
+    // Whatever is typed here goes along, unsent, to the session the person goes to.
+    if (prompt.dirty()) {
+      prompt.set(prompt.current(), undefined, { dir: params.dir!, id: result.targetSessionID })
+      prompt.reset()
+    }
+    navigate(`/${params.dir}/session/${result.targetSessionID}`)
+  }
 
   return (
     <div
       data-component="one-time-banner"
-      class="flex flex-wrap items-center gap-2 px-3 py-2 mb-1 rounded-md border border-border-warning-base bg-surface-warning-weak text-13-regular text-text-strong"
+      class="flex items-center gap-2 px-3 py-2 mb-1 rounded-md border border-border-warning-base bg-surface-warning-weak text-13-regular text-text-strong"
     >
       <OnceTag />
-      <span class="min-w-0 truncate">
-        <span class="text-13-medium">{name()}</span>
-        <span class="text-text-weak"> · {usage()}</span>
-      </span>
+      <Tooltip
+        placement="top"
+        inactive={!info()}
+        value={
+          <div class="flex flex-col gap-1 py-1">
+            <OnceDetails info={info()} />
+          </div>
+        }
+      >
+        <span class="min-w-0 truncate">
+          <span class="text-13-medium">{model(one())}</span>
+          <Show when={info()?.price}>
+            <span class="text-text-weak"> · {info()?.price}</span>
+          </Show>
+        </span>
+      </Tooltip>
       <span class="flex-1" />
       <Show when={origin()}>
-        {(item) => (
-          <Button
-            variant="ghost"
-            size="small"
-            data-action="one-time-back"
-            onClick={() => navigate(`/${params.dir}/session/${item().id}`)}
-          >
-            {language.t("oneTime.banner.back")}
-          </Button>
-        )}
+        <Button
+          variant="primary"
+          size="small"
+          class="shrink-0"
+          data-action="one-time-done-back"
+          disabled={busy()}
+          onClick={() => finish("origin")}
+        >
+          {language.t("oneTime.banner.doneBack")}
+        </Button>
       </Show>
       <Button
-        variant="primary"
+        variant={origin() ? "secondary" : "primary"}
         size="small"
-        data-action="one-time-finish"
-        onClick={() => dialog.show(() => <DialogOneTimeDone session={props.session} origin={origin()} />)}
+        class="shrink-0"
+        data-action="one-time-done-new"
+        disabled={busy()}
+        onClick={() => finish("new")}
       >
-        {language.t("oneTime.banner.done")}
+        {language.t("oneTime.banner.doneNew")}
       </Button>
     </div>
   )
@@ -275,7 +183,7 @@ export function OneTimeBanner(props: { session: Session }): JSX.Element {
 /** Shown in place of the composer once a one-time session is closed. */
 export function OneTimeClosed(props: {
   session: Session
-  /** Still open, but every allowed request is used: point to "Current session done" instead of Reopen. */
+  /** Still open, but every allowed request is used: point to the Done buttons instead of Reopen. */
   full?: boolean
   ref?: (el: HTMLDivElement) => void
 }): JSX.Element {

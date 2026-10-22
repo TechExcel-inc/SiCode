@@ -35,6 +35,7 @@ function model(id: string) {
 function chat() {
   const seen: string[] = []
   const tags: (string | null)[] = []
+  const plans: (string | null)[] = []
   const encoder = new TextEncoder()
   const server = Bun.serve({
     port: 0,
@@ -42,6 +43,7 @@ function chat() {
       const body = (await req.json()) as { model: string }
       seen.push(body.model)
       tags.push(req.headers.get("x-sicode-one-time"))
+      plans.push(req.headers.get("x-sicode-origin-plan"))
       const chunks = [
         { choices: [{ delta: { role: "assistant" } }] },
         { choices: [{ delta: { content: "done" } }] },
@@ -53,7 +55,7 @@ function chat() {
       return new Response(encoder.encode(payload), { headers: { "content-type": "text/event-stream" } })
     },
   })
-  return { server, seen, tags }
+  return { server, seen, tags, plans }
 }
 
 async function within(fn: () => Promise<void>, url = "http://localhost:1") {
@@ -180,6 +182,27 @@ describe("one-time model lock", () => {
         if (reply.info.role !== "assistant") throw new Error("expected assistant message")
         expect(reply.info.modelID).toBe(premium.modelID)
         expect((await Session.get(session.id)).oneTime?.requests).toBe(1)
+      }, mock.server.url.origin)
+    } finally {
+      mock.server.stop(true)
+    }
+  })
+
+  test("a one-time request names the parent session's EAD plan for reading images", async () => {
+    const mock = chat()
+    try {
+      await within(async () => {
+        const origin = await Session.create({})
+        await SessionPrompt.prompt({
+          sessionID: origin.id,
+          agent: "build",
+          model: { providerID: ProviderID.make("ead"), modelID: ModelID.make("EAD 3.2") },
+          noReply: true,
+          parts: [{ type: "text", text: "earlier work on the plan" }],
+        })
+        const session = await open({ originSessionID: origin.id, model: premium })
+        await SessionPrompt.prompt({ sessionID: session.id, agent: "build", parts: [{ type: "text", text: "look" }] })
+        expect(mock.plans).toContain("EAD 3.2")
       }, mock.server.url.origin)
     } finally {
       mock.server.stop(true)
