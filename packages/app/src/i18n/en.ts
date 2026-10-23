@@ -597,7 +597,7 @@ export const dict = {
   "oneTime.done.fallback": "The original session is gone, so a new session was started",
   "oneTime.full.body": "All {{count}} requests are used. Mark this session done to go back.",
   "oneTime.closed.body": "This one-time session is closed.",
-  "oneTime.closed.open": "Open “{{title}}”",
+  "oneTime.closed.return": "Return",
   "oneTime.closed.reopen": "Reopen",
   "oneTime.reopen.failed": "Could not reopen the one-time session",
   "session.followupDock.summary.one": "{{count}} queued message",

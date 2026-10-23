@@ -1171,7 +1171,7 @@ export const dict = {
   "oneTime.done.fallback": "原會話已不存在，已開始新會話",
   "oneTime.full.body": "{{count}} 次請求已全部用完。點擊「當前會話完成」返回。",
   "oneTime.closed.body": "此單次會話已關閉。",
-  "oneTime.closed.open": "開啟「{{title}}」",
+  "oneTime.closed.return": "返回",
   "oneTime.closed.reopen": "重新開啟",
   "oneTime.reopen.failed": "無法重新開啟單次會話",
   "session.header.open.finder": "Finder",

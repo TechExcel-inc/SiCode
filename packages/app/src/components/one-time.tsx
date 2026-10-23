@@ -193,9 +193,10 @@ export function OneTimeClosed(props: {
   const params = useParams()
   const navigate = useNavigate()
   const [busy, setBusy] = createSignal(false)
+  /** The parent session it was opened from, or where Done led when there was no parent. */
   const target = () => {
     const one = props.session.oneTime as OneTime
-    const id = one.targetSessionID ?? one.originSessionID
+    const id = one.originSessionID ?? one.targetSessionID
     return id ? sync.session.get(id) : undefined
   }
 
@@ -222,8 +223,14 @@ export function OneTimeClosed(props: {
       <span class="flex-1" />
       <Show when={!props.full && target()}>
         {(item) => (
-          <Button variant="ghost" size="small" onClick={() => navigate(`/${params.dir}/session/${item().id}`)}>
-            {language.t("oneTime.closed.open", { title: item().title })}
+          <Button
+            variant="primary"
+            size="small"
+            data-action="one-time-return"
+            title={item().title}
+            onClick={() => navigate(`/${params.dir}/session/${item().id}`)}
+          >
+            {language.t("oneTime.closed.return")}
           </Button>
         )}
       </Show>

@@ -1135,6 +1135,10 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
   })
 
   const metaHead = createMemo(() => {
+    // A one-time result card names the one-time model that did the work, not the session's model.
+    const result = once()
+    if (result)
+      return [i18n.t("ui.message.oneTime.tag"), result.name ?? ""].filter((x) => !!x).join("\u00A0\u00B7\u00A0")
     const agent = props.message.agent
     const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
     return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")

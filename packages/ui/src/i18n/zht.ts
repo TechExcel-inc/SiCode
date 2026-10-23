@@ -169,6 +169,7 @@ export const dict = {
   "ui.message.collapse": "收合訊息",
   "ui.message.copy": "複製",
   "ui.message.copyMessage": "複製訊息",
+  "ui.message.oneTime.tag": "單次",
   "ui.message.oneTime.result": "單次會話結果 · {{model}}",
   "ui.message.oneTime.open": "開啟會話",
   "ui.message.forkMessage": "分支到新工作階段",

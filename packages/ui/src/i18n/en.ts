@@ -183,6 +183,7 @@ export const dict: Record<string, string> = {
   "ui.message.collapse": "Collapse message",
   "ui.message.copy": "Copy",
   "ui.message.copyMessage": "Copy message",
+  "ui.message.oneTime.tag": "One-time",
   "ui.message.oneTime.result": "Result from one-time session · {{model}}",
   "ui.message.oneTime.open": "Open session",
   "ui.message.forkMessage": "Fork to new session",

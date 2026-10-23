@@ -1207,7 +1207,7 @@ export const dict = {
   "oneTime.done.fallback": "原会话已不存在，已开始新会话",
   "oneTime.full.body": "{{count}} 次请求已全部用完。点击“当前会话完成”返回。",
   "oneTime.closed.body": "此单次会话已关闭。",
-  "oneTime.closed.open": "打开“{{title}}”",
+  "oneTime.closed.return": "返回",
   "oneTime.closed.reopen": "重新打开",
   "oneTime.reopen.failed": "无法重新打开单次会话",
   "session.header.open.finder": "访达",
