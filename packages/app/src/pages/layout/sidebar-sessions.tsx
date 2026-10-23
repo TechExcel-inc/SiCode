@@ -20,7 +20,7 @@ import { usePermission } from "@/context/permission"
 import { sessionTitle } from "@/utils/session-title"
 import { displayName, hasProjectPermissions, oneTimeRows, sortedRootSessions, workspaceKey } from "./helpers"
 import { ActiveSessions } from "./sidebar-active"
-import { EDGE, INDENT, SessionItem, SessionSkeleton } from "./sidebar-items"
+import { EDGE, INDENT, INSET, SessionItem, SessionSkeleton } from "./sidebar-items"
 import { type WorkspaceSidebarContext } from "./sidebar-workspace"
 
 const PAGE = 5
@@ -45,6 +45,8 @@ export const AllSessions = (props: {
     query: "",
     folded: {} as Record<string, boolean>,
     shown: {} as Record<string, number>,
+    // The project row last clicked on its empty area: highlighted only, nothing folds.
+    picked: "",
   })
 
   return (
@@ -91,7 +93,8 @@ export const AllSessions = (props: {
             <button
               type="button"
               data-action="session-new"
-              class="h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+              class="h-8 pr-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+              style={{ "margin-left": `${EDGE - INSET}px`, "padding-left": `${INSET}px` }}
               classList={{ "bg-surface-base-active": !!params.dir && !params.id }}
               onClick={() => props.onNew(project())}
             >
@@ -119,6 +122,8 @@ export const AllSessions = (props: {
               sortNow={props.sortNow}
               mobile={props.mobile}
               onFold={() => setState("folded", project.worktree, (value) => !value)}
+              picked={state.picked === project.worktree}
+              onPick={() => setState("picked", project.worktree)}
               onMore={() => setState("shown", project.worktree, (value) => (value ?? PAGE) + PAGE)}
               onNew={() => props.onNew(project)}
               onSwitch={() => props.onSwitch(project)}
@@ -140,7 +145,7 @@ export const AllSessions = (props: {
                   onPick={(item) => void cowork.relateEntry(current().worktree, item)}
                   triggerProps={{
                     class:
-                      "group/related w-full h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
+                      "group/related w-[calc(100%-2px)] ml-0.5 h-8 pl-1.5 pr-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
                     "data-action": "session-related-project",
                   }}
                   trigger={
@@ -175,6 +180,8 @@ const Group = (props: {
   sortNow: Accessor<number>
   mobile?: boolean
   onFold: () => void
+  picked: boolean
+  onPick: () => void
   onMore: () => void
   onNew: () => void
   /** Make this related project the current project, like picking it in the toolbar project picker. */
@@ -243,16 +250,24 @@ const Group = (props: {
   return (
     <Show when={!props.query || matches().length > 0}>
       <section data-component="session-group" class="flex flex-col gap-0.5">
+        {/* The empty part of the row only selects it; the icon, name and chevron fold it. */}
         <div
           data-current={props.active ? "" : undefined}
-          class="group/project h-8 pl-2 pr-0.5 rounded-md flex items-center gap-1.5 hover:bg-surface-raised-base-hover"
+          data-picked={props.picked ? "" : undefined}
+          class="group/project h-8 pr-0.5 rounded-md flex items-center gap-1.5 cursor-default hover:bg-surface-raised-base-hover"
+          classList={{ "bg-surface-base-active": props.picked }}
+          style={{ "margin-left": `${EDGE - INSET}px`, "padding-left": `${INSET}px` }}
+          onClick={props.onPick}
         >
           <button
             type="button"
             data-action="session-group-toggle"
-            class="flex-1 min-w-0 h-full flex items-center gap-1.5 text-left"
+            class="min-w-0 h-full flex items-center gap-1.5 text-left"
             aria-expanded={!props.folded}
-            onClick={props.onFold}
+            onClick={(event) => {
+              event.stopPropagation()
+              props.onFold()
+            }}
           >
             <Avatar
               fallback={displayName(props.project)}
@@ -265,8 +280,8 @@ const Group = (props: {
             <Icon
               name="chevron-down"
               size="small"
-              class="shrink-0 text-icon-weak transition-transform"
-              classList={{ "rotate-180": props.folded }}
+              class="shrink-0 text-icon-strong-base transition-transform"
+              classList={{ "-rotate-90": props.folded }}
             />
             <Switch>
               <Match when={activity() === "approval"}>
@@ -290,6 +305,7 @@ const Group = (props: {
               </Match>
             </Switch>
           </button>
+          <span class="flex-1 min-w-0 h-full" />
           <Show when={!props.active}>
             <DropdownMenu placement="bottom-end">
               <DropdownMenu.Trigger
@@ -325,7 +341,7 @@ const Group = (props: {
           <IconButton
             icon="plus-small"
             variant="ghost"
-            class="shrink-0 size-6 rounded-md opacity-60 group-hover/project:opacity-100"
+            class="shrink-0 size-6 rounded-md text-icon-strong-base"
             data-action="session-group-new"
             aria-label={language.t("command.session.new")}
             onClick={props.onNew}

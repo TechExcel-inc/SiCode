@@ -17,7 +17,7 @@ import { sessionTitle } from "@/utils/session-title"
 import { type ActiveSource, activeSessions, runStopSteps, stopSteps } from "./active-sessions"
 import { dismissedSteps } from "@/pages/session/composer/dismissed-steps"
 import { displayName } from "./helpers"
-import { DialogDelete, EDGE, INDENT } from "./sidebar-items"
+import { DialogDelete, EDGE, INDENT, INSET } from "./sidebar-items"
 import { SessionAttentionDot, useAttentionAction } from "./session-attention-dot"
 
 /** Sessions across the open projects that are working or waiting on the user, with Stop, Archive and Delete. */
@@ -77,7 +77,7 @@ export const ActiveSessions = (props: {
                 data-session-id={item.session.id}
                 data-state={item.state}
                 class="group/active w-full min-w-0 rounded-md pr-1 flex items-center gap-1 hover:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
-                style={{ "padding-left": `${EDGE + INDENT}px` }}
+                style={{ "margin-left": `${EDGE + INDENT - INSET}px`, "padding-left": `${INSET}px` }}
               >
                 <A
                   href={`/${base64Encode(item.session.directory)}/session/${item.session.id}`}

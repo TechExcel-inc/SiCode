@@ -34,6 +34,8 @@ const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 /** Sidebar levels: projects and panel actions sit on the edge, sessions one indent in, child sessions further. */
 export const EDGE = 8
 export const INDENT = 10
+/** Highlights start this far before an item's text or icon, so each level's highlight starts at its own indent. */
+export const INSET = 6
 const ROW = EDGE + INDENT
 
 export const ProjectIcon = (props: { project: LocalProject; class?: string; notify?: boolean }): JSX.Element => {
@@ -117,7 +119,11 @@ const SessionRow = (props: {
   nested?: boolean
 }): JSX.Element => {
   const language = useLanguage()
-  const title = () => sessionTitle(props.session.title)
+  // Under its parent, a one-time session's "model · from <parent>" title only needs the model.
+  const title = () => {
+    const full = sessionTitle(props.session.title)
+    return props.nested ? (full?.split(" · from ")[0] ?? full) : full
+  }
   const once = () =>
     props.session.oneTime ? <OnceTag closed={props.session.oneTime.status === "closed"} /> : undefined
   // The orange (waiting on the person) or red (stuck) dot; real work shows the spinner instead.
@@ -161,7 +167,14 @@ const SessionRow = (props: {
         </div>
       </Show>
       <div class="min-w-0 flex-1 flex flex-col">
-        <Show when={props.dense} fallback={<span class="text-14-regular text-text-strong truncate">{title()}</span>}>
+        <Show
+          when={props.dense}
+          fallback={
+            <span class="text-14-regular text-text-strong truncate" title={sessionTitle(props.session.title)}>
+              {title()}
+            </span>
+          }
+        >
           <span class="flex items-center gap-1.5 min-w-0">
             <span class="text-14-regular text-text-strong truncate">{title()}</span>
             {once()}
@@ -327,13 +340,15 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     }
   }
 
+  const nested = createMemo(
+    () =>
+      !!props.session.oneTime?.originSessionID &&
+      props.list.some((item) => item.id === props.session.oneTime?.originSessionID),
+  )
   const item = (
     <SessionRow
       session={props.session}
-      nested={
-        !!props.session.oneTime?.originSessionID &&
-        props.list.some((item) => item.id === props.session.oneTime?.originSessionID)
-      }
+      nested={nested()}
       slug={props.slug}
       mobile={props.mobile}
       dense={props.dense}
@@ -355,8 +370,13 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     <>
       <div
         data-session-id={props.session.id}
-        class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
-        style={{ "padding-left": `${ROW + (props.level ?? 0) * 16}px` }}
+        class="group/session relative min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active has-[.active]:shadow-[inset_2px_0_0_var(--text-interactive-base)]"
+        style={
+          // A one-time session's highlight starts at its dotted guide line; others just before their title.
+          nested()
+            ? { "margin-left": `${ROW + (props.level ?? 0) * 16}px` }
+            : { "margin-left": `${ROW - INSET + (props.level ?? 0) * 16}px`, "padding-left": `${INSET}px` }
+        }
       >
         <div class="flex min-w-0 items-center gap-1">
           <div class="min-w-0 flex-1">
