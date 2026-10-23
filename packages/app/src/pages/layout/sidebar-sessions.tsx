@@ -98,7 +98,7 @@ export const AllSessions = (props: {
               classList={{ "bg-surface-base-active": !!params.dir && !params.id }}
               onClick={() => props.onNew(project())}
             >
-              <Icon name="plus-small" size="small" class="shrink-0 text-icon-base" />
+              <Icon name="plus-small" size="small" class="shrink-0 text-text-strong [&_path]:stroke-[1.75]" />
               <span class="truncate">{language.t("agent.sessions.new")}</span>
             </button>
           )}
@@ -155,7 +155,7 @@ export const AllSessions = (props: {
                       <Icon
                         name="chevron-down"
                         size="small"
-                        class="shrink-0 text-icon-weak opacity-0 group-hover/related:opacity-100 group-data-[expanded]/related:opacity-100"
+                        class="shrink-0 text-text-strong [&_path]:stroke-[1.75]"
                       />
                     </>
                   }
@@ -280,7 +280,7 @@ const Group = (props: {
             <Icon
               name="chevron-down"
               size="small"
-              class="shrink-0 text-icon-strong-base transition-transform"
+              class="shrink-0 text-text-strong [&_path]:stroke-[1.75] transition-transform"
               classList={{ "-rotate-90": props.folded }}
             />
             <Switch>
@@ -341,7 +341,7 @@ const Group = (props: {
           <IconButton
             icon="plus-small"
             variant="ghost"
-            class="shrink-0 size-6 rounded-md text-icon-strong-base"
+            class="shrink-0 size-6 rounded-md text-text-strong [&_path]:stroke-[1.75]"
             data-action="session-group-new"
             aria-label={language.t("command.session.new")}
             onClick={props.onNew}
@@ -368,7 +368,11 @@ const Group = (props: {
                     style={{ "margin-left": `${EDGE + INDENT}px` }}
                     onClick={() => flip(row.archived)}
                   >
-                    <Icon name={row.open ? "chevron-down" : "chevron-right"} size="small" />
+                    <Icon
+                      name={row.open ? "chevron-down" : "chevron-right"}
+                      size="small"
+                      class="shrink-0 text-text-strong [&_path]:stroke-[1.75]"
+                    />
                     {language.t("oneTime.sidebar.archived", { count: row.count })}
                   </button>
                 ) : (
