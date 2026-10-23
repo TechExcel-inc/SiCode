@@ -24,9 +24,17 @@ function portOf(script: string) {
 
 /**
  * Suggestions from `.claude/launch.json` (the dev server the project already runs for previews) and
- * `package.json` scripts. Install and reopen is project specific, so only an explicit script fills it.
+ * `package.json` scripts. Install and reopen comes from an explicit script, or, for a Tauri desktop
+ * app, SiCode's installer helper with the app the default Tauri build makes (edit it when the build
+ * puts the app elsewhere).
  */
-export function suggestRun(input: { launch?: string; pkg?: string; locks: string[] }): RunCommands {
+export function suggestRun(input: {
+  launch?: string
+  pkg?: string
+  locks: string[]
+  /** A Tauri desktop app's config and its folder, for Install and reopen through SiCode's installer helper. */
+  tauri?: { config: string; dir: string }
+}): RunCommands {
   const read = <T,>(text?: string) => {
     if (!text?.trim()) return
     try {
@@ -47,10 +55,12 @@ export function suggestRun(input: { launch?: string; pkg?: string; locks: string
         ? `${run} start`
         : undefined
   const install = ["install:app", "reinstall", "deploy:local"].find((name) => scripts[name])
+  const product = read<{ productName?: string }>(input.tauri?.config)?.productName
+  const bundle = product && input.tauri ? `${input.tauri.dir}/target/release/bundle/macos/${product}.app` : undefined
   return {
     dev,
     port: launch?.port ?? (scripts.dev ? portOf(scripts.dev) : scripts.start ? portOf(scripts.start) : undefined),
     build: scripts.build ? `${run} build` : undefined,
-    install: install ? `${run} ${install}` : undefined,
+    install: install ? `${run} ${install}` : bundle ? `"$SICODE_REINSTALL" ${quote(bundle)}` : undefined,
   }
 }

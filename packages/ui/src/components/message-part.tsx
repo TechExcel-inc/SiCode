@@ -1105,6 +1105,17 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
 
   // The automatic message a background command sends when it ends: one quiet line, not a bubble.
   const job = createMemo(() => {
+    // After SiCode installed a new build of an app (itself, usually) and reopened: one quiet line too.
+    const update = props.parts?.find((p) => p.type === "text" && (p as TextPart).metadata?.update) as TextPart | undefined
+    const installed = update?.metadata?.update as { app?: string; version?: string; status?: string } | undefined
+    if (installed)
+      return {
+        text: i18n.t(installed.status === "done" ? "ui.message.update.done" : "ui.message.update.failed", {
+          app: installed.app ?? "",
+          version: installed.version ?? "",
+        }),
+        command: "",
+      }
     const part = props.parts?.find((p) => p.type === "text" && (p as TextPart).metadata?.job) as TextPart | undefined
     const info = part?.metadata?.job as { command?: string; code?: number | null; stopped?: boolean; ms?: number } | undefined
     if (!info) return
@@ -1188,7 +1199,11 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
       <Show when={job()}>
         {(item) => (
           <div data-slot="user-message-job" class="text-12-regular text-text-weak" title={item().command}>
-            {item().text} · <span class="text-12-mono">{item().command}</span>
+            {item().text}
+            <Show when={item().command}>
+              {" · "}
+              <span class="text-12-mono">{item().command}</span>
+            </Show>
           </div>
         )}
       </Show>

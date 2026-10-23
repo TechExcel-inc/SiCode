@@ -169,6 +169,8 @@ export const dict = {
   "ui.message.collapse": "收合訊息",
   "ui.message.copy": "複製",
   "ui.message.copyMessage": "複製訊息",
+  "ui.message.update.done": "已更新到 {{app}} {{version}}",
+  "ui.message.update.failed": "{{app}} 安裝未完成",
   "ui.message.job.done": "背景指令已完成，用時 {{took}}",
   "ui.message.job.failed": "背景指令結束，結束代碼 {{code}}，用時 {{took}}",
   "ui.message.job.stopped": "背景指令已停止，用時 {{took}}",

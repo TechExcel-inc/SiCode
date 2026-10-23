@@ -9,6 +9,7 @@ import { Vcs } from "./vcs"
 import { Bus } from "../bus"
 import { Command } from "../command"
 import { Instance } from "./instance"
+import { Reinstall } from "../tool/reinstall"
 import { Log } from "@/util/log"
 import { FileWatcher } from "@/file/watcher"
 import { ShareNext } from "@/share/share-next"
@@ -26,6 +27,8 @@ export const InstanceBootstrap = Effect.gen(function* () {
   yield* Snapshot.Service.use((svc) => svc.init()).pipe(Effect.forkDetach)
   // Nothing is in use while the project starts, so sessions without a single message can go.
   yield* Effect.promise(() => Session.sweep().catch(() => 0))
+  // After SiCode installed a new build of itself, the session that asked carries on.
+  yield* Effect.promise(() => Reinstall.resume().catch(() => undefined)).pipe(Effect.forkDetach)
 
   yield* Bus.Service.use((svc) =>
     svc.subscribeCallback(Command.Event.Executed, async (payload) => {

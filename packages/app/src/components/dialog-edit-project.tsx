@@ -86,13 +86,24 @@ export function DialogEditProject(props: { project: LocalProject }) {
         .read({ directory: props.project.worktree, path })
         .then((res) => (res.data as { content?: string } | undefined)?.content ?? "")
         .catch(() => "")
-    const [launch, pkg, ...locks] = await Promise.all(
-      [".claude/launch.json", "package.json", "bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock"].map(file),
+    const tauri = ["src-tauri", "packages/desktop/src-tauri"]
+    const [launch, pkg, ...rest] = await Promise.all(
+      [
+        ".claude/launch.json",
+        "package.json",
+        "bun.lock",
+        "bun.lockb",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        ...tauri.map((dir) => `${dir}/tauri.conf.json`),
+      ].map(file),
     )
+    const configs = rest.slice(4)
     const found = suggestRun({
       launch,
       pkg,
-      locks: ["bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock"].filter((_, index) => !!locks[index]),
+      locks: ["bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock"].filter((_, index) => !!rest[index]),
+      tauri: configs.flatMap((config, index) => (config ? [{ config, dir: tauri[index] }] : []))[0],
     })
     setStore({
       suggesting: false,

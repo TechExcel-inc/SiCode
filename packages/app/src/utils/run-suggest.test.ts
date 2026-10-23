@@ -37,4 +37,9 @@ describe("suggestRun", () => {
     expect(suggestRun({ locks: [] })).toEqual({ dev: undefined, port: undefined, build: undefined, install: undefined })
     expect(suggestRun({ pkg: "{ not json", locks: [] }).dev).toBeUndefined()
   })
+
+  test("a Tauri desktop app installs through SiCode's installer helper", () => {
+    const tauri = { config: JSON.stringify({ productName: "Kloud Meet" }), dir: "src-tauri" }
+    expect(suggestRun({ locks: [], tauri }).install).toBe('"$SICODE_REINSTALL" "src-tauri/target/release/bundle/macos/Kloud Meet.app"')
+  })
 })

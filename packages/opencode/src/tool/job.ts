@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { Global } from "../global"
 import { Instance } from "../project/instance"
 import { Tool } from "./tool"
+import { Reinstall } from "./reinstall"
 import DESCRIPTION from "./job.txt"
 
 /**
@@ -95,7 +96,7 @@ export namespace Job {
     const proc = Bun.spawn({
       cmd: process.platform === "win32" ? [input.shell, "/c", input.command] : [input.shell, "-c", input.command],
       cwd: input.cwd,
-      env: input.env,
+      env: { ...input.env, ...Reinstall.env(input.sessionID) },
       stdin: "ignore",
       stdout: out,
       stderr: out,

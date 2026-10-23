@@ -183,6 +183,8 @@ export const dict: Record<string, string> = {
   "ui.message.collapse": "Collapse message",
   "ui.message.copy": "Copy",
   "ui.message.copyMessage": "Copy message",
+  "ui.message.update.done": "Updated to {{app}} {{version}}",
+  "ui.message.update.failed": "Installing {{app}} did not finish",
   "ui.message.job.done": "Background command finished after {{took}}",
   "ui.message.job.failed": "Background command ended with exit code {{code}} after {{took}}",
   "ui.message.job.stopped": "Background command stopped after {{took}}",
