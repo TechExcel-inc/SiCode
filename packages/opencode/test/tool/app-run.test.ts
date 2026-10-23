@@ -19,6 +19,8 @@ describe("run commands", () => {
     expect(Project.get(project.id)?.commands).toEqual({ start: "bun i", dev: "bun dev", port: 3000 })
     await Project.update({ projectID: project.id, commands: { dev: "", build: "bun run build" } })
     expect(Project.get(project.id)?.commands).toEqual({ start: "bun i", port: 3000, build: "bun run build" })
+    await Project.update({ projectID: project.id, commands: { port: 0 } })
+    expect(Project.get(project.id)?.commands).toEqual({ start: "bun i", build: "bun run build" })
   })
 
   test("the agent is told which run commands the project has", async () => {

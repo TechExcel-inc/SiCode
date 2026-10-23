@@ -5,6 +5,8 @@ import { createSignal } from "solid-js"
 const [actions, setActions] = createSignal<{
   go: (directory: string) => void
   choose: () => void
+  /** Opens Edit project (name, icon, run commands) for the current project. */
+  edit: () => void
   current: () => string | undefined
 }>()
 

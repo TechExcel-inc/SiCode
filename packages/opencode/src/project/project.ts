@@ -369,11 +369,11 @@ export namespace Project {
 
       const update = Effect.fn("Project.update")(function* (input: UpdateInput) {
         // Commands merge with the saved ones, so a client that only knows some of them keeps the rest;
-        // an empty value clears that command.
+        // an empty value (or port 0) clears that command.
         const saved = input.commands ? (yield* get(input.projectID))?.commands : undefined
         const commands = input.commands
           ? Object.fromEntries(
-              Object.entries({ ...saved, ...input.commands }).filter(([, value]) => value !== "" && value !== undefined),
+              Object.entries({ ...saved, ...input.commands }).filter(([, value]) => value !== "" && value !== 0 && value !== undefined),
             )
           : undefined
         const result = yield* db((d) =>

@@ -2420,6 +2420,10 @@ export default function Layout(props: ParentProps) {
   setProjectActions({
     go: (directory) => void navigateToProject(directory),
     choose: () => void chooseProject(),
+    edit: () => {
+      const item = currentProject()
+      if (item) showEditProjectDialog(item)
+    },
     current: () => currentProject()?.worktree,
   })
 

@@ -1,3 +1,4 @@
+import { suggestRun } from "@/utils/run-suggest"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -29,6 +30,11 @@ export function DialogEditProject(props: { project: LocalProject }) {
     color: props.project.icon?.color || "pink",
     iconUrl: props.project.icon?.override || "",
     startup: props.project.commands?.start ?? "",
+    dev: props.project.commands?.dev ?? "",
+    port: props.project.commands?.port ? String(props.project.commands.port) : "",
+    build: props.project.commands?.build ?? "",
+    install: props.project.commands?.install ?? "",
+    suggesting: false,
     dragOver: false,
     iconHover: false,
   })
@@ -71,10 +77,44 @@ export function DialogEditProject(props: { project: LocalProject }) {
     setStore("iconUrl", "")
   }
 
+  // Fills the empty Run fields from the project's own files; what the person typed is kept.
+  const suggest = async () => {
+    if (store.suggesting) return
+    setStore("suggesting", true)
+    const file = (path: string) =>
+      globalSDK.client.file
+        .read({ directory: props.project.worktree, path })
+        .then((res) => (res.data as { content?: string } | undefined)?.content ?? "")
+        .catch(() => "")
+    const [launch, pkg, ...locks] = await Promise.all(
+      [".claude/launch.json", "package.json", "bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock"].map(file),
+    )
+    const found = suggestRun({
+      launch,
+      pkg,
+      locks: ["bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock"].filter((_, index) => !!locks[index]),
+    })
+    setStore({
+      suggesting: false,
+      dev: store.dev || found.dev || "",
+      port: store.port || (found.port ? String(found.port) : ""),
+      build: store.build || found.build || "",
+      install: store.install || found.install || "",
+    })
+  }
+
+  // Every run command goes with each save; an empty one (or port 0) clears it on the server.
+  const commands = () => ({
+    start: store.startup.trim(),
+    dev: store.dev.trim(),
+    port: Number(store.port.trim()) || 0,
+    build: store.build.trim(),
+    install: store.install.trim(),
+  })
+
   const saveMutation = useMutation(() => ({
     mutationFn: async () => {
       const name = store.name.trim() === folderName() ? "" : store.name.trim()
-      const start = store.startup.trim()
 
       if (props.project.id && props.project.id !== "global") {
         await globalSDK.client.project.update({
@@ -82,7 +122,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
           directory: props.project.worktree,
           name,
           icon: { color: store.color, override: store.iconUrl },
-          commands: { start },
+          commands: commands(),
         })
         globalSync.project.icon(props.project.worktree, store.iconUrl || undefined)
         dialog.close()
@@ -92,7 +132,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
       globalSync.project.meta(props.project.worktree, {
         name,
         icon: { color: store.color, override: store.iconUrl || undefined },
-        commands: { start: start || undefined },
+        commands: Object.fromEntries(Object.entries(commands()).filter(([, value]) => !!value)),
       })
       dialog.close()
     },
@@ -239,6 +279,64 @@ export function DialogEditProject(props: { project: LocalProject }) {
             spellcheck={false}
             class="max-h-14 w-full overflow-y-auto font-mono text-xs"
           />
+
+          <div data-component="project-run" class="flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex flex-col">
+                <span class="text-12-medium text-text-strong">{language.t("dialog.project.edit.run")}</span>
+                <span class="text-12-regular text-text-weak">{language.t("dialog.project.edit.run.description")}</span>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="small"
+                data-action="project-run-suggest"
+                disabled={store.suggesting}
+                onClick={() => void suggest()}
+              >
+                {language.t("dialog.project.edit.run.suggest")}
+              </Button>
+            </div>
+            <div class="flex gap-2 items-end">
+              <TextField
+                type="text"
+                label={language.t("dialog.project.edit.run.dev")}
+                placeholder="bun dev"
+                value={store.dev}
+                onChange={(v) => setStore("dev", v)}
+                spellcheck={false}
+                class="flex-1 min-w-0 font-mono text-xs"
+              />
+              <TextField
+                type="text"
+                inputMode="numeric"
+                label={language.t("dialog.project.edit.run.port")}
+                placeholder="3000"
+                value={store.port}
+                onChange={(v) => setStore("port", v.replace(/\D/g, "").slice(0, 5))}
+                class="w-20 shrink-0 font-mono text-xs"
+              />
+            </div>
+            <TextField
+              type="text"
+              label={language.t("dialog.project.edit.run.build")}
+              placeholder="bun run build"
+              value={store.build}
+              onChange={(v) => setStore("build", v)}
+              spellcheck={false}
+              class="w-full font-mono text-xs"
+            />
+            <TextField
+              type="text"
+              label={language.t("dialog.project.edit.run.install")}
+              description={language.t("dialog.project.edit.run.install.description")}
+              placeholder="bash scripts/install-and-open.sh"
+              value={store.install}
+              onChange={(v) => setStore("install", v)}
+              spellcheck={false}
+              class="w-full font-mono text-xs"
+            />
+          </div>
         </div>
 
         <div class="flex justify-end gap-2">

@@ -306,6 +306,17 @@ export function SessionHeader() {
                     >
                       {language.t("command.project.open")}
                     </button>
+                    <button
+                      type="button"
+                      data-action="header-project-edit"
+                      class="w-full px-2 py-1.5 rounded-md text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+                      onClick={() => {
+                        close()
+                        projectActions()?.edit()
+                      }}
+                    >
+                      {language.t("dialog.project.edit.open")}
+                    </button>
                   </div>
                 )}
               />

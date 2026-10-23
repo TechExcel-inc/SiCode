@@ -337,6 +337,7 @@ export const dict = {
   "dialog.server.current": "目前伺服器",
   "dialog.server.status.default": "預設",
 
+  "dialog.project.edit.open": "編輯專案…",
   "dialog.project.edit.title": "編輯專案",
   "dialog.project.edit.name": "名稱",
   "dialog.project.edit.icon": "圖示",
@@ -346,6 +347,14 @@ export const dict = {
   "dialog.project.edit.color": "顏色",
   "dialog.project.edit.color.select": "選擇{{color}}顏色",
 
+  "dialog.project.edit.run": "執行",
+  "dialog.project.edit.run.description": "AI 如何啟動、建置和安裝此應用程式。",
+  "dialog.project.edit.run.suggest": "建議指令",
+  "dialog.project.edit.run.dev": "啟動開發伺服器",
+  "dialog.project.edit.run.port": "連接埠",
+  "dialog.project.edit.run.build": "建置應用程式",
+  "dialog.project.edit.run.install": "安裝並重新開啟",
+  "dialog.project.edit.run.install.description": "把新建置放到位並開啟它。",
   "dialog.project.edit.worktree.startup": "工作區啟動腳本",
   "dialog.project.edit.worktree.startup.description": "在建立新的工作區 (worktree) 後執行。",
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",
