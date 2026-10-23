@@ -636,7 +636,7 @@
   }
 
   [data-slot="collapsible-arrow"] {
-    color: var(--icon-weaker);
+    color: var(--icon-strong-base);
     cursor: pointer;
   }
 }

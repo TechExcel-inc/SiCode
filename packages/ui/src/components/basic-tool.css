@@ -224,12 +224,8 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--icon-weak);
+    color: var(--icon-base);
     margin-left: auto;
-    opacity: 0;
-    transition:
-      opacity 0.15s ease,
-      color 0.15s ease;
   }
 
   [data-component="task-tool-title"] {
@@ -252,8 +248,5 @@
     border-color: var(--border-weak-base, rgba(255, 255, 255, 0.08));
     background: color-mix(in srgb, var(--background-stronger) 88%, transparent);
 
-    [data-component="task-tool-action"] {
-      opacity: 1;
-    }
   }
 }

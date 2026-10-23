@@ -24,23 +24,17 @@
     user-select: none;
     color: var(--text-base);
 
+    /* Always shown at full strength: the arrow is how you open or fold the results. */
     [data-slot="collapsible-arrow"] {
-      opacity: 0;
-      transition: opacity 0.15s ease;
-      will-change: opacity;
       transform: translateZ(0);
     }
 
     [data-slot="collapsible-arrow-icon"] {
       display: inline-flex;
-      color: var(--icon-weaker);
+      color: var(--icon-strong-base);
       transform: translateZ(0) rotate(-90deg);
       transition: transform 0.15s ease;
       will-change: transform;
-    }
-
-    &:hover [data-slot="collapsible-arrow"] {
-      opacity: 1;
     }
 
     /* text-12-medium */
@@ -78,10 +72,6 @@
   }
 
   [data-slot="collapsible-trigger"][aria-expanded="true"] {
-    [data-slot="collapsible-arrow"] {
-      opacity: 1;
-    }
-
     [data-slot="collapsible-arrow-icon"] {
       transform: translateZ(0) rotate(0deg);
     }
