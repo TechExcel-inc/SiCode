@@ -12,7 +12,7 @@ import { Brand } from "../brand"
 import { Database, NotFoundError, eq, and, gte, isNull, desc, like, inArray, lt } from "../storage/db"
 import { SyncEvent } from "../sync"
 import type { SQL } from "../storage/db"
-import { PartTable, SessionTable } from "./session.sql"
+import { MessageTable, PartTable, SessionTable } from "./session.sql"
 import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import { Log } from "../util/log"
@@ -32,6 +32,9 @@ import { Permission } from "@/permission"
 import { Global } from "@/global"
 import { Effect, Layer, Option, Context } from "effect"
 import { makeRuntime } from "@/effect/run-service"
+
+/** When this process started; sessions from earlier runs can't be in use. */
+const started = Math.floor(performance.timeOrigin)
 
 export namespace Session {
   const log = Log.create({ service: "session" })
@@ -370,6 +373,11 @@ export namespace Session {
     readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<MessageV2.WithParts[]>
     readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
     readonly remove: (sessionID: SessionID) => Effect.Effect<void>
+    /**
+     * Deletes this project's sessions that have no messages and no child sessions and were last
+     * updated before `before` (by default, when this process started, so nothing in use now). Returns how many.
+     */
+    readonly sweep: (before?: number) => Effect.Effect<number>
     readonly updateMessage: <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
     readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
     readonly removePart: (input: {
@@ -498,6 +506,25 @@ export namespace Session {
         } catch (e) {
           log.error(e)
         }
+      })
+
+      const sweep: Interface["sweep"] = Effect.fn("Session.sweep")(function* (before = started) {
+        const project = Instance.project.id
+        const rows = yield* db((d) =>
+          d
+            .select({ id: SessionTable.id })
+            .from(SessionTable)
+            .leftJoin(MessageTable, eq(MessageTable.session_id, SessionTable.id))
+            .where(
+              and(eq(SessionTable.project_id, project), isNull(MessageTable.id), lt(SessionTable.time_updated, before)),
+            )
+            .all(),
+        )
+        const ids = [...new Set(rows.map((row) => row.id))]
+        const empty = yield* Effect.filter(ids, (id) => children(id).pipe(Effect.map((kids) => kids.length === 0)))
+        yield* Effect.forEach(empty, (id) => remove(id), { discard: true })
+        if (empty.length > 0) log.info("removed empty sessions", { count: empty.length })
+        return empty.length
       })
 
       const updateMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
@@ -724,6 +751,7 @@ export namespace Session {
         messages,
         children,
         remove,
+        sweep,
         updateMessage,
         removeMessage,
         removePart,
@@ -894,6 +922,7 @@ export namespace Session {
 
   export const children = fn(SessionID.zod, (id) => runPromise((svc) => svc.children(id)))
   export const remove = fn(SessionID.zod, (id) => runPromise((svc) => svc.remove(id)))
+  export const sweep = (before?: number) => runPromise((svc) => svc.sweep(before))
   export async function updateMessage<T extends MessageV2.Info>(msg: T): Promise<T> {
     MessageV2.Info.parse(msg)
     return runPromise((svc) => svc.updateMessage(msg))

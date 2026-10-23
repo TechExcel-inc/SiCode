@@ -1933,6 +1933,10 @@ export type SessionOneTimeDone = {
    * True when the origin session was gone and a new session was created instead
    */
   fallback: boolean
+  /**
+   * True when the one-time session had no messages and was deleted instead of closed
+   */
+  removed: boolean
 }
 
 export type ContextSizeItem = {

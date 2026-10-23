@@ -38,6 +38,7 @@ const OneTimeDone = z
     session: Session.Info,
     targetSessionID: SessionID.zod,
     fallback: z.boolean().describe("True when the origin session was gone and a new session was created instead"),
+    removed: z.boolean().describe("True when the one-time session had no messages and was deleted instead of closed"),
   })
   .meta({ ref: "SessionOneTimeDone" })
 

@@ -121,6 +121,17 @@ export namespace SessionOneTime {
         ? usable
         : yield* sessions.create({ directory: session.directory, workspaceID: session.workspaceID })
 
+    // Nothing was asked in it: drop the session instead of keeping an empty closed record.
+    if ((yield* sessions.messages({ sessionID: session.id, limit: 1 })).length === 0) {
+      yield* sessions.remove(session.id)
+      return {
+        session: { ...session, oneTime: { ...one, status: "closed" as const, targetSessionID: target.id } },
+        targetSessionID: target.id,
+        fallback: input.goTo === "origin" && !usable,
+        removed: true,
+      }
+    }
+
     const card = input.addResult ? yield* result(target.id, session, agents) : undefined
     const next: Session.OneTime = {
       ...one,
@@ -134,6 +145,7 @@ export namespace SessionOneTime {
       session: { ...session, oneTime: next },
       targetSessionID: target.id,
       fallback: input.goTo === "origin" && !usable,
+      removed: false,
     }
   })
 

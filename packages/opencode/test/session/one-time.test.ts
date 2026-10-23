@@ -87,6 +87,9 @@ async function within(fn: () => Promise<void>, url = "http://localhost:1") {
 const open = (input: SessionOneTime.OpenInput) => AppRuntime.runPromise(SessionOneTime.open(input))
 const done = (input: SessionOneTime.DoneInput) => AppRuntime.runPromise(SessionOneTime.done(input))
 const reopen = (id: Session.Info["id"]) => AppRuntime.runPromise(SessionOneTime.reopen(id))
+// A question without a model turn, so the session is no longer empty.
+const ask = (id: Session.Info["id"]) =>
+  SessionPrompt.prompt({ sessionID: id, agent: "build", noReply: true, parts: [{ type: "text", text: "question" }] })
 
 describe("one-time session data", () => {
   test("open stores the lock and the origin, and it survives a reload", async () => {
@@ -225,6 +228,7 @@ describe("one-time model lock", () => {
   test("a closed session refuses a new turn", async () => {
     await within(async () => {
       const session = await open({ model: premium })
+      await ask(session.id)
       await done({ sessionID: session.id, goTo: "new", addResult: false })
       await expect(
         SessionPrompt.prompt({ sessionID: session.id, agent: "build", parts: [{ type: "text", text: "again" }] }),
@@ -301,9 +305,11 @@ describe("one-time done and reopen", () => {
     await within(async () => {
       const origin = await Session.create({})
       const session = await open({ originSessionID: origin.id, model: premium })
+      await ask(session.id)
       const result = await done({ sessionID: session.id, goTo: "origin", addResult: true })
 
       expect(result.targetSessionID).toBe(origin.id)
+      expect(result.removed).toBe(false)
       expect(result.fallback).toBe(false)
       expect(result.session.oneTime?.status).toBe("closed")
 
@@ -321,6 +327,7 @@ describe("one-time done and reopen", () => {
     await within(async () => {
       const origin = await Session.create({})
       const session = await open({ originSessionID: origin.id, model: premium })
+      await ask(session.id)
       await Session.remove(origin.id)
       const result = await done({ sessionID: session.id, goTo: "origin", addResult: true })
       expect(result.fallback).toBe(true)
@@ -332,6 +339,7 @@ describe("one-time done and reopen", () => {
   test("done twice returns the same target", async () => {
     await within(async () => {
       const session = await open({ model: premium })
+      await ask(session.id)
       const first = await done({ sessionID: session.id, goTo: "new", addResult: false })
       const second = await done({ sessionID: session.id, goTo: "new", addResult: false })
       expect(second.targetSessionID).toBe(first.targetSessionID)
@@ -347,6 +355,7 @@ describe("one-time done and reopen", () => {
         ),
       )
       expect(SessionOneTime.blocked(await Session.get(session.id))).toBeDefined()
+      await ask(session.id)
       await done({ sessionID: session.id, goTo: "new", addResult: false })
       const again = await reopen(session.id)
       expect(again.oneTime?.limit).toBe(4)
@@ -380,11 +389,55 @@ describe("one-time done and reopen", () => {
   test("reopen lets the session take turns again", async () => {
     await within(async () => {
       const session = await open({ model: premium })
+      await ask(session.id)
       await done({ sessionID: session.id, goTo: "new", addResult: false })
       const again = await reopen(session.id)
       expect(again.oneTime?.status).toBe("open")
       expect(again.oneTime?.time.closed).toBeUndefined()
       expect(SessionOneTime.blocked(await Session.get(session.id))).toBeUndefined()
+    })
+  })
+})
+
+describe("empty sessions are not kept", () => {
+  test("done deletes a one-time session nobody asked anything in", async () => {
+    await within(async () => {
+      const origin = await Session.create({})
+      const session = await open({ originSessionID: origin.id, model: premium })
+      const result = await done({ sessionID: session.id, goTo: "origin", addResult: true })
+      expect(result.removed).toBe(true)
+      expect(result.targetSessionID).toBe(origin.id)
+      await expect(Session.get(session.id)).rejects.toThrow()
+      // no result card for a session that produced nothing
+      expect(await Session.messages({ sessionID: origin.id })).toHaveLength(0)
+    })
+  })
+
+  test("done & new session also drops an empty one-time session", async () => {
+    await within(async () => {
+      const session = await open({ model: premium })
+      const result = await done({ sessionID: session.id, goTo: "new", addResult: true })
+      expect(result.removed).toBe(true)
+      await expect(Session.get(session.id)).rejects.toThrow()
+      expect((await Session.get(result.targetSessionID)).id).toBe(result.targetSessionID)
+    })
+  })
+
+  test("sweep deletes sessions without messages and keeps the rest", async () => {
+    await within(async () => {
+      const empty = await Session.create({})
+      const used = await Session.create({})
+      await ask(used.id)
+      const parent = await Session.create({})
+      const child = await Session.create({ parentID: parent.id })
+      await ask(child.id)
+      // made in this run, so only an explicit cutoff after them makes them old enough
+      expect(await Session.sweep()).toBe(0)
+      expect(await Session.sweep(Date.now() + 1)).toBe(1)
+      await expect(Session.get(empty.id)).rejects.toThrow()
+      expect((await Session.get(used.id)).id).toBe(used.id)
+      // a session whose child has the conversation stays
+      expect((await Session.get(parent.id)).id).toBe(parent.id)
     })
   })
 })

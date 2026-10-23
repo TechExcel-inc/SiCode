@@ -4,6 +4,7 @@ import { LSP } from "../lsp"
 import { File } from "../file"
 import { Snapshot } from "../snapshot"
 import { Project } from "./project"
+import { Session } from "../session"
 import { Vcs } from "./vcs"
 import { Bus } from "../bus"
 import { Command } from "../command"
@@ -23,6 +24,8 @@ export const InstanceBootstrap = Effect.gen(function* () {
   yield* FileWatcher.Service.use((svc) => svc.init()).pipe(Effect.forkDetach)
   yield* Vcs.Service.use((svc) => svc.init()).pipe(Effect.forkDetach)
   yield* Snapshot.Service.use((svc) => svc.init()).pipe(Effect.forkDetach)
+  // Nothing is in use while the project starts, so sessions without a single message can go.
+  yield* Effect.promise(() => Session.sweep().catch(() => 0))
 
   yield* Bus.Service.use((svc) =>
     svc.subscribeCallback(Command.Event.Executed, async (payload) => {
