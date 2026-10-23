@@ -20,7 +20,7 @@ import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 
 /** The other projects, so the agent can tell when work belongs in another project's session. */
-function others() {
+export function others() {
   const related = Related.dirs()
   const linked = related.length
     ? [

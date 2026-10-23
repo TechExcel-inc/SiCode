@@ -3,7 +3,8 @@ import path from "path"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
-import { stepGuidance, SystemPrompt, visuals } from "../../src/session/system"
+import { others, stepGuidance, SystemPrompt, visuals } from "../../src/session/system"
+import { Project } from "../../src/project/project"
 import { provideInstance, tmpdir } from "../fixture/fixture"
 
 function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
@@ -84,4 +85,20 @@ description: ${description}
       process.env.OPENCODE_TEST_HOME = home
     }
   })
+
+  test("names the related projects, which the agent may change without project_switch", async () => {
+    await using ui = await tmpdir({ git: true })
+    await using server = await tmpdir({ git: true })
+    const { project } = await Project.fromDirectory(ui.path)
+    await Project.update({ projectID: project.id, related: [server.path] })
+    await Instance.provide({
+      directory: ui.path,
+      fn: async () => {
+        const text = others().join("\n")
+        expect(text).toContain(`  - ${path.basename(server.path)}: ${server.path}`)
+        expect(text).toContain("without project_switch")
+      },
+    })
+  })
+
 })

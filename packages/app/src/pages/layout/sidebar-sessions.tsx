@@ -9,10 +9,9 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { DialogSearch } from "@/components/dialog-search"
-import { RecentProjectPicker } from "@/components/recent-project-picker"
+import { ProjectLinks } from "@/components/project-links"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useCowork } from "@/context/cowork"
-import { usePlatform } from "@/context/platform"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -40,21 +39,6 @@ export const AllSessions = (props: {
   const language = useLanguage()
   const layout = useLayout()
   const cowork = useCowork()
-  const platform = usePlatform()
-  // Any folder on this computer: the system folder picker, or the app's own when there is none.
-  const pickFolder = async () => {
-    if (platform.openDirectoryPickerDialog) {
-      const picked = await platform.openDirectoryPickerDialog({ title: language.t("search.related.openFolder") })
-      return (Array.isArray(picked) ? picked[0] : picked) ?? undefined
-    }
-    const { DialogSelectDirectory } = await import("@/components/dialog-select-directory")
-    return new Promise<string | undefined>((done) =>
-      dialog.show(
-        () => <DialogSelectDirectory onSelect={(picked) => done((Array.isArray(picked) ? picked[0] : picked) ?? undefined)} />,
-        () => done(undefined),
-      ),
-    )
-  }
   const params = useParams()
   const dialog = useDialog()
   const [state, setState] = createStore({
@@ -151,48 +135,28 @@ export const AllSessions = (props: {
             {/* Related Projects sits right after the current project's sessions, above the related groups. */}
             <Show when={index() === 0 && props.current()}>
               {(current) => (
-                <RecentProjectPicker
-                  title={language.t("search.related.select")}
-                  empty={language.t("search.related.none")}
-                  exclude={props.projects().map((item) => item.worktree)}
-                  skip={[cowork.projectOf(current().worktree) ?? 0, ...cowork.relatedIds(current().worktree)]}
-                  onPick={(item) =>
-                    void (item.worktree
-                      ? cowork.relateFolder(current().worktree, item.worktree)
-                      : cowork.relateEntry(current().worktree, item))
-                  }
-                  footer={(close) => (
-                    <div class="border-t border-border-weak-base pt-1">
-                      <button
-                        type="button"
-                        data-action="related-open-folder"
-                        class="w-full px-2 py-1.5 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
-                        onClick={() => {
-                          close()
-                          void pickFolder().then((dir) => {
-                            if (dir) return cowork.relateFolder(current().worktree, dir)
-                          })
-                        }}
-                      >
-                        <Icon name="folder-add-left" size="small" class="shrink-0 text-icon-base" />
-                        {language.t("search.related.openFolder")}
-                      </button>
-                    </div>
-                  )}
+                <ProjectLinks
+                  root={current().worktree}
+                  place={props.mobile ? "mobile" : "desktop"}
                   triggerProps={{
                     class:
-                      "group/related w-[calc(100%-2px)] ml-0.5 h-8 pl-1.5 pr-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
+                      "w-[calc(100%-2px)] ml-0.5 h-8 pl-1.5 pr-1 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
                     "data-action": "session-related-project",
+                    "aria-label": language.t("links.menu"),
                   }}
                   trigger={
                     <>
-                      <Icon name="folder-add-left" size="small" class="shrink-0 text-icon-base" />
-                      <span class="truncate">{language.t("search.related.label")}</span>
-                      <Icon
-                        name="chevron-down"
-                        size="small"
-                        class="shrink-0 text-text-strong [&_path]:stroke-[1.75]"
-                      />
+                      <Icon name="folder-add-left" size="small" class="shrink-0 text-text-strong" />
+                      <span class="truncate">{language.t("links.row")}</span>
+                      <Show when={cowork.relatedDirs(current().worktree).length > 0}>
+                        <span class="shrink-0 px-1.5 rounded-full bg-surface-interactive-base text-11-medium text-text-interactive-base">
+                          {cowork.relatedDirs(current().worktree).length}
+                        </span>
+                      </Show>
+                      {/* Always shown: it is the way into the menu, so it never waits for a hover. */}
+                      <span class="ml-auto shrink-0 size-6 rounded-md flex items-center justify-center text-text-strong">
+                        <Icon name="dot-grid" size="small" class="text-text-strong [&_path]:stroke-[1.75]" />
+                      </span>
                     </>
                   }
                 />

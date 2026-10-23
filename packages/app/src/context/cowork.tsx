@@ -275,8 +275,9 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       worktree: folderOf(item.projectId) ?? remotes[`${item.repoOwner}/${item.repoName}`.toLowerCase()],
     })
 
-    // The related folders the server keeps on its project: the agent reads and changes them in this
-    // project's sessions, and they also hold folders EAD Pilot cannot save (no GitHub repository).
+    // The related projects' folders the server keeps on its project: the agent reads and changes them
+    // from this project's sessions, and the list also holds folders EAD Pilot cannot save (no GitHub
+    // repository). A related folder is often another project's primary repo.
     const local = (root: string) => sync.data.project.find((item) => workspaceKey(item.worktree) === workspaceKey(root))
     const kept = (root: string) => local(root)?.related ?? []
     const keep = async (root: string, dirs: string[]) => {
