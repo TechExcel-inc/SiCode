@@ -36,6 +36,7 @@ import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { type UiI18n, useI18n } from "../context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
+import { OptionImage } from "./option-image"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Card } from "./card"
@@ -1468,13 +1469,18 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
           <Match when={part().state.status === "error" && (part().state as any).error}>
             {(error) => {
               const cleaned = error().replace("Error: ", "")
+              // A dismissed question keeps its choices (and their pictures) in the conversation.
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
                 return (
-                  <div style="width: 100%; display: flex; justify-content: flex-end;">
-                    <span class="text-13-regular text-text-weak cursor-default">
-                      {i18n.t("ui.messagePart.questions.dismissed")}
-                    </span>
-                  </div>
+                  <Dynamic
+                    component={render()}
+                    input={input()}
+                    tool={part().tool}
+                    metadata={{ ...partMetadata(), dismissed: true }}
+                    status={part().state.status}
+                    hideDetails={props.hideDetails}
+                    defaultOpen={props.defaultOpen}
+                  />
                 )
               }
               return (
@@ -2406,39 +2412,61 @@ ToolRegistry.register({
     const questions = createMemo(() => (props.input.questions ?? []) as QuestionInfo[])
     const answers = createMemo(() => (props.metadata.answers ?? []) as QuestionAnswer[])
     const completed = createMemo(() => answers().length > 0)
+    const dismissed = () => props.metadata.dismissed === true
+    const pictures = createMemo(() => questions().some((q) => q.options?.some((option) => !!option.image)))
 
     const subtitle = createMemo(() => {
       const count = questions().length
       if (count === 0) return ""
+      if (dismissed()) return i18n.t("ui.messagePart.questions.dismissed")
       if (completed()) return i18n.t("ui.question.subtitle.answered", { count })
       return `${count} ${i18n.t(count > 1 ? "ui.common.question.other" : "ui.common.question.one")}`
     })
 
+    // The choices stay part of the conversation whether they were answered or dismissed; pictured ones open.
     return (
       <BasicTool
         {...props}
-        defaultOpen={completed()}
+        defaultOpen={completed() || pictures()}
         icon="bubble-5"
         trigger={{
           title: i18n.t("ui.tool.questions"),
           subtitle: subtitle(),
         }}
       >
-        <Show when={completed()}>
-          <div data-component="question-answers">
-            <For each={questions()}>
-              {(q, i) => {
-                const answer = () => answers()[i()] ?? []
-                return (
-                  <div data-slot="question-answer-item">
-                    <div data-slot="question-text">{q.question}</div>
-                    <div data-slot="answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
-                  </div>
-                )
-              }}
-            </For>
-          </div>
-        </Show>
+        <div data-component="question-answers">
+          <For each={questions()}>
+            {(q, i) => {
+              const answer = () => answers()[i()] ?? []
+              const own = () => answer().filter((value) => !q.options?.some((option) => option.label === value))
+              return (
+                <div data-slot="question-answer-item">
+                  <div data-slot="question-text">{q.question}</div>
+                  <Show when={(q.options ?? []).length > 0}>
+                    <div data-slot="question-choices" data-pictures={pictures() || undefined}>
+                      <For each={q.options}>
+                        {(option) => (
+                          <div data-slot="question-choice" data-picked={answer().includes(option.label) || undefined}>
+                            <Show when={option.image}>
+                              {(image) => <OptionImage image={image()} alt={option.label} />}
+                            </Show>
+                            <span data-slot="question-choice-label">{option.label}</span>
+                            <Show when={option.description}>
+                              <span data-slot="question-choice-description">{option.description}</span>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                  <Show when={completed() && (own().length > 0 || answer().length === 0)}>
+                    <div data-slot="answer-text">{own().join(", ") || i18n.t("ui.question.answer.none")}</div>
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
+        </div>
       </BasicTool>
     )
   },

@@ -1144,6 +1144,46 @@
     [data-slot="answer-text"] {
       color: var(--text-strong);
     }
+
+    [data-slot="question-choices"] {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+
+      &[data-pictures] {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px;
+      }
+    }
+
+    [data-slot="question-choice"] {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px;
+      border: 1px solid var(--border-weak-base);
+      border-radius: var(--radius-md);
+
+      [data-component="option-image"] {
+        max-height: 220px;
+      }
+
+      &[data-picked] {
+        border-color: var(--border-interactive-base);
+        background: var(--surface-interactive-weak);
+      }
+    }
+
+    [data-slot="question-choice-label"] {
+      color: var(--text-strong);
+    }
+
+    [data-slot="question-choice-description"] {
+      color: var(--text-weak);
+      font-size: 12px;
+    }
   }
 }
 
