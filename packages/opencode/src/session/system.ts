@@ -79,6 +79,23 @@ export function stepGuidance(client: string) {
   ]
 }
 
+/**
+ * Check before claiming: like Claude Code, the agent proves a change with the project's own tests (and,
+ * once the app can be started and looked at, on screen) and says plainly what it could not check.
+ */
+export function verification() {
+  return [
+    [
+      `Check your work before you say it is done:`,
+      `  - After changing code, run the tests that cover the change with the project's own test command: one targeted test file for a small change, the full suite before a commit. Run the project's type check too when it has one.`,
+      `  - Report the result in one line ("Tests: 24 passed", or the failing test and its error). If a check fails, fix it or say so; do not end with "done" while a check fails.`,
+      `  - When something cannot be checked (no tests cover it, it needs a sign-in, or it is a visible change you cannot look at), say exactly what was not checked instead of claiming it works.`,
+      `  - Keep checks in proportion: do not run a long suite for a one-line text change.`,
+      `Never write "fixed", "works" or "done" without a test result or another check behind it.`,
+    ].join("\n"),
+  ]
+}
+
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
     if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -126,6 +143,7 @@ export namespace SystemPrompt {
             ...others(),
             ...visuals(Flag.OPENCODE_CLIENT),
             ...stepGuidance(Flag.OPENCODE_CLIENT),
+            ...verification(),
           ]
         },
 
