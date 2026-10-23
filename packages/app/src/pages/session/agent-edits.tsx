@@ -356,43 +356,58 @@ export function AgentEdits(props: {
     return msg?.role === "assistant" ? `${msg.id}:${msg.time.completed ?? ""}` : ""
   })
   const usesPlan = createMemo(() => messages().some((msg) => msg.role === "assistant" && msg.providerID === PLAN))
-  // A failed read (EAD Pilot not reachable yet, as right after the app starts) is tried again a few
-  // times and then once a minute; until it answers, Summary says it is checking, never "Not priced".
+  // Read in the background with plain signals, never a resource: a resource the panel reads before its
+  // first answer holds the whole session page on "Loading" until EAD Pilot replies (or times out).
+  // A failed read is tried again a few times and then once a minute; until it answers, Summary says
+  // it is checking, never "Not priced".
+  const [stored, setStored] = createSignal<{ session: string; cost: CoworkGatewayCost }>()
   const [pilotFailed, setPilotFailed] = createSignal(false)
-  const [kept, setKept] = createSignal<CoworkGatewayCost>()
-  const [pilotCost, pilotCtl] = createResource(
-    () =>
-      usesPlan() && props.session && cowork.api()
-        ? { session: props.session, reply: lastReply(), token: ead.token() }
-        : undefined,
-    async (input) => {
-      for (const wait of [0, 2_000, 5_000, 10_000]) {
-        if (wait) await new Promise((done) => setTimeout(done, wait))
-        const cost = await cowork
-          .api()
-          ?.gatewayCost(input.session)
-          .catch(() => undefined)
-        if (cost) {
-          setPilotFailed(false)
-          setKept(cost)
-          return cost
-        }
-      }
-      setPilotFailed(true)
-      return kept()
-    },
+  const [pilotTry, setPilotTry] = createSignal(0)
+  const pilot = createMemo(() => {
+    const value = stored()
+    return value && value.session === props.session ? value.cost : undefined
+  })
+  createEffect(
+    on(
+      () =>
+        usesPlan() && props.session && cowork.api()
+          ? { session: props.session, reply: lastReply(), token: ead.token(), attempt: pilotTry() }
+          : undefined,
+      (input) => {
+        if (!input) return
+        const state = { live: true }
+        onCleanup(() => (state.live = false))
+        void (async () => {
+          for (const wait of [0, 2_000, 5_000, 10_000]) {
+            if (wait) await new Promise((done) => setTimeout(done, wait))
+            if (!state.live) return
+            const cost = await cowork
+              .api()
+              ?.gatewayCost(input.session)
+              .catch(() => undefined)
+            if (!state.live) return
+            if (cost) {
+              setPilotFailed(false)
+              setStored({ session: input.session, cost })
+              return
+            }
+          }
+          setPilotFailed(true)
+        })()
+      },
+    ),
   )
   createEffect(
     on(minute, () => {
-      if (pilotFailed() && !pilotCost.loading) void pilotCtl.refetch()
+      if (pilotFailed()) setPilotTry((x) => x + 1)
     }),
   )
-  const pilotWaiting = createMemo(() => usesPlan() && !pilotCost.latest)
+  const pilotWaiting = createMemo(() => usesPlan() && !pilot())
   // For EAD plan replies, EAD Pilot's records are the source of truth for time, tokens and cost.
   const recorded = createMemo(() => {
-    const pilot = pilotCost.latest
-    if (!usesPlan() || !pilot || pilot.requests === 0) return undefined
-    const spans = (pilot.entries ?? []).flatMap((entry): [number, number][] =>
+    const value = pilot()
+    if (!usesPlan() || !value || value.requests === 0) return undefined
+    const spans = (value.entries ?? []).flatMap((entry): [number, number][] =>
       entry.startedAt && entry.endedAt ? [[Date.parse(entry.startedAt), Date.parse(entry.endedAt)]] : [],
     )
     return { provider: PLAN, spans }
@@ -411,7 +426,7 @@ export function AgentEdits(props: {
           messages(),
           messages().flatMap((msg) => sync.data.part[msg.id] ?? []),
           tasks(),
-          pilotCost.latest?.entries ?? [],
+          pilot()?.entries ?? [],
         )
       : [],
   )
@@ -421,8 +436,8 @@ export function AgentEdits(props: {
   const signIn = () => openSignIn()
   const costText = () => {
     if (signedOut()) return language.t("agent.summary.signIn")
-    const pilot = pilotCost.latest
-    if (pilot && pilot.requests > 0) return money(summary().cost + pilot.costMicroUsd / 1_000_000)
+    const value = pilot()
+    if (value && value.requests > 0) return money(summary().cost + value.costMicroUsd / 1_000_000)
     if (pilotWaiting()) return language.t(pilotFailed() ? "agent.summary.costRetry" : "agent.summary.costChecking")
     return summary().priced ? money(summary().cost) : language.t("agent.summary.notPriced")
   }
@@ -550,7 +565,7 @@ export function AgentEdits(props: {
             class="w-full h-8 flex items-center gap-2.5 min-w-0 text-left rounded-md hover:bg-surface-base-hover"
             onClick={() => {
               if (signedOut()) return signIn()
-              if (pilotWaiting() && pilotFailed()) return void pilotCtl.refetch()
+              if (pilotWaiting() && pilotFailed()) return void setPilotTry((x) => x + 1)
               setCostOpen(!costOpen())
             }}
           >
@@ -568,7 +583,7 @@ export function AgentEdits(props: {
           </button>
           <Show when={costOpen()}>
             <div data-component="agent-cost-breakdown" class="pl-7 pb-1 flex flex-col gap-1">
-              <For each={pilotCost.latest?.models ?? []}>
+              <For each={pilot()?.models ?? []}>
                 {(row) => (
                   <div class="grid grid-cols-[1fr_auto] gap-x-2 text-12-regular" title={`${row.providerId} / ${row.modelId}`}>
                     <span class="min-w-0 truncate text-text-strong">
@@ -629,8 +644,8 @@ export function AgentEdits(props: {
                       <AgentCostReport
                         session={sync.session.get(props.session!)?.title || props.session!}
                         items={costItems()}
-                        total={(pilotCost.latest?.costMicroUsd ?? 0) / 1_000_000}
-                        untimed={pilotCost.latest?.untimedRequests ?? 0}
+                        total={(pilot()?.costMicroUsd ?? 0) / 1_000_000}
+                        untimed={pilot()?.untimedRequests ?? 0}
                         money={money}
                       />
                     ))
@@ -641,7 +656,7 @@ export function AgentEdits(props: {
               </Show>
               <Show when={usesPlan()}>
                 <div class="text-11-regular text-text-weak">
-                  {(pilotCost.latest?.models?.length ?? 0) > 0
+                  {(pilot()?.models?.length ?? 0) > 0
                     ? language.t("agent.summary.costPilot")
                     : language.t("agent.summary.noPilotCost")}
                 </div>

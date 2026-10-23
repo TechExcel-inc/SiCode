@@ -1,4 +1,4 @@
-import { createMemo, createResource, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -107,17 +107,29 @@ export const RailUsage = (props: { mobile?: boolean }): JSX.Element => {
 export const RailAccount = (props: { mobile?: boolean; onSignIn: () => void }): JSX.Element => {
   const ead = useEad()
   const language = useLanguage()
-  // Tried again a few times: right after the app starts EAD Pilot may not answer yet, and the
-  // avatar would otherwise stay "?" for the whole run.
-  const [profile] = createResource(
-    () => ead.token() || undefined,
-    async (token) => {
-      for (const wait of [0, 2_000, 5_000, 10_000]) {
-        if (wait) await new Promise((done) => setTimeout(done, wait))
-        const user = await me(token).catch(() => undefined)
-        if (user) return user
-      }
-    },
+  // Read in the background with a plain signal, never a resource: a resource read before its first
+  // answer holds the window on "Loading" until EAD Pilot replies. Tried again a few times, since
+  // right after the app starts EAD Pilot may not answer yet and the avatar would stay "?".
+  const [profile, setProfile] = createSignal<Awaited<ReturnType<typeof me>>>()
+  createEffect(
+    on(
+      () => ead.token(),
+      (token) => {
+        setProfile(undefined)
+        if (!token) return
+        const state = { live: true }
+        onCleanup(() => (state.live = false))
+        void (async () => {
+          for (const wait of [0, 2_000, 5_000, 10_000]) {
+            if (wait) await new Promise((done) => setTimeout(done, wait))
+            if (!state.live) return
+            const user = await me(token).catch(() => undefined)
+            if (!state.live) return
+            if (user) return void setProfile(user)
+          }
+        })()
+      },
+    ),
   )
   const name = createMemo(() => profile()?.name || profile()?.email || "")
 
