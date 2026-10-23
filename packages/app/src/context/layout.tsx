@@ -641,8 +641,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       },
       nav: {
         current: createMemo((): Nav => (NAVS.find((item) => item === store.nav) ? store.nav : "ead")),
+        // The session list belongs to the Agent view only, so every way into another view hides it.
         set(nav: Nav) {
           setStore("nav", nav)
+          setStore("sidebar", "opened", nav === "agent")
         },
       },
       code: {
@@ -656,15 +658,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       sidebar: {
-        opened: createMemo(() => store.sidebar.opened),
+        opened: createMemo(() => store.sidebar.opened && store.nav === "agent"),
+        // Opens only in the Agent view; elsewhere the session list would sit next to another view's content.
         open() {
-          setStore("sidebar", "opened", true)
+          setStore("sidebar", "opened", store.nav === "agent")
         },
         close() {
           setStore("sidebar", "opened", false)
         },
         toggle() {
-          setStore("sidebar", "opened", (x) => !x)
+          setStore("sidebar", "opened", (x) => !x && store.nav === "agent")
         },
         width: createMemo(() => store.sidebar.width),
         resize(width: number) {

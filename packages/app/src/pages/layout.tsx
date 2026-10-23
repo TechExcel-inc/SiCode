@@ -2378,10 +2378,8 @@ export default function Layout(props: ParentProps) {
     if (next === "agent") {
       sessionView.reviewPanel.close()
       layout.fileTree.close()
-      layout.sidebar.open()
       return
     }
-    layout.sidebar.close()
     if (next === "wiki") {
       sessionView.reviewPanel.close()
       layout.fileTree.close()
