@@ -98,7 +98,7 @@ export const AllSessions = (props: {
               classList={{ "bg-surface-base-active": !!params.dir && !params.id }}
               onClick={() => props.onNew(project())}
             >
-              <Icon name="plus-small" size="small" class="shrink-0 text-text-strong [&_path]:stroke-[1.75]" />
+              <Icon name="plus-small" size="small" class="shrink-0 text-text-strong [&_path]:stroke-[2.25]" />
               <span class="truncate">{language.t("agent.sessions.new")}</span>
             </button>
           )}
@@ -341,7 +341,7 @@ const Group = (props: {
           <IconButton
             icon="plus-small"
             variant="ghost"
-            class="shrink-0 size-6 rounded-md text-text-strong [&_path]:stroke-[1.75]"
+            class="shrink-0 size-6 rounded-md text-text-strong [&_path]:stroke-[2.25]"
             data-action="session-group-new"
             aria-label={language.t("command.session.new")}
             onClick={props.onNew}

@@ -32,6 +32,10 @@
     [data-slot="collapsible-arrow-icon"] {
       display: inline-flex;
       color: var(--icon-strong-base);
+
+      path {
+        stroke-width: 2;
+      }
       transform: translateZ(0) rotate(-90deg);
       transition: transform 0.15s ease;
       will-change: transform;
