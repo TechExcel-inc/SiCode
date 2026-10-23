@@ -5,6 +5,7 @@ import path from "path"
 import DESCRIPTION from "./bash.txt"
 import { Log } from "../util/log"
 import { Instance } from "../project/instance"
+import { Job } from "./job"
 import { Related } from "../project/related"
 import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
@@ -59,6 +60,12 @@ const Parameters = z.object({
       `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     )
     .optional(),
+  background: z
+    .boolean()
+    .optional()
+    .describe(
+      "Run the command in the background and return at once with a job id. Use it for long commands (builds, installs, test suites over a minute) and for anything that keeps running (dev servers, watchers). When the job ends you get a message with its exit code and last output; use the job tool to read its output or stop it before then.",
+    ),
   description: z
     .string()
     .describe(
@@ -487,6 +494,23 @@ export const BashTool = Tool.define(
               const scan = yield* collect(root, cwd, ps, shell)
               if (!Instance.containsPath(cwd) && !Related.contains(cwd)) scan.dirs.add(cwd)
               yield* ask(ctx, scan)
+
+              if (params.background) {
+                const job = Job.start({
+                  sessionID: ctx.sessionID,
+                  agent: ctx.agent,
+                  command: params.command,
+                  description: params.description,
+                  cwd,
+                  shell,
+                  env: yield* shellEnv(ctx, cwd),
+                })
+                return {
+                  title: params.description,
+                  metadata: { output: "", exit: null, description: params.description, job: job.id },
+                  output: `Started in the background as ${job.id}; its output goes to ${job.file}. You will get a message when it ends. Carry on with other work meanwhile, or end your reply if nothing else can be done until it finishes.`,
+                }
+              }
 
               return yield* run(
                 {

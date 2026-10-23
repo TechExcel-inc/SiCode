@@ -1,0 +1,7 @@
+Manages shell commands started in the background (the shell tool with background: true).
+
+- list: this session's background jobs and whether each is running or ended.
+- output: the last lines a job printed so far (set lines to read more).
+- stop: stop a running job.
+
+You do not need to check on a job in a loop: when a job ends, you get a message with its exit code and its last lines of output. Use output only when you need to see progress before then, for example to find the address a dev server printed.

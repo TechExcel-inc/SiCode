@@ -140,6 +140,8 @@ import type {
   SessionGetResponses,
   SessionInitErrors,
   SessionInitResponses,
+  SessionJobListResponses,
+  SessionJobStopResponses,
   SessionListResponses,
   SessionMessageErrors,
   SessionMessageResponses,
@@ -1794,6 +1796,74 @@ export class OneTime extends HeyApiClient {
   }
 }
 
+export class Job extends HeyApiClient {
+  /**
+   * List background jobs
+   *
+   * The session's background shell commands: running ones with their start time, and ended ones with their exit code.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionJobListResponses, unknown, ThrowOnError>({
+      url: "/session/{sessionID}/job",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop background job
+   *
+   * Stop one of the session's running background commands; the session gets its last output when it ends.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionJobStopResponses, unknown, ThrowOnError>({
+      url: "/session/{sessionID}/job/{jobID}/stop",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -2820,6 +2890,11 @@ export class Session2 extends HeyApiClient {
   private _oneTime?: OneTime
   get oneTime(): OneTime {
     return (this._oneTime ??= new OneTime({ client: this.client }))
+  }
+
+  private _job?: Job
+  get job(): Job {
+    return (this._job ??= new Job({ client: this.client }))
   }
 }
 

@@ -3,7 +3,7 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/util/path"
-import type { AssistantMessage, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, SessionJob, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -446,9 +446,51 @@ export function AgentEdits(props: {
   const [taskOpen, setTaskOpen] = createSignal<Record<string, boolean>>({})
   const taskIsOpen = (task: Task, index: number) => taskOpen()[task.id] ?? index === 0
   const background = createMemo(() => sessionBackground(messages().flatMap((msg) => sync.data.part[msg.id] ?? [])))
+  // Shell commands the AI started in the background (builds, dev servers). Read with a plain signal, so
+  // the page never waits for it: re-read when a reply starts or ends, when the AI starts one, and every
+  // few seconds while one runs.
+  const [jobs, setJobs] = createSignal<SessionJob[]>([])
+  const readJobs = () => {
+    const sessionID = props.session
+    if (!sessionID) return setJobs([])
+    void sdk.client.session.job
+      .list({ sessionID })
+      .then((res) => {
+        if (props.session === sessionID) setJobs(res.data ?? [])
+      })
+      .catch(() => undefined)
+  }
+  const started = createMemo(
+    () =>
+      messages()
+        .flatMap((msg) => sync.data.part[msg.id] ?? [])
+        .filter((part) => part.type === "tool" && part.tool === "bash" && !!(part.state as { metadata?: { job?: string } }).metadata?.job)
+        .length,
+  )
+  createEffect(
+    on(
+      () => [props.session, started(), props.session ? sync.data.session_status[props.session]?.type : undefined],
+      () => readJobs(),
+    ),
+  )
+  createEffect(() => {
+    if (!jobs().some((job) => job.running)) return
+    const timer = setInterval(readJobs, 3000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const runningJobs = createMemo(() => jobs().filter((job) => job.running))
+  const endedJobs = createMemo(() => jobs().filter((job) => !job.running).length)
+  const stopJob = (id: string) => {
+    const sessionID = props.session
+    if (!sessionID) return
+    void sdk.client.session.job
+      .stop({ sessionID, jobID: id })
+      .then(readJobs)
+      .catch(() => undefined)
+  }
   const [now, setNow] = createSignal(Date.now())
   createEffect(() => {
-    if (background().running.length === 0) return
+    if (background().running.length + runningJobs().length === 0) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     onCleanup(() => clearInterval(timer))
   })
@@ -899,15 +941,15 @@ export function AgentEdits(props: {
           </For>
         </Box>
 
-        <Show when={background().running.length + background().finished > 0}>
+        <Show when={background().running.length + background().finished + jobs().length > 0}>
           <Box
             name="background"
             title={language.t("agent.background.title")}
             open={open().background}
             onToggle={() => toggle("background")}
             right={
-              <Show when={background().running.length > 0}>
-                <span>{background().running.length}</span>
+              <Show when={background().running.length + runningJobs().length > 0}>
+                <span>{background().running.length + runningJobs().length}</span>
               </Show>
             }
           >
@@ -934,10 +976,31 @@ export function AgentEdits(props: {
                 </div>
               )}
             </For>
-            <Show when={background().finished > 0}>
+            <For each={runningJobs()}>
+              {(job) => (
+                <div data-component="agent-background-command" class="h-8 flex items-center gap-2.5 min-w-0">
+                  <Icon name="terminal" size="small" class="shrink-0 text-icon-weak" />
+                  <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong" title={job.command}>
+                    {job.description || job.command}
+                  </span>
+                  <span class="shrink-0 text-12-regular text-text-weak">{elapsed(job.started)}</span>
+                  <button
+                    type="button"
+                    data-action="agent-background-command-stop"
+                    aria-label={language.t("agent.background.stop")}
+                    title={language.t("agent.background.stop")}
+                    class="shrink-0 size-6 flex items-center justify-center rounded hover:bg-surface-base-hover"
+                    onClick={() => stopJob(job.id)}
+                  >
+                    <Icon name="stop" size="small" class="text-icon-weak" />
+                  </button>
+                </div>
+              )}
+            </For>
+            <Show when={background().finished + endedJobs() > 0}>
               <div class="h-8 flex items-center gap-2.5 text-13-regular text-text-weak">
                 <Icon name="check" size="small" class="shrink-0 text-icon-weak" />
-                {language.t("agent.background.finished", { count: background().finished })}
+                {language.t("agent.background.finished", { count: background().finished + endedJobs() })}
               </div>
             </Show>
           </Box>

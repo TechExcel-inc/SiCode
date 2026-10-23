@@ -4,6 +4,7 @@ import { QuestionTool } from "./question"
 import { SuggestSessionTool } from "./suggest-session"
 import { ProjectSwitchTool } from "./project"
 import { BashTool } from "./bash"
+import { JobTool } from "./job"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
@@ -121,6 +122,7 @@ export namespace ToolRegistry {
       const designReview = yield* DesignReviewTool
       const websearch = yield* WebSearchTool
       const bash = yield* BashTool
+      const jobtool = yield* JobTool
       const codesearch = yield* CodeSearchTool
       const globtool = yield* GlobTool
       const writetool = yield* WriteTool
@@ -209,6 +211,7 @@ export namespace ToolRegistry {
             project: Tool.init(project),
             lsp: Tool.init(lsptool),
             plan: Tool.init(plan),
+            job: Tool.init(jobtool),
           })
 
           return {
@@ -218,6 +221,7 @@ export namespace ToolRegistry {
               ...(questionEnabled ? [tool.question, tool.suggest] : []),
               ...(Foreign.enabled() ? [tool.project] : []),
               tool.bash,
+              tool.job,
               tool.read,
               tool.glob,
               tool.grep,

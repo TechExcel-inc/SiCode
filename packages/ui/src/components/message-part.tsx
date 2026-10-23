@@ -1103,6 +1103,17 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
 
   const text = createMemo(() => textPart()?.text || "")
 
+  // The automatic message a background command sends when it ends: one quiet line, not a bubble.
+  const job = createMemo(() => {
+    const part = props.parts?.find((p) => p.type === "text" && (p as TextPart).metadata?.job) as TextPart | undefined
+    const info = part?.metadata?.job as { command?: string; code?: number | null; stopped?: boolean; ms?: number } | undefined
+    if (!info) return
+    const secs = Math.round((info.ms ?? 0) / 1000)
+    const took = secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s` : `${secs}s`
+    const key = info.stopped ? "ui.message.job.stopped" : info.code === 0 ? "ui.message.job.done" : "ui.message.job.failed"
+    return { text: i18n.t(key, { code: String(info.code ?? "?"), took }), command: info.command ?? "" }
+  })
+
   // A card written when a one-time session was marked done: its answer, with a way back to it.
   const once = createMemo(
     () =>
@@ -1174,6 +1185,13 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
 
   return (
     <div data-component="user-message">
+      <Show when={job()}>
+        {(item) => (
+          <div data-slot="user-message-job" class="text-12-regular text-text-weak" title={item().command}>
+            {item().text} · <span class="text-12-mono">{item().command}</span>
+          </div>
+        )}
+      </Show>
       <Show when={attachments().length > 0}>
         <div data-slot="user-message-attachments">
           <For each={attachments()}>

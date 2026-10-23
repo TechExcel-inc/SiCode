@@ -30,8 +30,21 @@ import { Bus } from "../../bus"
 import { NamedError } from "@opencode-ai/util/error"
 import { SessionOneTime } from "../../session/one-time"
 import { Flag } from "../../flag/flag"
+import { Job } from "@/tool/job"
 
 const log = Log.create({ service: "server" })
+
+const JobInfo = z
+  .object({
+    id: z.string(),
+    command: z.string(),
+    description: z.string(),
+    started: z.number(),
+    ended: z.number().optional(),
+    code: z.number().nullable().optional(),
+    running: z.boolean(),
+  })
+  .meta({ ref: "SessionJob" })
 
 const OneTimeDone = z
   .object({
@@ -95,6 +108,55 @@ export const SessionRoutes = lazy(() =>
           SessionOneTime.done({ ...c.req.valid("json"), sessionID: c.req.valid("param").sessionID }),
         )
         return c.json(result)
+      },
+    )
+    .get(
+      "/:sessionID/job",
+      describeRoute({
+        summary: "List background jobs",
+        description: "The session's background shell commands: running ones with their start time, and ended ones with their exit code.",
+        operationId: "session.job.list",
+        responses: {
+          200: {
+            description: "The session's background jobs",
+            content: { "application/json": { schema: resolver(z.array(JobInfo)) } },
+          },
+        },
+      }),
+      validator("param", z.object({ sessionID: SessionID.zod })),
+      async (c) => {
+        const sessionID = c.req.valid("param").sessionID
+        return c.json(
+          Job.list(sessionID).map((job) => ({
+            id: job.id,
+            command: job.command,
+            description: job.description,
+            started: job.started,
+            ended: job.ended,
+            code: job.code ?? undefined,
+            running: Job.running(job.id),
+          })),
+        )
+      },
+    )
+    .post(
+      "/:sessionID/job/:jobID/stop",
+      describeRoute({
+        summary: "Stop background job",
+        description: "Stop one of the session's running background commands; the session gets its last output when it ends.",
+        operationId: "session.job.stop",
+        responses: {
+          200: {
+            description: "Whether a running job was stopped",
+            content: { "application/json": { schema: resolver(z.boolean()) } },
+          },
+        },
+      }),
+      validator("param", z.object({ sessionID: SessionID.zod, jobID: z.string() })),
+      async (c) => {
+        const params = c.req.valid("param")
+        const job = Job.get(params.jobID)
+        return c.json(!!job && job.sessionID === params.sessionID && Job.stop(job.id))
       },
     )
     .post(

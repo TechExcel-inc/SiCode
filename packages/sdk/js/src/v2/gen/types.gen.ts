@@ -1943,6 +1943,16 @@ export type SessionOneTimeDone = {
   removed: boolean
 }
 
+export type SessionJob = {
+  id: string
+  command: string
+  description: string
+  started: number
+  ended?: number
+  code?: number | null
+  running: boolean
+}
+
 export type ContextSizeItem = {
   name: string
   tokens: number
@@ -3441,6 +3451,49 @@ export type SessionOneTimeDoneResponses = {
 }
 
 export type SessionOneTimeDoneResponse = SessionOneTimeDoneResponses[keyof SessionOneTimeDoneResponses]
+
+export type SessionJobListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/job"
+}
+
+export type SessionJobListResponses = {
+  /**
+   * The session's background jobs
+   */
+  200: Array<SessionJob>
+}
+
+export type SessionJobListResponse = SessionJobListResponses[keyof SessionJobListResponses]
+
+export type SessionJobStopData = {
+  body?: never
+  path: {
+    sessionID: string
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/job/{jobID}/stop"
+}
+
+export type SessionJobStopResponses = {
+  /**
+   * Whether a running job was stopped
+   */
+  200: boolean
+}
+
+export type SessionJobStopResponse = SessionJobStopResponses[keyof SessionJobStopResponses]
 
 export type SessionOneTimeReopenData = {
   body?: never
