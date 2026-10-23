@@ -30,6 +30,12 @@ import { ago, childSessionOnPath, hasProjectPermissions } from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
+
+/** Sidebar levels: projects and panel actions sit on the edge, sessions one indent in, child sessions further. */
+export const EDGE = 8
+export const INDENT = 10
+const ROW = EDGE + INDENT
+
 export const ProjectIcon = (props: { project: LocalProject; class?: string; notify?: boolean }): JSX.Element => {
   const globalSync = useGlobalSync()
   const notification = useNotification()
@@ -124,7 +130,7 @@ const SessionRow = (props: {
   return (
     <A
       href={`/${props.slug}/session/${props.session.id}`}
-      class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"} ${props.nested ? "pl-3 border-l border-dashed border-border-weak-base" : ""}`}
+      class={`relative flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"} ${props.nested ? "pl-3 border-l border-dashed border-border-weak-base" : ""}`}
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
       onClick={() => {
@@ -132,9 +138,10 @@ const SessionRow = (props: {
         props.clearHoverProjectSoon()
       }}
     >
+      {/* Sits in the indent to the left of the title, so titles line up with or without a status. */}
       <Show when={props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
         <div
-          class="shrink-0 size-6 flex items-center justify-center"
+          class="absolute right-full top-1/2 -translate-y-1/2 mr-px size-4 flex items-center justify-center"
           style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
         >
           <Switch>
@@ -349,7 +356,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       <div
         data-session-id={props.session.id}
         class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
-        style={{ "padding-left": `${8 + (props.level ?? 0) * 16}px` }}
+        style={{ "padding-left": `${ROW + (props.level ?? 0) * 16}px` }}
       >
         <div class="flex min-w-0 items-center gap-1">
           <div class="min-w-0 flex-1">

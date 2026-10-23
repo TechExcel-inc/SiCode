@@ -3,7 +3,6 @@ import { createStore } from "solid-js/store"
 import { useParams } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { Avatar } from "@opencode-ai/ui/avatar"
-import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -21,7 +20,7 @@ import { usePermission } from "@/context/permission"
 import { sessionTitle } from "@/utils/session-title"
 import { displayName, hasProjectPermissions, oneTimeRows, sortedRootSessions, workspaceKey } from "./helpers"
 import { ActiveSessions } from "./sidebar-active"
-import { SessionItem, SessionSkeleton } from "./sidebar-items"
+import { EDGE, INDENT, SessionItem, SessionSkeleton } from "./sidebar-items"
 import { type WorkspaceSidebarContext } from "./sidebar-workspace"
 
 const PAGE = 5
@@ -49,9 +48,9 @@ export const AllSessions = (props: {
   })
 
   return (
-    <div class="size-full flex flex-col min-h-0">
+    <div class="size-full flex flex-col min-h-0 -ml-1">
       <div class="shrink-0 pt-3 pb-2 flex flex-col gap-2">
-        <div class="px-1 text-[11px] font-medium uppercase tracking-wide text-text-weak">
+        <div class="px-2 text-[11px] font-medium uppercase tracking-wide text-text-weak">
           {language.t("agent.sessions.title")}
         </div>
         <div class="flex items-center gap-1">
@@ -338,7 +337,9 @@ const Group = (props: {
               <SessionSkeleton />
             </Show>
             <Show when={!loading() && sessions().length === 0}>
-              <div class="px-2 py-1 text-12-regular text-text-weak">{language.t("agent.sessions.empty")}</div>
+              <div class="py-1 text-12-regular text-text-weak" style={{ "padding-left": `${EDGE + INDENT}px` }}>
+                {language.t("agent.sessions.empty")}
+              </div>
             </Show>
             <For each={rows()}>
               {(row) =>
@@ -347,7 +348,8 @@ const Group = (props: {
                     type="button"
                     data-action="one-time-archived"
                     aria-expanded={row.open}
-                    class="ml-2 pl-3 py-0.5 flex items-center gap-1 text-left text-12-regular text-text-weak hover:text-text-base border-l border-dashed border-border-weak-base"
+                    class="pl-3 py-0.5 flex items-center gap-1 text-left text-12-regular text-text-weak hover:text-text-base border-l border-dashed border-border-weak-base"
+                    style={{ "margin-left": `${EDGE + INDENT}px` }}
                     onClick={() => flip(row.archived)}
                   >
                     <Icon name={row.open ? "chevron-down" : "chevron-right"} size="small" />
@@ -370,13 +372,15 @@ const Group = (props: {
               }
             </For>
             <Show when={more()}>
-              <Button
-                variant="ghost"
-                class="flex w-full justify-start text-12-regular text-text-weak pl-2"
+              <button
+                type="button"
+                data-action="session-load-more"
+                class="self-start py-1 text-12-regular text-text-weak hover:text-text-base"
+                style={{ "margin-left": `${EDGE + INDENT}px` }}
                 onClick={loadMore}
               >
                 {language.t("common.loadMore")}
-              </Button>
+              </button>
             </Show>
           </nav>
         </Show>
