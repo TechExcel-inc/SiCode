@@ -4,6 +4,7 @@ import { EffectLogger } from "@/effect/logger"
 import type { Tool } from "./tool"
 import { Instance } from "../project/instance"
 import { Foreign } from "../project/foreign"
+import { Related } from "../project/related"
 import { AppFileSystem } from "../filesystem"
 
 type Kind = "file" | "directory"
@@ -26,6 +27,8 @@ export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirec
 
   const full = process.platform === "win32" ? AppFileSystem.normalizePath(target) : target
   if (Instance.containsPath(full)) return
+  // Related project folders are part of this project's work.
+  if (Related.contains(full)) return
 
   const other = Foreign.owner(full)
   if (other && Foreign.stays(ctx.sessionID, other.worktree)) return

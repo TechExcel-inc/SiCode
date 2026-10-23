@@ -8,6 +8,8 @@ import { Filesystem } from "../../src/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
+import { Project } from "../../src/project/project"
+import { Related } from "../../src/project/related"
 
 const baseCtx: Omit<Tool.Context, "ask"> = {
   sessionID: SessionID.make("ses_test"),
@@ -166,4 +168,28 @@ describe("tool.assertExternalDirectory", () => {
       expect(req!.always).toEqual([expected])
     })
   }
+
+  test("a related project's folder is written without asking or project_switch", async () => {
+    const { requests, ctx } = makeCtx()
+    await using ui = await tmpdir({ git: true })
+    await using server = await tmpdir({ git: true })
+    await using other = await tmpdir({ git: true })
+    // both are known projects, so writes into them would otherwise wait for project_switch
+    await Project.fromDirectory(server.path)
+    await Project.fromDirectory(other.path)
+    const { project } = await Project.fromDirectory(ui.path)
+    await Project.update({ projectID: project.id, related: [server.path] })
+
+    await Instance.provide({
+      directory: ui.path,
+      fn: async () => {
+        expect(Related.dirs()).toEqual([server.path])
+        await assertExternalDirectory(ctx, path.join(server.path, "src", "App.java"), { write: true })
+        expect(requests.length).toBe(0)
+        // a project that is not related is still outside this one
+        const err = await assertExternalDirectory(ctx, path.join(other.path, "a.ts"), { write: true }).catch((e) => e)
+        expect(requests.length > 0 || err instanceof Error).toBe(true)
+      },
+    })
+  })
 })

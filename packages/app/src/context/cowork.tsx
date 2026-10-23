@@ -275,11 +275,28 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       worktree: folderOf(item.projectId) ?? remotes[`${item.repoOwner}/${item.repoName}`.toLowerCase()],
     })
 
+    // The related folders the server keeps on its project: the agent reads and changes them in this
+    // project's sessions, and they also hold folders EAD Pilot cannot save (no GitHub repository).
+    const local = (root: string) => sync.data.project.find((item) => workspaceKey(item.worktree) === workspaceKey(root))
+    const kept = (root: string) => local(root)?.related ?? []
+    const keep = async (root: string, dirs: string[]) => {
+      const project = local(root)
+      if (!project) return
+      const next = [...new Set(dirs)].filter((dir) => workspaceKey(dir) !== workspaceKey(root)).toSorted()
+      if (next.join("\n") === kept(root).join("\n")) return
+      await sdk.client.project.update({ projectID: project.id, related: next }).catch(() => undefined)
+    }
+
     const loadRelated = async (projectId: number) => {
       const client = api()
       if (!client) return
       const list = await client.related(projectId).catch(() => undefined)
-      if (list) setStore("related", projectId, list)
+      if (!list) return
+      setStore("related", projectId, list)
+      // EAD Pilot's relations also reach the server, so the agent knows them.
+      const root = folderOf(projectId)
+      const dirs = list.flatMap((item) => folderOf(item.relatedProjectId) ?? [])
+      if (root && dirs.some((dir) => !kept(root).includes(dir))) void keep(root, [...kept(root), ...dirs])
     }
 
     return {
@@ -331,12 +348,14 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       /** Folders of the projects related to the project in `root`, that exist on this computer. */
       relatedDirs(root: string) {
         const id = projectOf(root)
-        if (!id) return [] as string[]
-        if (!store.related[id]) void loadRelated(id)
-        return (store.related[id] ?? []).flatMap((item) => {
-          const dir = folderOf(item.relatedProjectId)
-          return dir ? [dir] : []
-        })
+        if (id && !store.related[id]) void loadRelated(id)
+        const pilot = id
+          ? (store.related[id] ?? []).flatMap((item) => {
+              const dir = folderOf(item.relatedProjectId)
+              return dir ? [dir] : []
+            })
+          : []
+        return [...new Set([...pilot, ...kept(root)])]
       },
       relatedIds(root: string) {
         const id = projectOf(root)
@@ -351,7 +370,28 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
         const list = await client.relate(id, relatedProjectId)
         setStore("related", id, list)
         const dir = folderOf(relatedProjectId)
-        if (dir) layout.projects.open(dir)
+        if (!dir) return
+        layout.projects.open(dir)
+        await keep(root, [...kept(root), dir])
+      },
+      /**
+       * Relates any folder on this computer: it opens as a project and the agent may change it from
+       * this project's sessions. EAD Pilot also saves the relation when the folder has a GitHub repository.
+       */
+      async relateFolder(root: string, dir: string) {
+        if (workspaceKey(dir) === workspaceKey(root)) return
+        layout.projects.open(dir)
+        await keep(root, [...kept(root), dir])
+        if (!api()) return
+        const remote = await sdk.client.vcs
+          .get({ directory: dir })
+          .then((res) => res.data?.remote_url)
+          .catch(() => undefined)
+        if (!remote) return
+        const item = await link(dir, true)
+        if (!item) return
+        if (!projectOf(root)) await link(root, true)
+        await this.relate(root, item.projectId).catch(() => undefined)
       },
       /** Relates a picked project; a folder Pilot does not know yet is first registered through its GitHub repository. */
       async relateEntry(root: string, item: CoworkEntry) {
@@ -361,6 +401,10 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
         await this.relate(root, id)
       },
       async unrelate(root: string, relatedDir: string) {
+        await keep(
+          root,
+          kept(root).filter((dir) => workspaceKey(dir) !== workspaceKey(relatedDir)),
+        )
         const client = api()
         const id = projectOf(root)
         const other = projectOf(relatedDir)

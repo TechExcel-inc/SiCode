@@ -784,6 +784,7 @@ export const dict = {
   "search.related.remove": "Remove {{project}}",
   "search.related.none": "No other projects",
   "search.related.select": "Select related project",
+  "search.related.openFolder": "Open folder…",
   "search.related.label": "Related Projects",
   "search.related.pilot": "Related projects are saved in EAD Pilot, which needs its SiCode update first. Until then they can be listed but not added.",
   "search.type.active": "Open",

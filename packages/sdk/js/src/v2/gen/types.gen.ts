@@ -41,6 +41,10 @@ export type Project = {
     initialized?: number
   }
   sandboxes: Array<string>
+  /**
+   * Folders of related projects: the agent reads and changes them as part of this project
+   */
+  related?: Array<string>
 }
 
 export type EventProjectUpdated = {
@@ -2632,6 +2636,10 @@ export type ProjectUpdateData = {
        */
       start?: string
     }
+    /**
+     * Folders of related projects: the agent reads and changes them as part of this project
+     */
+    related?: Array<string>
   }
   path: {
     projectID: string

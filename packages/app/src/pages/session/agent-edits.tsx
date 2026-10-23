@@ -14,6 +14,7 @@ import { PLAN } from "@/ead/plan"
 import { githubRepo, type CoworkGatewayCost } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
 import { AgentCommit } from "./agent-commit"
+import { RelatedChanges } from "./agent-related"
 import { costReport } from "./agent-cost"
 import { AgentCostReport, costItemTitle } from "./agent-cost-report"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -892,6 +893,10 @@ export function AgentEdits(props: {
             onCommitted={() => void refetchChanges()}
             inline
           />
+          {/* Related projects are their own repositories: each lists and commits its changes on its own. */}
+          <For each={cowork.relatedDirs(sdk.directory)}>
+            {(dir) => <RelatedChanges dir={dir} session={props.session} />}
+          </For>
         </Box>
 
         <Show when={background().running.length + background().finished > 0}>

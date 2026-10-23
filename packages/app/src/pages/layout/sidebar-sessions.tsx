@@ -12,6 +12,7 @@ import { DialogSearch } from "@/components/dialog-search"
 import { RecentProjectPicker } from "@/components/recent-project-picker"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useCowork } from "@/context/cowork"
+import { usePlatform } from "@/context/platform"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -39,6 +40,21 @@ export const AllSessions = (props: {
   const language = useLanguage()
   const layout = useLayout()
   const cowork = useCowork()
+  const platform = usePlatform()
+  // Any folder on this computer: the system folder picker, or the app's own when there is none.
+  const pickFolder = async () => {
+    if (platform.openDirectoryPickerDialog) {
+      const picked = await platform.openDirectoryPickerDialog({ title: language.t("search.related.openFolder") })
+      return (Array.isArray(picked) ? picked[0] : picked) ?? undefined
+    }
+    const { DialogSelectDirectory } = await import("@/components/dialog-select-directory")
+    return new Promise<string | undefined>((done) =>
+      dialog.show(
+        () => <DialogSelectDirectory onSelect={(picked) => done((Array.isArray(picked) ? picked[0] : picked) ?? undefined)} />,
+        () => done(undefined),
+      ),
+    )
+  }
   const params = useParams()
   const dialog = useDialog()
   const [state, setState] = createStore({
@@ -138,11 +154,31 @@ export const AllSessions = (props: {
                 <RecentProjectPicker
                   title={language.t("search.related.select")}
                   empty={language.t("search.related.none")}
-                  pilot
-                  note={cowork.signedIn() ? undefined : language.t("search.related.pilot")}
                   exclude={props.projects().map((item) => item.worktree)}
                   skip={[cowork.projectOf(current().worktree) ?? 0, ...cowork.relatedIds(current().worktree)]}
-                  onPick={(item) => void cowork.relateEntry(current().worktree, item)}
+                  onPick={(item) =>
+                    void (item.worktree
+                      ? cowork.relateFolder(current().worktree, item.worktree)
+                      : cowork.relateEntry(current().worktree, item))
+                  }
+                  footer={(close) => (
+                    <div class="border-t border-border-weak-base pt-1">
+                      <button
+                        type="button"
+                        data-action="related-open-folder"
+                        class="w-full px-2 py-1.5 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+                        onClick={() => {
+                          close()
+                          void pickFolder().then((dir) => {
+                            if (dir) return cowork.relateFolder(current().worktree, dir)
+                          })
+                        }}
+                      >
+                        <Icon name="folder-add-left" size="small" class="shrink-0 text-icon-base" />
+                        {language.t("search.related.openFolder")}
+                      </button>
+                    </div>
+                  )}
                   triggerProps={{
                     class:
                       "group/related w-[calc(100%-2px)] ml-0.5 h-8 pl-1.5 pr-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",

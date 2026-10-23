@@ -676,6 +676,7 @@ export const dict = {
   "search.related.remove": "移除 {{project}}",
   "search.related.none": "没有其他项目",
   "search.related.select": "选择相关项目",
+  "search.related.openFolder": "打开文件夹…",
   "search.related.label": "相关项目",
   "search.related.pilot": "相关项目保存在 EAD Pilot 中，需要先完成 SiCode 更新。在此之前只能查看，无法添加。",
   "search.type.active": "进行中",

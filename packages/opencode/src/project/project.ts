@@ -42,6 +42,10 @@ export namespace Project {
         initialized: z.number().optional(),
       }),
       sandboxes: z.array(z.string()),
+      related: z
+        .array(z.string())
+        .optional()
+        .describe("Folders of related projects: the agent reads and changes them as part of this project"),
     })
     .meta({
       ref: "Project",
@@ -72,6 +76,7 @@ export namespace Project {
       },
       sandboxes: row.sandboxes,
       commands: row.commands ?? undefined,
+      related: row.related ?? undefined,
     }
   }
 
@@ -80,6 +85,7 @@ export namespace Project {
     name: z.string().optional(),
     icon: Info.shape.icon.optional(),
     commands: Info.shape.commands.optional(),
+    related: Info.shape.related,
   })
   export type UpdateInput = z.infer<typeof UpdateInput>
 
@@ -366,6 +372,7 @@ export namespace Project {
               icon_url: input.icon?.url,
               icon_color: input.icon?.color,
               commands: input.commands,
+              related: input.related,
               time_updated: Date.now(),
             })
             .where(eq(ProjectTable.id, input.projectID))

@@ -5,6 +5,7 @@ import path from "path"
 import DESCRIPTION from "./bash.txt"
 import { Log } from "../util/log"
 import { Instance } from "../project/instance"
+import { Related } from "../project/related"
 import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
 
@@ -342,7 +343,7 @@ export const BashTool = Tool.define(
           for (const arg of pathArgs(command, ps)) {
             const resolved = yield* argPath(arg, cwd, ps, shell)
             log.info("resolved path", { arg, resolved })
-            if (!resolved || Instance.containsPath(resolved)) continue
+            if (!resolved || Instance.containsPath(resolved) || Related.contains(resolved)) continue
             const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
             scan.dirs.add(dir)
           }
@@ -484,7 +485,7 @@ export const BashTool = Tool.define(
               const ps = PS.has(name)
               const root = yield* parse(params.command, ps)
               const scan = yield* collect(root, cwd, ps, shell)
-              if (!Instance.containsPath(cwd)) scan.dirs.add(cwd)
+              if (!Instance.containsPath(cwd) && !Related.contains(cwd)) scan.dirs.add(cwd)
               yield* ask(ctx, scan)
 
               return yield* run(

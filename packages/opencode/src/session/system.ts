@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 
 import { Instance } from "../project/instance"
 import { Foreign } from "../project/foreign"
+import { Related } from "../project/related"
 import { Flag } from "../flag/flag"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
@@ -20,10 +21,23 @@ import { Skill } from "@/skill"
 
 /** The other projects, so the agent can tell when work belongs in another project's session. */
 function others() {
-  if (!Foreign.enabled()) return []
-  const list = Foreign.projects().slice(0, 30)
-  if (list.length === 0) return []
+  const related = Related.dirs()
+  const linked = related.length
+    ? [
+        [
+          `Related projects of ${Foreign.here()}, linked by the user so one session can change them together (for example a UI and its server):`,
+          ...related.map((dir) => `  - ${Related.name(dir)}: ${dir}`),
+          `Read and change files in these folders directly as part of this work, without project_switch. Each folder is its own git repository: run git commands in the folder you changed.`,
+        ].join("\n"),
+      ]
+    : []
+  if (!Foreign.enabled()) return linked
+  const list = Foreign.projects()
+    .filter((item) => !related.includes(item.worktree))
+    .slice(0, 30)
+  if (list.length === 0) return linked
   return [
+    ...linked,
     [
       `This session works in the project ${Foreign.here()}. Other projects on this machine:`,
       ...list.map((item) => `  - ${Foreign.name(item)}: ${item.worktree}`),
