@@ -338,14 +338,15 @@ const Group = (props: {
               </DropdownMenu.Portal>
             </DropdownMenu>
           </Show>
-          <IconButton
-            icon="plus-small"
-            variant="ghost"
-            class="shrink-0 size-6 rounded-md text-text-strong [&_path]:stroke-[2.25]"
+          <button
+            type="button"
+            class="shrink-0 size-6 rounded-md flex items-center justify-center hover:bg-surface-base-hover"
             data-action="session-group-new"
             aria-label={language.t("command.session.new")}
             onClick={props.onNew}
-          />
+          >
+            <Icon name="plus-small" size="small" class="text-text-strong [&_path]:stroke-[2.25]" />
+          </button>
         </div>
         <Show when={!props.folded || props.query}>
           <nav class="flex flex-col gap-0.5" aria-label={displayName(props.project)}>

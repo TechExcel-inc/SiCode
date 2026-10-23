@@ -33,6 +33,11 @@
       display: inline-flex;
       color: var(--text-strong);
 
+      /* The icon sets its own grey; the arrow is drawn in the title's color instead. */
+      [data-component="icon"] {
+        color: var(--text-strong);
+      }
+
       path {
         stroke-width: 2;
       }
