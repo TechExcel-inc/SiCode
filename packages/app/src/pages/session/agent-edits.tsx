@@ -11,7 +11,7 @@ import { useCowork } from "@/context/cowork"
 import { useEad } from "@/ead/settings"
 import { useEadSignIn } from "@/components/ead-sign-in"
 import { PLAN } from "@/ead/plan"
-import { githubRepo } from "@/ead/cowork"
+import { githubRepo, type CoworkGatewayCost } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
 import { AgentCommit } from "./agent-commit"
 import { costReport } from "./agent-cost"
@@ -356,14 +356,38 @@ export function AgentEdits(props: {
     return msg?.role === "assistant" ? `${msg.id}:${msg.time.completed ?? ""}` : ""
   })
   const usesPlan = createMemo(() => messages().some((msg) => msg.role === "assistant" && msg.providerID === PLAN))
-  const [pilotCost] = createResource(
-    () => (usesPlan() && props.session && cowork.api() ? { session: props.session, reply: lastReply() } : undefined),
-    (input) =>
-      cowork
-        .api()
-        ?.gatewayCost(input.session)
-        .catch(() => undefined),
+  // A failed read (EAD Pilot not reachable yet, as right after the app starts) is tried again a few
+  // times and then once a minute; until it answers, Summary says it is checking, never "Not priced".
+  const [pilotFailed, setPilotFailed] = createSignal(false)
+  const [kept, setKept] = createSignal<CoworkGatewayCost>()
+  const [pilotCost, pilotCtl] = createResource(
+    () =>
+      usesPlan() && props.session && cowork.api()
+        ? { session: props.session, reply: lastReply(), token: ead.token() }
+        : undefined,
+    async (input) => {
+      for (const wait of [0, 2_000, 5_000, 10_000]) {
+        if (wait) await new Promise((done) => setTimeout(done, wait))
+        const cost = await cowork
+          .api()
+          ?.gatewayCost(input.session)
+          .catch(() => undefined)
+        if (cost) {
+          setPilotFailed(false)
+          setKept(cost)
+          return cost
+        }
+      }
+      setPilotFailed(true)
+      return kept()
+    },
   )
+  createEffect(
+    on(minute, () => {
+      if (pilotFailed() && !pilotCost.loading) void pilotCtl.refetch()
+    }),
+  )
+  const pilotWaiting = createMemo(() => usesPlan() && !pilotCost.latest)
   // For EAD plan replies, EAD Pilot's records are the source of truth for time, tokens and cost.
   const recorded = createMemo(() => {
     const pilot = pilotCost.latest
@@ -399,6 +423,7 @@ export function AgentEdits(props: {
     if (signedOut()) return language.t("agent.summary.signIn")
     const pilot = pilotCost.latest
     if (pilot && pilot.requests > 0) return money(summary().cost + pilot.costMicroUsd / 1_000_000)
+    if (pilotWaiting()) return language.t(pilotFailed() ? "agent.summary.costRetry" : "agent.summary.costChecking")
     return summary().priced ? money(summary().cost) : language.t("agent.summary.notPriced")
   }
   // The newest task starts open; people can open or close any of them.
@@ -511,7 +536,7 @@ export function AgentEdits(props: {
           <Show when={summary().started}>
             <Row
               icon={<Icon name="brain" size="small" />}
-              right={signedOut() ? "—" : formatDuration(summary().workingMs)}
+              right={signedOut() || pilotWaiting() ? "—" : formatDuration(summary().workingMs)}
               title={signedOut() ? language.t("agent.summary.signInHint") : undefined}
             >
               {language.t("agent.summary.working")}
@@ -523,7 +548,11 @@ export function AgentEdits(props: {
             aria-expanded={costOpen()}
             title={language.t(signedOut() ? "agent.summary.signInHint" : usesPlan() ? "agent.summary.costPilot" : "agent.context.cost.hint")}
             class="w-full h-8 flex items-center gap-2.5 min-w-0 text-left rounded-md hover:bg-surface-base-hover"
-            onClick={() => (signedOut() ? signIn() : setCostOpen(!costOpen()))}
+            onClick={() => {
+              if (signedOut()) return signIn()
+              if (pilotWaiting() && pilotFailed()) return void pilotCtl.refetch()
+              setCostOpen(!costOpen())
+            }}
           >
             <span class="shrink-0 flex items-center text-icon-weak">
               <Icon name="providers" size="small" />

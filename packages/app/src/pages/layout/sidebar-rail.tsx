@@ -107,9 +107,17 @@ export const RailUsage = (props: { mobile?: boolean }): JSX.Element => {
 export const RailAccount = (props: { mobile?: boolean; onSignIn: () => void }): JSX.Element => {
   const ead = useEad()
   const language = useLanguage()
+  // Tried again a few times: right after the app starts EAD Pilot may not answer yet, and the
+  // avatar would otherwise stay "?" for the whole run.
   const [profile] = createResource(
     () => ead.token() || undefined,
-    (token) => me(token).catch(() => undefined),
+    async (token) => {
+      for (const wait of [0, 2_000, 5_000, 10_000]) {
+        if (wait) await new Promise((done) => setTimeout(done, wait))
+        const user = await me(token).catch(() => undefined)
+        if (user) return user
+      }
+    },
   )
   const name = createMemo(() => profile()?.name || profile()?.email || "")
 

@@ -750,6 +750,8 @@ export const dict = {
   "agent.cost.col.cost": "費用",
   "agent.summary.entry": "{{model}} · 輸入 {{input}}（快取 {{cached}}）· 輸出 {{output}}",
   "agent.summary.untimed": "{{count}} 次較早的請求未記錄時長。",
+  "agent.summary.costChecking": "正在查詢…",
+  "agent.summary.costRetry": "無法連線 EAD Pilot · 重試",
   "agent.summary.notPriced": "未定價",
   "agent.context.title": "上下文",
   "agent.context.loading": "正在計算…",

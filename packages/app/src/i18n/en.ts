@@ -870,6 +870,8 @@ export const dict = {
   "agent.cost.col.cost": "Cost",
   "agent.summary.entry": "{{model}} · {{input}} in ({{cached}} cached) · {{output}} out",
   "agent.summary.untimed": "Duration not recorded for {{count}} earlier requests.",
+  "agent.summary.costChecking": "Checking…",
+  "agent.summary.costRetry": "EAD Pilot not reachable · Retry",
   "agent.summary.notPriced": "Not priced",
   "agent.context.title": "Context",
   "agent.context.loading": "Measuring…",

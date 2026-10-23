@@ -762,6 +762,8 @@ export const dict = {
   "agent.cost.col.cost": "费用",
   "agent.summary.entry": "{{model}} · 输入 {{input}}（缓存 {{cached}}）· 输出 {{output}}",
   "agent.summary.untimed": "{{count}} 次较早的请求未记录时长。",
+  "agent.summary.costChecking": "正在查询…",
+  "agent.summary.costRetry": "无法连接 EAD Pilot · 重试",
   "agent.summary.notPriced": "未定价",
   "agent.context.title": "上下文",
   "agent.context.loading": "正在计算…",

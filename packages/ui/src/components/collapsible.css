@@ -31,7 +31,7 @@
 
     [data-slot="collapsible-arrow-icon"] {
       display: inline-flex;
-      color: var(--icon-strong-base);
+      color: var(--text-strong);
 
       path {
         stroke-width: 2;
