@@ -9,7 +9,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { DialogSearch } from "@/components/dialog-search"
-import { ProjectLinks } from "@/components/project-links"
+import { DialogRelatedProjects } from "@/components/dialog-related-projects"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useCowork } from "@/context/cowork"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
@@ -135,31 +135,25 @@ export const AllSessions = (props: {
             {/* Related Projects sits right after the current project's sessions, above the related groups. */}
             <Show when={index() === 0 && props.current()}>
               {(current) => (
-                <ProjectLinks
-                  root={current().worktree}
-                  place={props.mobile ? "mobile" : "desktop"}
-                  triggerProps={{
-                    class:
-                      "w-[calc(100%-2px)] ml-0.5 h-8 pl-1.5 pr-1 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
-                    "data-action": "session-related-project",
-                    "aria-label": language.t("links.menu"),
-                  }}
-                  trigger={
-                    <>
-                      <Icon name="folder-add-left" size="small" class="shrink-0 text-text-strong" />
-                      <span class="truncate">{language.t("links.row")}</span>
-                      <Show when={cowork.relatedDirs(current().worktree).length > 0}>
-                        <span class="shrink-0 px-1.5 rounded-full bg-surface-interactive-base text-11-medium text-text-interactive-base">
-                          {cowork.relatedDirs(current().worktree).length}
-                        </span>
-                      </Show>
-                      {/* Always shown: it is the way into the menu, so it never waits for a hover. */}
-                      <span class="ml-auto shrink-0 size-6 rounded-md flex items-center justify-center text-text-strong">
-                        <Icon name="dot-grid" size="small" class="text-text-strong [&_path]:stroke-[1.75]" />
-                      </span>
-                    </>
-                  }
-                />
+                <button
+                  type="button"
+                  data-action="session-related-project"
+                  aria-label={language.t("links.menu")}
+                  class="w-[calc(100%-2px)] ml-0.5 h-8 pl-1.5 pr-1 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+                  onClick={() => dialog.show(() => <DialogRelatedProjects root={current().worktree} />)}
+                >
+                  <Icon name="folder-add-left" size="small" class="shrink-0 text-text-strong" />
+                  <span class="truncate">{language.t("links.row")}</span>
+                  <Show when={cowork.relatedDirs(current().worktree).length > 0}>
+                    <span class="shrink-0 px-1.5 rounded-full bg-surface-interactive-base text-11-medium text-text-interactive-base">
+                      {cowork.relatedDirs(current().worktree).length}
+                    </span>
+                  </Show>
+                  {/* Always shown: it is the way into the dialog, so it never waits for a hover. */}
+                  <span class="ml-auto shrink-0 size-6 rounded-md flex items-center justify-center">
+                    <Icon name="dot-grid" size="small" class="text-text-strong" />
+                  </span>
+                </button>
               )}
             </Show>
             </>

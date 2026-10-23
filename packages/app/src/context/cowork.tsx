@@ -279,12 +279,16 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
     // from this project's sessions, and the list also holds folders EAD Pilot cannot save (no GitHub
     // repository). A related folder is often another project's primary repo.
     const local = (root: string) => sync.data.project.find((item) => workspaceKey(item.worktree) === workspaceKey(root))
-    const kept = (root: string) => local(root)?.related ?? []
+    // What this app last saved, by project, until the server's copy arrives: several saves in a row
+    // each build on the one before instead of on a list that is not updated yet.
+    const [saved, setSaved] = createStore<Record<string, string[]>>({})
+    const kept = (root: string) => saved[workspaceKey(root)] ?? local(root)?.related ?? []
     const keep = async (root: string, dirs: string[]) => {
       const project = local(root)
       if (!project) return
       const next = [...new Set(dirs)].filter((dir) => workspaceKey(dir) !== workspaceKey(root)).toSorted()
       if (next.join("\n") === kept(root).join("\n")) return
+      setSaved(workspaceKey(root), next)
       await sdk.client.project.update({ projectID: project.id, related: next }).catch(() => undefined)
     }
 
@@ -374,6 +378,37 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
         if (!dir) return
         layout.projects.open(dir)
         await keep(root, [...kept(root), dir])
+      },
+      /**
+       * Sets the related folders in one step (the dialog's Save), then brings EAD Pilot in line:
+       * removed ones are unlinked there, and added ones with a GitHub repository are linked.
+       */
+      async setRelated(root: string, dirs: string[]) {
+        const same = (a: string, b: string) => workspaceKey(a) === workspaceKey(b)
+        const before = this.relatedDirs(root)
+        const added = dirs.filter((dir) => !before.some((item) => same(item, dir)))
+        const removed = before.filter((dir) => !dirs.some((item) => same(item, dir)))
+        added.forEach((dir) => layout.projects.open(dir))
+        await keep(root, dirs)
+        const client = api()
+        if (!client) return
+        const id = projectOf(root) ?? (await link(root, true))?.projectId
+        if (!id) return
+        await Promise.all(
+          removed.flatMap((dir) => {
+            const other = projectOf(dir)
+            return other ? [client.unrelate(id, other).catch(() => undefined)] : []
+          }),
+        )
+        for (const dir of added) {
+          const remote = await sdk.client.vcs
+            .get({ directory: dir })
+            .then((res) => res.data?.remote_url)
+            .catch(() => undefined)
+          const other = remote ? (projectOf(dir) ?? (await link(dir, true))?.projectId) : undefined
+          if (other && other !== id) await client.relate(id, other).catch(() => undefined)
+        }
+        await loadRelated(id)
       },
       /**
        * Relates any folder on this computer: it opens as a project and the agent may change it from
