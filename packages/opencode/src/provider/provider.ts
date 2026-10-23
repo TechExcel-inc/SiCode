@@ -33,6 +33,7 @@ import { createVertex } from "@ai-sdk/google-vertex"
 import { createVertexAnthropic } from "@ai-sdk/google-vertex/anthropic"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import { GeminiSignature } from "./gemini-signature"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { createOpenaiCompatible as createGitHubCopilotOpenAICompatible } from "./sdk/copilot"
 import { createXai } from "@ai-sdk/xai"
@@ -1483,11 +1484,17 @@ export namespace Provider {
                 }
               }
 
-              const res = await fetchFn(input, {
+              // Gemini 3 thought signatures: the openai-compatible SDK drops them, so keep them here.
+              const compatible = model.api.npm.includes("@ai-sdk/openai-compatible")
+              if (compatible && typeof opts.body === "string" && opts.method === "POST")
+                opts.body = GeminiSignature.outgoing(opts.body)
+
+              const sent = await fetchFn(input, {
                 ...opts,
                 // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
                 timeout: false,
               })
+              const res = compatible ? GeminiSignature.incoming(sent) : sent
 
               if (!chunkAbortCtl) return res
               return wrapSSE(res, chunkTimeout, chunkAbortCtl)
