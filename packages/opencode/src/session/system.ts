@@ -3,6 +3,7 @@ import { Context, Effect, Layer } from "effect"
 import { Instance } from "../project/instance"
 import { Foreign } from "../project/foreign"
 import { Related } from "../project/related"
+import { Project } from "../project/project"
 import { Flag } from "../flag/flag"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
@@ -96,6 +97,20 @@ export function verification() {
   ]
 }
 
+/** The run commands the user saved for the project (Edit project → Run), so the agent runs the app with them. */
+export function runCommands() {
+  const saved = Project.get(Instance.project.id)?.commands ?? {}
+  const list = [
+    saved.dev ? `dev server${saved.port ? ` (port ${saved.port})` : ""}` : "",
+    saved.build ? "build" : "",
+    saved.install ? "install and reopen" : "",
+  ].filter(Boolean)
+  if (list.length === 0) return []
+  return [
+    `This project has saved run commands: ${list.join(", ")}. Use the app_run tool to run them instead of guessing commands: dev before you look at a change in the browser, build and install when the user wants the app rebuilt.`,
+  ]
+}
+
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
     if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -144,6 +159,7 @@ export namespace SystemPrompt {
             ...visuals(Flag.OPENCODE_CLIENT),
             ...stepGuidance(Flag.OPENCODE_CLIENT),
             ...verification(),
+            ...runCommands(),
           ]
         },
 

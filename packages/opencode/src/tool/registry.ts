@@ -5,6 +5,7 @@ import { SuggestSessionTool } from "./suggest-session"
 import { ProjectSwitchTool } from "./project"
 import { BashTool } from "./bash"
 import { JobTool } from "./job"
+import { AppRunTool } from "./app-run"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
@@ -123,6 +124,7 @@ export namespace ToolRegistry {
       const websearch = yield* WebSearchTool
       const bash = yield* BashTool
       const jobtool = yield* JobTool
+      const apprun = yield* AppRunTool
       const codesearch = yield* CodeSearchTool
       const globtool = yield* GlobTool
       const writetool = yield* WriteTool
@@ -212,6 +214,7 @@ export namespace ToolRegistry {
             lsp: Tool.init(lsptool),
             plan: Tool.init(plan),
             job: Tool.init(jobtool),
+            app: Tool.init(apprun),
           })
 
           return {
@@ -222,6 +225,7 @@ export namespace ToolRegistry {
               ...(Foreign.enabled() ? [tool.project] : []),
               tool.bash,
               tool.job,
+              tool.app,
               tool.read,
               tool.glob,
               tool.grep,

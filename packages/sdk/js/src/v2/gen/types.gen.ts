@@ -34,6 +34,22 @@ export type Project = {
      * Startup script to run when creating a new workspace (worktree)
      */
     start?: string
+    /**
+     * Starts the app's dev server
+     */
+    dev?: string
+    /**
+     * Port the dev server serves on
+     */
+    port?: number
+    /**
+     * Builds the app (for example the desktop app)
+     */
+    build?: string
+    /**
+     * Puts the new build in place and opens it
+     */
+    install?: string
   }
   time: {
     created: number
@@ -2645,6 +2661,22 @@ export type ProjectUpdateData = {
        * Startup script to run when creating a new workspace (worktree)
        */
       start?: string
+      /**
+       * Starts the app's dev server
+       */
+      dev?: string
+      /**
+       * Port the dev server serves on
+       */
+      port?: number
+      /**
+       * Builds the app (for example the desktop app)
+       */
+      build?: string
+      /**
+       * Puts the new build in place and opens it
+       */
+      install?: string
     }
     /**
      * Folders of related projects: the agent reads and changes them as part of this project

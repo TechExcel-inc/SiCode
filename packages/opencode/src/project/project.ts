@@ -34,6 +34,10 @@ export namespace Project {
       commands: z
         .object({
           start: z.string().optional().describe("Startup script to run when creating a new workspace (worktree)"),
+          dev: z.string().optional().describe("Starts the app's dev server"),
+          port: z.number().optional().describe("Port the dev server serves on"),
+          build: z.string().optional().describe("Builds the app (for example the desktop app)"),
+          install: z.string().optional().describe("Puts the new build in place and opens it"),
         })
         .optional(),
       time: z.object({
@@ -364,6 +368,14 @@ export namespace Project {
       })
 
       const update = Effect.fn("Project.update")(function* (input: UpdateInput) {
+        // Commands merge with the saved ones, so a client that only knows some of them keeps the rest;
+        // an empty value clears that command.
+        const saved = input.commands ? (yield* get(input.projectID))?.commands : undefined
+        const commands = input.commands
+          ? Object.fromEntries(
+              Object.entries({ ...saved, ...input.commands }).filter(([, value]) => value !== "" && value !== undefined),
+            )
+          : undefined
         const result = yield* db((d) =>
           d
             .update(ProjectTable)
@@ -371,7 +383,7 @@ export namespace Project {
               name: input.name,
               icon_url: input.icon?.url,
               icon_color: input.icon?.color,
-              commands: input.commands,
+              commands,
               related: input.related,
               time_updated: Date.now(),
             })
