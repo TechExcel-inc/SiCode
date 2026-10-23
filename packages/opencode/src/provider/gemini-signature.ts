@@ -63,7 +63,41 @@ export namespace GeminiSignature {
     })
   }
 
-  /** The same response, read on the side for signatures as it streams to the SDK. */
+  const parse = (data: string) => {
+    if (!data.startsWith("{")) return
+    try {
+      return JSON.parse(data) as unknown
+    } catch {
+      return
+    }
+  }
+
+  /**
+   * One stream line, with its signatures remembered. Gemini sometimes sends an event cut off part way
+   * and the next event on the same line (`data: {...data: {...}`), which the SDK cannot parse. Such a
+   * line keeps only its whole events, one per line.
+   */
+  export function repair(line: string, ids: Map<number, string>) {
+    if (!line.startsWith("data:")) return line
+    const json = parse(line.slice(5).trim())
+    if (json !== undefined) {
+      capture(json, ids)
+      return line
+    }
+    const whole = line
+      .slice(5)
+      .split(/data: ?(?=\{)/)
+      .map((part) => part.trim())
+      .flatMap((part) => {
+        const item = parse(part)
+        return item === undefined ? [] : [{ part, item }]
+      })
+    if (whole.length === 0) return line
+    whole.forEach((x) => capture(x.item, ids))
+    return whole.map((x) => "data: " + x.part).join("\n\n")
+  }
+
+  /** The same response, with signatures remembered and cut-off events dropped as it streams to the SDK. */
   export function incoming(res: Response) {
     if (!res.ok || !res.body) return res
     const ids = new Map<number, string>()
@@ -76,30 +110,18 @@ export namespace GeminiSignature {
       return res
     }
     const decoder = new TextDecoder()
+    const encoder = new TextEncoder()
     const state = { rest: "" }
-    const read = (text: string) => {
-      const lines = (state.rest + text).split("\n")
-      state.rest = lines.pop() ?? ""
-      lines
-        .map((line) => line.trim())
-        .filter((line) => line.startsWith("data:") && line !== "data: [DONE]")
-        .forEach((line) => {
-          const json = (() => {
-            const data = line.slice(5).trim()
-            if (!data.startsWith("{")) return
-            return JSON.parse(data) as unknown
-          })()
-          capture(json, ids)
-        })
-    }
     const body = res.body.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
-          controller.enqueue(chunk)
-          // A chunk that isn't valid JSON is the SDK's business; reading signatures never breaks the stream.
-          Promise.resolve()
-            .then(() => read(decoder.decode(chunk, { stream: true })))
-            .catch(() => undefined)
+          const lines = (state.rest + decoder.decode(chunk, { stream: true })).split("\n")
+          state.rest = lines.pop() ?? ""
+          if (lines.length > 0) controller.enqueue(encoder.encode(lines.map((line) => repair(line, ids)).join("\n") + "\n"))
+        },
+        flush(controller) {
+          const last = state.rest + decoder.decode()
+          if (last) controller.enqueue(encoder.encode(repair(last, ids)))
         },
       }),
     )

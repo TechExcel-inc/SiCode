@@ -90,4 +90,46 @@ describe("gemini thought signatures", () => {
     await Bun.sleep(10)
     expect(GeminiSignature.recall(id)).toBe("SIG-B")
   })
+
+  test("an event cut off by the next one on the same line is dropped", async () => {
+    const id = `e-${crypto.randomUUID()}`
+    const good = {
+      choices: [
+        {
+          delta: {
+            role: "assistant",
+            tool_calls: [
+              { index: 0, id, type: "function", function: { name: "question", arguments: "{}" }, extra_content: { google: { thought_signature: "SIG-E" } } },
+            ],
+          },
+        },
+      ],
+    }
+    const text = `data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"extra_content":{"google":{"thought_signature":"CUT data: ${JSON.stringify(good)}\n\ndata: [DONE]\n\n`
+    const bytes = new TextEncoder().encode(text)
+    const res = GeminiSignature.incoming(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            // split mid-line, the way the network does
+            controller.enqueue(bytes.slice(0, 40))
+            controller.enqueue(bytes.slice(40))
+            controller.close()
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    )
+    const events = (await res.text())
+      .split("\n")
+      .filter((line) => line.startsWith("data: {"))
+      .map((line) => JSON.parse(line.slice(6)))
+    expect(events).toEqual([good])
+    expect(GeminiSignature.recall(id)).toBe("SIG-E")
+  })
+
+  test("a whole event that mentions data: is not split", () => {
+    const line = `data: ${JSON.stringify({ choices: [{ delta: { content: 'send "data: {}"' } }] })}`
+    expect(GeminiSignature.repair(line, new Map())).toBe(line)
+  })
 })

@@ -33,6 +33,7 @@ import {
   elapsedParts,
   latestChecklist,
   runningHelpers,
+  doneActions,
   type TurnStep,
 } from "./session-turn-activity"
 import type { UiI18nKey } from "../context/i18n"
@@ -349,15 +350,14 @@ export function SessionTurn(
   const turnParts = createMemo(() =>
     assistantMessages().flatMap((message) => list(data.store.part?.[message.id], emptyParts)),
   )
-  const reasoningHeading = createMemo(() => {
-    let reason: string | undefined
-    for (const part of turnParts()) {
-      if (part.type !== "reasoning" || !part.text) continue
-      const h = heading(part.text)
-      if (h) reason = h
-    }
-    return reason
-  })
+  // Only the thinking since the last tool call: an older heading would name a step that is long done.
+  const reasoningHeading = createMemo(() =>
+    turnParts().reduce<string | undefined>((reason, part) => {
+      if (part.type === "tool") return undefined
+      if (part.type !== "reasoning" || !part.text) return reason
+      return heading(part.text) ?? reason
+    }, undefined),
+  )
   const checklist = createMemo(() => latestChecklist(turnParts()))
   const docked = createMemo(() => !!props.checklistDocked && !!props.liveMount?.below)
   const live = createMemo(() => {
@@ -384,6 +384,13 @@ export function SessionTurn(
       items.push(
         i18n.t(helpers === 1 ? "ui.sessionTurn.live.helpers.one" : "ui.sessionTurn.live.helpers.other", {
           count: String(helpers),
+        }),
+      )
+    const done = doneActions(turnParts())
+    if (done > 0)
+      items.push(
+        i18n.t(done === 1 ? "ui.sessionTurn.live.done.one" : "ui.sessionTurn.live.done.other", {
+          count: String(done),
         }),
       )
     const start = message()?.time.created

@@ -82,6 +82,8 @@ export const dict = {
   "ui.sessionTurn.live.tool": "正在使用 {{value}}",
   "ui.sessionTurn.live.helpers.one": "{{count}} 个助手运行中",
   "ui.sessionTurn.live.helpers.other": "{{count}} 个助手运行中",
+  "ui.sessionTurn.live.done.one": "已完成 {{count}} 步",
+  "ui.sessionTurn.live.done.other": "已完成 {{count}} 步",
   "ui.sessionTurn.live.elapsed.seconds": "{{seconds}}秒",
   "ui.sessionTurn.live.elapsed.minutes": "{{minutes}}分 {{seconds}}秒",
   "ui.sessionTurn.live.elapsed.hours": "{{hours}}小时 {{minutes}}分",

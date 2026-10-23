@@ -164,6 +164,11 @@ export function runningHelpers(parts: readonly PartType[]) {
   return parts.filter((part) => part.type === "tool" && part.tool === "task" && running(part)).length
 }
 
+/** Tool calls the turn has finished, helpers included: how far a long turn has come. */
+export function doneActions(parts: readonly PartType[]) {
+  return parts.filter((part) => part.type === "tool" && part.state.status === "completed").length
+}
+
 /** Elapsed time split for display: "45s", "2m 10s", "1h 3m". */
 export function elapsedParts(ms: number): { key: string; params: Record<string, number> } {
   const total = Math.max(0, Math.floor(ms / 1000))

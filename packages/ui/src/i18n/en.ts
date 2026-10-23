@@ -85,6 +85,8 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.live.tool": "Using {{value}}",
   "ui.sessionTurn.live.helpers.one": "{{count}} helper running",
   "ui.sessionTurn.live.helpers.other": "{{count}} helpers running",
+  "ui.sessionTurn.live.done.one": "{{count}} step done",
+  "ui.sessionTurn.live.done.other": "{{count}} steps done",
   "ui.sessionTurn.live.elapsed.seconds": "{{seconds}}s",
   "ui.sessionTurn.live.elapsed.minutes": "{{minutes}}m {{seconds}}s",
   "ui.sessionTurn.live.elapsed.hours": "{{hours}}h {{minutes}}m",

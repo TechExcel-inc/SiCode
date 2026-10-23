@@ -9,6 +9,7 @@ import {
   isFoldedAction,
   latestChecklist,
   runningHelpers,
+  doneActions,
 } from "./session-turn-activity"
 
 let seq = 0
@@ -167,5 +168,11 @@ describe("checklistFolds", () => {
     expect(checklistFolds([done, { content: "c", status: "pending" }], false)).toBe(false)
     expect(checklistFolds([done, { content: "c", status: "in_progress" }], false)).toBe(false)
     expect(checklistFolds([], false)).toBe(false)
+  })
+})
+
+describe("doneActions", () => {
+  test("counts finished tool calls only", () => {
+    expect(doneActions([tool("read", "completed", {}), tool("grep", "completed", {}), tool("bash", "running", {})])).toBe(2)
   })
 })
