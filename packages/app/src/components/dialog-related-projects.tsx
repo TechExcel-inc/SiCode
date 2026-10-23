@@ -20,8 +20,8 @@ const keyOf = (item: CoworkEntry) => (item.worktree ? workspaceKey(item.worktree
 
 /**
  * Chooses a project's related projects: their repos, often other projects' primary repos, which the
- * AI may read and change from this project's sessions. Ticking adds and unticking removes; the rows
- * say what will change, and nothing is saved until Save.
+ * AI may read and change from this project's sessions. Ticking adds and unticking removes; nothing is
+ * saved until Save.
  */
 export function DialogRelatedProjects(props: { root: string; picked?: Record<string, boolean>; added?: Row[] }) {
   const dialog = useDialog()
@@ -179,16 +179,6 @@ export function DialogRelatedProjects(props: { root: string; picked?: Record<str
                       {row.worktree ?? `${row.repo} · ${language.t("cowork.picker.elsewhere")}`}
                     </span>
                   </span>
-                  <Show when={on(row) && !linked(row)}>
-                    <span class="shrink-0 px-1.5 py-0.5 rounded text-11-medium bg-surface-diff-add-base text-text-diff-add-base">
-                      {language.t("links.row.add")}
-                    </span>
-                  </Show>
-                  <Show when={!on(row) && linked(row)}>
-                    <span class="shrink-0 px-1.5 py-0.5 rounded text-11-medium bg-surface-diff-delete-base text-text-diff-delete-base">
-                      {language.t("links.row.remove")}
-                    </span>
-                  </Show>
                 </button>
               )}
             </For>
@@ -199,12 +189,7 @@ export function DialogRelatedProjects(props: { root: string; picked?: Record<str
           <Button type="button" variant="secondary" size="large" icon="folder-add-left" data-action="links-open-project" onClick={() => void open()}>
             {language.t("links.related.open")}
           </Button>
-          <span class="ml-auto text-12-regular text-text-weak">
-            <Show when={adds().length + removes().length > 0}>
-              {language.t("links.pending", { add: adds().length, remove: removes().length })}
-            </Show>
-          </span>
-          <Button type="button" variant="ghost" size="large" disabled={state.busy} onClick={() => dialog.close()}>
+          <Button type="button" variant="ghost" class="ml-auto" size="large" disabled={state.busy} onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </Button>
           <Button type="button" variant="primary" size="large" data-action="links-save" disabled={state.busy} onClick={() => void save()}>
