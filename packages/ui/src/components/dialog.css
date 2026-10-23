@@ -4,7 +4,8 @@
   position: fixed;
   inset: 0;
   z-index: 50;
-  background-color: hsl(from var(--background-base) h s l / 0.2);
+  /* Dims the window behind a dialog enough that the dialog reads as a separate layer, in both themes. */
+  background-color: rgb(0 0 0 / 0.45);
 }
 
 [data-component="dialog"] {
@@ -48,9 +49,14 @@
       /* padding: 8px; */
       /* padding: 8px 8px 0 8px; */
       border-radius: var(--radius-xl);
+      border: 1px solid var(--border-strong-base);
       background: var(--surface-raised-stronger-non-alpha);
       background-clip: padding-box;
-      box-shadow: var(--shadow-lg-border-base);
+      /* A clear edge and a deep shadow, so the dialog floats above the page instead of blending in. */
+      box-shadow:
+        var(--shadow-lg-border-base),
+        0 24px 64px rgb(0 0 0 / 0.45),
+        0 4px 16px rgb(0 0 0 / 0.25);
 
       [data-slot="dialog-header"] {
         display: flex;
