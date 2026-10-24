@@ -32,7 +32,10 @@ export function AboutPopover(props: { mobile?: boolean }) {
       class="about-popover !min-w-0 w-[240px] [&_[data-slot=popover-body]]:p-0"
     >
       <div class="flex flex-col gap-3 p-4 select-text">
-        <span class="text-14-medium text-text-strong">{language.t("about.title")}</span>
+        <div class="flex flex-col gap-0.5">
+          <span class="text-14-medium text-text-strong">{language.t("about.title")}</span>
+          <span data-slot="about-tagline" class="text-12-regular text-text-weak">{language.t("about.tagline")}</span>
+        </div>
         <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-12-regular">
           <dt class="text-text-weak">{language.t("about.version")}</dt>
           <dd class="text-text-strong tabular-nums" data-action="about-version">

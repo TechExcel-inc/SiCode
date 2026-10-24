@@ -727,6 +727,7 @@ export const dict = {
   "sidebar.settings": "Settings",
   "sidebar.help": "Help",
   "about.title": "EAD SiCode",
+  "about.tagline": "People and super-intelligent agents, coding together.",
   "about.version": "Version",
   "about.build": "Build",
   "about.help": "Online Help",

@@ -607,6 +607,7 @@ export const dict = {
   "sidebar.settings": "設定",
   "sidebar.help": "說明",
   "about.title": "EAD SiCode",
+  "about.tagline": "人與超級智能體，一起編程。",
   "about.version": "版本",
   "about.build": "建置",
   "about.help": "線上說明",

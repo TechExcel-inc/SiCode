@@ -619,6 +619,7 @@ export const dict = {
   "sidebar.settings": "设置",
   "sidebar.help": "帮助",
   "about.title": "EAD SiCode",
+  "about.tagline": "人与超级智能体，一起编程。",
   "about.version": "版本",
   "about.build": "构建",
   "about.help": "在线帮助",
