@@ -178,7 +178,7 @@ export namespace Config {
       })
       if (!md) continue
 
-      const patterns = [`/${Brand.project}/command/`, `/${Brand.project}/commands/`, "/command/", "/commands/"]
+      const patterns = [...Brand.projects.flatMap((dir) => [`/${dir}/command/`, `/${dir}/commands/`]), "/command/", "/commands/"]
       const file = rel(item, patterns) ?? path.basename(item)
       const name = trim(file)
 
@@ -217,7 +217,7 @@ export namespace Config {
       })
       if (!md) continue
 
-      const patterns = [`/${Brand.project}/agent/`, `/${Brand.project}/agents/`, "/agent/", "/agents/"]
+      const patterns = [...Brand.projects.flatMap((dir) => [`/${dir}/agent/`, `/${dir}/agents/`]), "/agent/", "/agents/"]
       const file = rel(item, patterns) ?? path.basename(item)
       const agentName = trim(file)
 
@@ -1096,7 +1096,7 @@ export namespace Config {
   export class Service extends Context.Service<Service, Interface>()("@opencode/Config") {}
 
   function globalConfigFile() {
-    const candidates = [`${Brand.config}.jsonc`, `${Brand.config}.json`, "config.json"].map((file) =>
+    const candidates = [`${Brand.config}.jsonc`, `${Brand.config}.json`, `${Brand.legacy.config}.jsonc`, `${Brand.legacy.config}.json`, "config.json"].map((file) =>
       path.join(Global.Path.config, file),
     )
     for (const file of candidates) {
@@ -1250,6 +1250,8 @@ export namespace Config {
           let result: Info = pipe(
             {},
             mergeDeep(yield* loadFile(path.join(Global.Path.config, "config.json"))),
+            mergeDeep(yield* loadFile(path.join(Global.Path.config, `${Brand.legacy.config}.json`))),
+            mergeDeep(yield* loadFile(path.join(Global.Path.config, `${Brand.legacy.config}.jsonc`))),
             mergeDeep(yield* loadFile(path.join(Global.Path.config, `${Brand.config}.json`))),
             mergeDeep(yield* loadFile(path.join(Global.Path.config, `${Brand.config}.jsonc`))),
           )
@@ -1440,9 +1442,8 @@ export namespace Config {
           const deps: Fiber.Fiber<void, never>[] = []
 
           for (const dir of unique(directories)) {
-            if (dir.endsWith(Brand.project) || dir === Flag.OPENCODE_CONFIG_DIR) {
-              for (const file of [`${Brand.config}.json`, `${Brand.config}.jsonc`]) {
-                const source = path.join(dir, file)
+            if (Brand.isProject(dir) || dir === Flag.OPENCODE_CONFIG_DIR) {
+              for (const source of Brand.files(dir)) {
                 log.debug(`loading config from ${source}`)
                 yield* merge(source, yield* loadFile(source))
                 result.agent ??= {}
@@ -1520,8 +1521,7 @@ export namespace Config {
           }
 
           if (existsSync(managedDir)) {
-            for (const file of [`${Brand.config}.json`, `${Brand.config}.jsonc`]) {
-              const source = path.join(managedDir, file)
+            for (const source of Brand.files(managedDir)) {
               yield* merge(source, yield* loadFile(source), "global")
             }
           }

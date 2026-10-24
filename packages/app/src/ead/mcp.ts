@@ -14,6 +14,7 @@ export function mcpCandidates(worktree: string, preferred = "") {
   for (let i = parts.length; i >= 1; i--) {
     const base = prefix + parts.slice(0, i).join("/")
     walked.push(...REPOS.map((repo) => `${base}/${repo}/mcp-eadpfm/dist/index.js`))
+    walked.push(`${base}/SiCode/packages/desktop/src-tauri/resources/mcp-eadpfm/dist/index.js`)
     walked.push(`${base}/KloudCode/packages/desktop/src-tauri/resources/mcp-eadpfm/dist/index.js`)
     walked.push(`${base}/packages/desktop/src-tauri/resources/mcp-eadpfm/dist/index.js`)
   }

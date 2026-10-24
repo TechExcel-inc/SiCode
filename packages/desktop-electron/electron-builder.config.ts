@@ -84,7 +84,7 @@ function getConfig() {
     case "dev": {
       return {
         ...base,
-        appId: "ai.kloudcode.desktop.dev",
+        appId: "ai.sicode.desktop.dev",
         productName: "EAD SiCode",
         rpm: { packageName: "opencode-dev" },
       }
@@ -92,7 +92,7 @@ function getConfig() {
     case "beta": {
       return {
         ...base,
-        appId: "ai.kloudcode.desktop.beta",
+        appId: "ai.sicode.desktop.beta",
         productName: "EAD SiCode Beta",
         protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
@@ -102,7 +102,7 @@ function getConfig() {
     case "prod": {
       return {
         ...base,
-        appId: "ai.kloudcode.desktop",
+        appId: "ai.sicode.desktop",
         productName: "EAD SiCode",
         protocols: { name: "OpenCode", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },

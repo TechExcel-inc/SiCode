@@ -64,7 +64,7 @@ jobs:
           export OPENCODE_VERSION="$(node -p "require('./package.json').version")"
           echo "version $OPENCODE_VERSION"
           bun ./scripts/predev.ts
-          grep -aq kloudcode "src-tauri/sidecars/opencode-cli-$TARGET.exe"
+          grep -aq sicode "src-tauri/sidecars/opencode-cli-$TARGET.exe"
 
       - name: Build the installer
         shell: bash

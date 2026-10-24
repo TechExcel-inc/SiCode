@@ -41,7 +41,7 @@ if [[ ! -f "$cfg" ]]; then
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EAD SiCode",
-  "identifier": "ai.kloudcode.desktop",
+  "identifier": "ai.sicode.desktop",
   "bundle": {
     "createUpdaterArtifacts": false,
     "icon": [
@@ -121,11 +121,11 @@ if [[ ! -f "$sidecar" ]]; then
   echo "error: sidecar not found at $sidecar" >&2
   exit 1
 fi
-if ! rg -q 'kloudcode' "$sidecar"; then
-  echo "error: sidecar missing kloudcode brand (stale opencode binary?)" >&2
+if ! rg -q 'sicode' "$sidecar"; then
+  echo "error: sidecar missing sicode brand (stale opencode binary?)" >&2
   exit 1
 fi
-echo "==> sidecar ok ($(wc -c < "$sidecar" | tr -d ' ') bytes, kloudcode brand verified)"
+echo "==> sidecar ok ($(wc -c < "$sidecar" | tr -d ' ') bytes, sicode brand verified)"
 
 echo "==> tauri build (unsigned release)"
 bun run tauri build --target "$target" --config ./src-tauri/tauri.unsigned.conf.json

@@ -489,7 +489,7 @@ export namespace Ripgrep {
 
     const root: Node = { name: "", children: new Map() }
     for (const file of files) {
-      if (file.includes(Brand.project)) continue
+      if (Brand.projects.some((dir) => file.includes(dir))) continue
       const parts = file.split(path.sep)
       if (parts.length < 2) continue
       let node = root

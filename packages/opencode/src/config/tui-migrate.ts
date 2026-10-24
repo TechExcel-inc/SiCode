@@ -136,15 +136,19 @@ async function backupAndStripLegacy(file: string, source: string) {
 }
 
 async function opencodeFiles(input: { directories: string[]; managed: string }) {
+  // Settings files under the current name and the old one (KloudCode), which may still hold TUI keys.
   const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
     ? []
-    : await ConfigPaths.projectFiles(Brand.config, Instance.directory, Instance.worktree)
-  const files = [...project, ...ConfigPaths.fileInDirectory(Global.Path.config, Brand.config)]
+    : (
+        await Promise.all(Brand.configs.map((name) => ConfigPaths.projectFiles(name, Instance.directory, Instance.worktree)))
+      ).flat()
+  const inside = (dir: string) => Brand.configs.flatMap((name) => ConfigPaths.fileInDirectory(dir, name))
+  const files = [...project, ...inside(Global.Path.config)]
   for (const dir of unique(input.directories)) {
-    files.push(...ConfigPaths.fileInDirectory(dir, Brand.config))
+    files.push(...inside(dir))
   }
   if (Flag.OPENCODE_CONFIG) files.push(Flag.OPENCODE_CONFIG)
-  files.push(...ConfigPaths.fileInDirectory(input.managed, Brand.config))
+  files.push(...inside(input.managed))
 
   const existing = await Promise.all(
     unique(files).map(async (file) => {

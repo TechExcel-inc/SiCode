@@ -1,3 +1,4 @@
+mod brand;
 mod asset;
 mod cli;
 mod constants;
@@ -345,6 +346,8 @@ pub fn run() {
 
             // Before any settings store loads: restore a settings file that a cut-short save left unreadable.
             if let Ok(dir) = app.path().app_data_dir() {
+                // First start as SiCode: bring over the settings KloudCode kept under its old app id.
+                brand::migrate(&dir);
                 settings_backup::protect(&dir);
             }
 

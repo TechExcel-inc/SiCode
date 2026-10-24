@@ -19,12 +19,12 @@ const APP_NAMES: Record<string, string> = {
   prod: "EAD SiCode",
 }
 const APP_IDS: Record<string, string> = {
-  dev: "ai.kloudcode.desktop.dev",
-  beta: "ai.kloudcode.desktop.beta",
-  prod: "ai.kloudcode.desktop",
+  dev: "ai.sicode.desktop.dev",
+  beta: "ai.sicode.desktop.beta",
+  prod: "ai.sicode.desktop",
 }
 app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "EAD SiCode")
-app.setPath("userData", join(app.getPath("appData"), app.isPackaged ? APP_IDS[CHANNEL] : "ai.kloudcode.desktop.dev"))
+app.setPath("userData", join(app.getPath("appData"), app.isPackaged ? APP_IDS[CHANNEL] : "ai.sicode.desktop.dev"))
 const { autoUpdater } = pkg
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"

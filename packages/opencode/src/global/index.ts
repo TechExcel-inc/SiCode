@@ -27,6 +27,37 @@ export namespace Global {
   }
 }
 
+export namespace Migrate {
+  /**
+   * SiCode was KloudCode: on the first start under the new name, its data, settings and state are
+   * copied (not moved, so the old folders stay as a backup) and the database and settings files take
+   * the new names. A folder that already exists under the new name is left alone.
+   */
+  export async function brand(roots: { data: string; config: string; state: string }) {
+    const done: string[] = []
+    for (const root of [roots.data, roots.config, roots.state]) {
+      const from = path.join(root, Brand.legacy.app)
+      const to = path.join(root, Brand.app)
+      if ((await Filesystem.exists(to)) || !(await Filesystem.exists(from))) continue
+      await fs.cp(from, to, { recursive: true, preserveTimestamps: true })
+      done.push(to)
+    }
+    const data = path.join(roots.data, Brand.app)
+    const config = path.join(roots.config, Brand.app)
+    const renames = [
+      ...["", "-wal", "-shm"].map((end) => [path.join(data, Brand.legacy.db + end), path.join(data, Brand.db + end)]),
+      ...[".json", ".jsonc"].map((end) => [path.join(config, Brand.legacy.config + end), path.join(config, Brand.config + end)]),
+    ]
+    for (const [from, to] of renames) {
+      if (!done.some((dir) => from.startsWith(dir))) continue
+      if ((await Filesystem.exists(from)) && !(await Filesystem.exists(to))) await fs.rename(from, to)
+    }
+    return done
+  }
+}
+
+await Migrate.brand({ data: xdgData!, config: xdgConfig!, state: xdgState! })
+
 await Promise.all([
   fs.mkdir(Global.Path.data, { recursive: true }),
   fs.mkdir(Global.Path.config, { recursive: true }),

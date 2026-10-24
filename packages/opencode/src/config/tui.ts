@@ -101,7 +101,7 @@ export namespace TuiConfig {
     }
 
     for (const dir of unique(directories)) {
-      if (!dir.endsWith(Brand.project) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+      if (!Brand.isProject(dir) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
       for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
         await mergeFile(acc, file)
       }
@@ -126,7 +126,7 @@ export namespace TuiConfig {
     const deps: Promise<void>[] = []
     if (acc.result.plugin?.length) {
       for (const dir of unique(directories)) {
-        if (!dir.endsWith(Brand.project) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+        if (!Brand.isProject(dir) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
         deps.push(installDeps(dir))
       }
     }

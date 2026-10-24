@@ -23,19 +23,19 @@ function tauriDir(id: string) {
 
 // The Tauri app identifier changes between dev/beta/prod builds.
 const TAURI_APP_IDS: Record<string, string> = {
-  dev: "ai.kloudcode.desktop.dev",
-  beta: "ai.kloudcode.desktop.beta",
-  prod: "ai.kloudcode.desktop",
+  dev: "ai.sicode.desktop.dev",
+  beta: "ai.sicode.desktop.beta",
+  prod: "ai.sicode.desktop",
 }
 function tauriAppId() {
-  return app.isPackaged ? TAURI_APP_IDS[CHANNEL] : "ai.kloudcode.desktop.dev"
+  return app.isPackaged ? TAURI_APP_IDS[CHANNEL] : "ai.sicode.desktop.dev"
 }
 
 // Migrate a single Tauri .dat file into the corresponding electron-store.
-// `kloudcode.settings.dat` maps to the `kloudcode.settings` store
+// `sicode.settings.dat` maps to the `sicode.settings` store
 // (the electron-store name without the `.dat` extension). All other .dat files
 // keep their full filename as the electron-store name so they match what the
-// renderer already passes via IPC (e.g. `"default.dat"`, `"kloudcode.global.dat"`).
+// renderer already passes via IPC (e.g. `"default.dat"`, `"sicode.global.dat"`).
 function migrateFile(datPath: string, filename: string) {
   let data: Record<string, unknown>
   try {
@@ -45,10 +45,10 @@ function migrateFile(datPath: string, filename: string) {
     return
   }
 
-  // kloudcode.settings.dat → the electron settings store ("kloudcode.settings").
+  // sicode.settings.dat → the electron settings store ("sicode.settings").
   // All other .dat files keep their full filename as the store name so they match
-  // what the renderer passes via IPC (e.g. "default.dat", "kloudcode.global.dat").
-  const storeName = filename === "kloudcode.settings.dat" ? "kloudcode.settings" : filename
+  // what the renderer passes via IPC (e.g. "default.dat", "sicode.global.dat").
+  const storeName = filename === "sicode.settings.dat" ? "sicode.settings" : filename
   const target = getStore(storeName)
   const migrated: string[] = []
   const skipped: string[] = []

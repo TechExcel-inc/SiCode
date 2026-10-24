@@ -250,7 +250,7 @@ listenForDeepLinks()
 render(() => {
   const platform = createPlatform()
   const loadLocale = async () => {
-    const current = await platform.storage?.("kloudcode.global.dat").getItem("language")
+    const current = await platform.storage?.("sicode.global.dat").getItem("language")
     const legacy = current ? undefined : await platform.storage?.().getItem("language.v1")
     const raw = current ?? legacy
     if (!raw) return

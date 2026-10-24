@@ -132,7 +132,7 @@ export async function handle(req: Request, target: string, port: number) {
       headers: {
         "content-type": "text/plain; charset=utf-8",
         "x-ead-proxy-target": target,
-        "x-ead-proxy-host": "kloudcode",
+        "x-ead-proxy-host": "sicode",
         "cache-control": "no-store",
       },
     })

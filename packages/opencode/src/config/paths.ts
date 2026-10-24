@@ -19,7 +19,7 @@ export namespace ConfigPaths {
       ...(!Flag.OPENCODE_DISABLE_PROJECT_CONFIG
         ? await Array.fromAsync(
             Filesystem.up({
-              targets: [Brand.project],
+              targets: Brand.projects,
               start: directory,
               stop: worktree,
             }),
@@ -27,7 +27,7 @@ export namespace ConfigPaths {
         : []),
       ...(await Array.fromAsync(
         Filesystem.up({
-          targets: [Brand.project],
+          targets: Brand.projects,
           start: Global.Path.home,
           stop: Global.Path.home,
         }),
