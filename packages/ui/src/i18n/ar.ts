@@ -142,9 +142,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}} أجيب",
   "ui.question.answer.none": "(لا توجد إجابة)",
   "ui.question.review.notAnswered": "(لم يتم الرد)",
-  "ui.question.multiHint": "حدد كل ما ينطبق",
-  "ui.question.singleHint": "حدد إجابة واحدة",
-  "ui.question.custom.placeholder": "اكتب إجابتك...",
 
   "ui.fileSearch.placeholder": "بحث",
   "ui.fileSearch.previousMatch": "المطابقة السابقة",

@@ -148,9 +148,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}} cevaplandı",
   "ui.question.answer.none": "(cevap yok)",
   "ui.question.review.notAnswered": "(cevaplanmadı)",
-  "ui.question.multiHint": "Geçerli tüm cevapları seçin",
-  "ui.question.singleHint": "Bir cevap seçin",
-  "ui.question.custom.placeholder": "Cevabınızı yazın...",
 
   "ui.fileSearch.placeholder": "Bul",
   "ui.fileSearch.previousMatch": "Önceki",

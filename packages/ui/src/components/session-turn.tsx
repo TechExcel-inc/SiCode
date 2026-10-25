@@ -13,7 +13,7 @@ import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic, Portal } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, type TurnFilesAction, type UserActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, type UserActions } from "./message-part"
 import { Card } from "./card"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -250,6 +250,8 @@ export function SessionTurn(
   const MAX_FILES = 10
   const edited = createMemo(() => diffs().length)
   const [state, setState] = createStore({
+    // The agent commits its own work, so a finished task's files are one folded line, opened on click.
+    open: false,
     showAll: false,
     expanded: [] as string[],
   })
@@ -257,10 +259,9 @@ export function SessionTurn(
   const expanded = () => state.expanded
   const overflow = createMemo(() => Math.max(0, edited() - MAX_FILES))
   const visible = createMemo(() => (showAll() ? diffs() : diffs().slice(0, MAX_FILES)))
-  const runFilesAction = (action: TurnFilesAction) => {
-    const msg = message()
-    if (!msg) return
-    void action({ sessionID: props.sessionID, messageID: msg.id, files: diffs().map((diff) => diff.file) })
+  const toggleOpen = () => {
+    autoScroll.pause()
+    setState("open", !state.open)
   }
   const toggleAll = () => {
     autoScroll.pause()
@@ -509,50 +510,30 @@ export function SessionTurn(
                   data-slot="session-turn-diffs"
                   data-component="session-turn-diffs-group"
                   data-show-all={showAll() || undefined}
+                  data-open={state.open || undefined}
                 >
-                  <div data-slot="session-turn-diffs-header">
+                  <div
+                    data-slot="session-turn-diffs-header"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={state.open}
+                    onClick={toggleOpen}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return
+                      event.preventDefault()
+                      toggleOpen()
+                    }}
+                  >
                     <span data-slot="session-turn-diffs-label">
                       {edited()} {i18n.t("ui.sessionTurn.diffs.changed")}{" "}
                       {i18n.t(edited() === 1 ? "ui.common.file.one" : "ui.common.file.other")}
                     </span>
                     <DiffChanges changes={diffs()} />
-                    <Show when={overflow() > 0}>
-                      <span data-slot="session-turn-diffs-toggle" onClick={toggleAll}>
-                        {showAll() ? i18n.t("ui.sessionTurn.diffs.showLess") : i18n.t("ui.sessionTurn.diffs.showAll")}
-                      </span>
-                    </Show>
-                    <Show when={props.actions?.commit || props.actions?.discard}>
-                      <span data-slot="session-turn-diffs-actions">
-                        <Show when={props.actions?.discard}>
-                          {(discard) => (
-                            <button
-                              type="button"
-                              data-action="session-turn-discard"
-                              data-slot="session-turn-diffs-action"
-                              onClick={() => runFilesAction(discard())}
-                            >
-                              <Icon name="reset" size="small" />
-                              {i18n.t("ui.sessionTurn.diffs.discard")}
-                            </button>
-                          )}
-                        </Show>
-                        <Show when={props.actions?.commit}>
-                          {(commit) => (
-                            <button
-                              type="button"
-                              data-action="session-turn-commit"
-                              data-slot="session-turn-diffs-action"
-                              data-primary
-                              onClick={() => runFilesAction(commit())}
-                            >
-                              <Icon name="cloud-upload" size="small" />
-                              {i18n.t("ui.sessionTurn.diffs.commit")}
-                            </button>
-                          )}
-                        </Show>
-                      </span>
-                    </Show>
+                    <span data-slot="session-turn-diffs-chevron">
+                      <Icon name={state.open ? "chevron-down" : "chevron-right"} size="small" />
+                    </span>
                   </div>
+                  <Show when={state.open}>
                   <div data-component="session-turn-diffs-content">
                     <Accordion
                       multiple
@@ -626,6 +607,7 @@ export function SessionTurn(
                       </div>
                     </Show>
                   </div>
+                  </Show>
                 </div>
               </Show>
               <Show when={error()}>

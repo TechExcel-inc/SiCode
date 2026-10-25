@@ -141,9 +141,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}} отвечено",
   "ui.question.answer.none": "(нет ответа)",
   "ui.question.review.notAnswered": "(не отвечено)",
-  "ui.question.multiHint": "Выберите все подходящие",
-  "ui.question.singleHint": "Выберите один ответ",
-  "ui.question.custom.placeholder": "Введите ваш ответ...",
 
   "ui.fileSearch.placeholder": "Найти",
   "ui.fileSearch.previousMatch": "Предыдущее",

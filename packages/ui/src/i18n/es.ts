@@ -142,9 +142,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}} respondidas",
   "ui.question.answer.none": "(sin respuesta)",
   "ui.question.review.notAnswered": "(no respondida)",
-  "ui.question.multiHint": "Selecciona todas las que correspondan",
-  "ui.question.singleHint": "Selecciona una respuesta",
-  "ui.question.custom.placeholder": "Escribe tu respuesta...",
 
   "ui.fileSearch.placeholder": "Buscar",
   "ui.fileSearch.previousMatch": "Anterior",

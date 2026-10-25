@@ -134,6 +134,11 @@
     z-index: 20;
     background-color: var(--background-stronger);
     height: 44px;
+    cursor: pointer;
+  }
+
+  [data-slot="session-turn-diffs-header"]:hover [data-slot="session-turn-diffs-chevron"] {
+    color: var(--icon-base);
   }
 
   [data-slot="session-turn-diffs-label"] {
@@ -145,58 +150,9 @@
     line-height: var(--line-height-large);
   }
 
-  [data-slot="session-turn-diffs-toggle"] {
-    color: var(--text-interactive-base);
-    font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-regular);
-    line-height: var(--line-height-large);
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    margin-left: 4px;
-  }
-
-  /* Commit and Discard for a finished reply's own changes, at the right of the header. */
-  [data-slot="session-turn-diffs-actions"] {
+  [data-slot="session-turn-diffs-chevron"] {
     display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-  }
-
-  [data-slot="session-turn-diffs-action"] {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 26px;
-    padding: 0 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-weak-base);
-    background-color: var(--surface-base);
-    color: var(--text-base);
-    font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-  }
-
-  [data-slot="session-turn-diffs-action"]:hover {
-    background-color: var(--surface-base-hover);
-    color: var(--text-strong);
-  }
-
-  [data-slot="session-turn-diffs-action"][data-primary] {
-    border-color: var(--border-interactive-base);
-    color: var(--text-interactive-base);
-  }
-
-  [data-component="session-turn-diffs-group"]:hover [data-slot="session-turn-diffs-toggle"] {
-    opacity: 1;
-  }
-
-  [data-component="session-turn-diffs-group"][data-show-all] [data-slot="session-turn-diffs-toggle"] {
-    opacity: 1;
+    color: var(--icon-weak-base);
   }
 
   [data-slot="session-turn-diffs-more"] {

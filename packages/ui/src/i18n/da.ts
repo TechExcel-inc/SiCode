@@ -141,9 +141,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}} besvaret",
   "ui.question.answer.none": "(intet svar)",
   "ui.question.review.notAnswered": "(ikke besvaret)",
-  "ui.question.multiHint": "Vælg alle der gælder",
-  "ui.question.singleHint": "Vælg ét svar",
-  "ui.question.custom.placeholder": "Skriv dit svar...",
 
   "ui.fileSearch.placeholder": "Find",
   "ui.fileSearch.previousMatch": "Forrige match",

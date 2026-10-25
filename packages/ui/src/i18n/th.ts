@@ -143,9 +143,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}} ตอบแล้ว",
   "ui.question.answer.none": "(ไม่มีคำตอบ)",
   "ui.question.review.notAnswered": "(ไม่ได้ตอบ)",
-  "ui.question.multiHint": "เลือกทั้งหมดที่ใช้",
-  "ui.question.singleHint": "เลือกหนึ่งคำตอบ",
-  "ui.question.custom.placeholder": "พิมพ์คำตอบของคุณ...",
 
   "ui.fileSearch.placeholder": "ค้นหา",
   "ui.fileSearch.previousMatch": "ก่อนหน้า",

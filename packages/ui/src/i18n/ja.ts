@@ -141,9 +141,6 @@ export const dict = {
   "ui.question.subtitle.answered": "{{count}}件回答済み",
   "ui.question.answer.none": "(回答なし)",
   "ui.question.review.notAnswered": "(未回答)",
-  "ui.question.multiHint": "該当するものをすべて選択",
-  "ui.question.singleHint": "1 つ選択",
-  "ui.question.custom.placeholder": "回答を入力...",
 
   "ui.fileSearch.placeholder": "検索",
   "ui.fileSearch.previousMatch": "前の一致",

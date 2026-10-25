@@ -74,7 +74,6 @@ import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
 import { WikiView } from "@/pages/session/wiki-view"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
-import { DialogDiscardChanges } from "@/components/dialog-discard-changes"
 import { formatServerError } from "@/utils/server-errors"
 import { type FollowupItem, useFollowup } from "@/context/followup"
 
@@ -1835,25 +1834,7 @@ export default function Page() {
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
-  // Asks the right panel to open its Changes box and scroll to it; cleared once it has.
-  const [changesFocus, setChangesFocus] = createSignal(0)
-  const actions = {
-    revert,
-    /** "Commit" under a reply's change list opens the right panel's Changes box and its commit flow. */
-    get commit() {
-      if (!isDesktop()) return undefined
-      return () => {
-        layout.nav.set("agent")
-        if (view().reviewPanel.opened()) view().reviewPanel.close()
-        setChangesFocus((value) => value + 1)
-      }
-    },
-    /** "Discard" asks first, then puts only that reply's files back to how they were before it. */
-    discard: (input: { sessionID: string; messageID: string; files: string[] }) => {
-      if (!input.files.length) return
-      dialog.show(() => <DialogDiscardChanges {...input} />)
-    },
-  }
+  const actions = { revert }
 
 
   createResizeObserver(
@@ -2133,8 +2114,6 @@ export default function Page() {
         <Show when={editsOpen()}>
           <AgentEdits
             session={params.id}
-            focusChanges={changesFocus()}
-            onChangesFocused={() => setChangesFocus(0)}
             onOpen={(path) => {
               layout.nav.set("code")
               layout.fileTree.open()

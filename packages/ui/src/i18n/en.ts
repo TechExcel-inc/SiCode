@@ -41,8 +41,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.summary.response": "Response",
   "ui.sessionTurn.diff.showMore": "Show more changes ({{count}})",
   "ui.sessionTurn.diffs.changed": "Changed",
-  "ui.sessionTurn.diffs.showAll": "Show all",
-  "ui.sessionTurn.diffs.showLess": "Show less",
   "ui.sessionTurn.diffs.more": "+{{count}} more files",
 
   "ui.sessionTurn.retry.retrying": "retrying",
@@ -113,8 +111,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.checklist.done": "{{done}}/{{total}} done",
   "ui.sessionTurn.checklist.expand": "Show steps",
   "ui.sessionTurn.checklist.collapse": "Hide steps",
-  "ui.sessionTurn.diffs.commit": "Commit",
-  "ui.sessionTurn.diffs.discard": "Discard",
   "ui.sessionTurn.status.thinkingWithTopic": "Thinking - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Gathering thoughts",
   "ui.sessionTurn.status.consideringNextSteps": "Considering next steps",
@@ -226,9 +222,6 @@ export const dict: Record<string, string> = {
   "ui.question.subtitle.answered": "{{count}} answered",
   "ui.question.answer.none": "(no answer)",
   "ui.question.review.notAnswered": "(not answered)",
-  "ui.question.multiHint": "Select all answers that apply",
-  "ui.question.singleHint": "Select one answer",
   "ui.question.choose": "Choose",
   "ui.question.chosen": "Chosen",
-  "ui.question.custom.placeholder": "Type your answer...",
 }

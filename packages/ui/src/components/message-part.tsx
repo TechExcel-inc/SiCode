@@ -145,16 +145,9 @@ export interface MessageProps {
 
 export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
 
-/** A reply's own changed files (paths as its change list names them). */
-export type TurnFilesAction = (input: { sessionID: string; messageID: string; files: string[] }) => Promise<void> | void
-
 export type UserActions = {
   fork?: SessionAction
   revert?: SessionAction
-  /** Under a finished reply's change list: open the app's commit flow. */
-  commit?: TurnFilesAction
-  /** Under a finished reply's change list: put these files back to how they were before the reply. */
-  discard?: TurnFilesAction
 }
 
 export interface MessagePartProps {

@@ -97,6 +97,23 @@ export function verification() {
   ]
 }
 
+/**
+ * The app shows no Commit or Discard under a finished task: the agent commits its own finished work, one
+ * commit per task, and never pushes on its own.
+ */
+export function commits(client: string, git: boolean) {
+  if (!git || !["app", "desktop"].includes(client)) return []
+  return [
+    [
+      `You commit your own work: the user does not review a change list or press Commit. This replaces any earlier instruction to commit only when asked.`,
+      `  - When a task's code change is finished and its checks pass, commit it in the repository you changed, with a short message that says what the change does for the user.`,
+      `  - Commit only the files this task changed (git add with their paths, not git add -A). Leave changes you did not make uncommitted.`,
+      `  - Do not commit work whose tests or type check fail, secrets, or a half-done step: say what is left instead.`,
+      `  - Never push, amend, rebase or reset unless the user asks. End your reply with the commit's short hash and message in one line.`,
+    ].join("\n"),
+  ]
+}
+
 /** The run commands the user saved for the project (Edit project → Run), so the agent runs the app with them. */
 export function runCommands() {
   const saved = Project.get(Instance.project.id)?.commands ?? {}
@@ -159,6 +176,7 @@ export namespace SystemPrompt {
             ...visuals(Flag.OPENCODE_CLIENT),
             ...stepGuidance(Flag.OPENCODE_CLIENT),
             ...verification(),
+            ...commits(Flag.OPENCODE_CLIENT, project.vcs === "git"),
             ...runCommands(),
           ]
         },

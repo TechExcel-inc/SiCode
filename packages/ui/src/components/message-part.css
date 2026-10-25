@@ -980,6 +980,12 @@
     }
   }
 
+  /* The last choice is a text box the person types into directly. */
+  label[data-slot="question-option"][data-custom="true"] {
+    align-items: center;
+    cursor: text;
+  }
+
   [data-slot="question-option-check"] {
     display: inline-flex;
     transform: translateY(2px);

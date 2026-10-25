@@ -3,7 +3,7 @@ import path from "path"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
-import { others, stepGuidance, SystemPrompt, verification, visuals } from "../../src/session/system"
+import { commits, others, stepGuidance, SystemPrompt, verification, visuals } from "../../src/session/system"
 import { Project } from "../../src/project/project"
 import { provideInstance, tmpdir } from "../fixture/fixture"
 
@@ -107,5 +107,14 @@ description: ${description}
     expect(text).toContain("run the tests that cover the change")
     expect(text).toContain("say exactly what was not checked")
     expect(text).toContain('Never write "fixed", "works" or "done" without a test result')
+  })
+})
+
+describe("commits", () => {
+  test("only the app's agents in a git repository commit their own work", () => {
+    expect(commits("desktop", true)[0]).toContain("You commit your own work")
+    expect(commits("app", true)).toHaveLength(1)
+    expect(commits("cli", true)).toEqual([])
+    expect(commits("desktop", false)).toEqual([])
   })
 })
