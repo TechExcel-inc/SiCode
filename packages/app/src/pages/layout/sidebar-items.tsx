@@ -1,3 +1,4 @@
+import { queued } from "@/pages/session/queued"
 import { OnceTag } from "@/components/one-time"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
@@ -214,6 +215,13 @@ const SessionRow = (props: {
                 </span>
               </Match>
             </Switch>
+            <Show when={queued[props.session.id]}>
+              {(count) => (
+                <span data-slot="session-queued" class="shrink-0">
+                  {language.t("session.queued", { count: count() })}
+                </span>
+              )}
+            </Show>
             {dot()}
           </span>
         </Show>

@@ -43,6 +43,7 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
+import { setQueued } from "@/pages/session/queued"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import {
   createOpenReviewFile,
@@ -1729,6 +1730,38 @@ export default function Page() {
 
   const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
 
+  createEffect(() => {
+    for (const [id, items] of Object.entries(followup.items)) setQueued(id, items?.length || undefined)
+  })
+
+  /** Takes a queued request out of the queue and runs it now in a new session in the same project. */
+  const freshFollowup = async (id: string) => {
+    const sessionID = params.id
+    if (!sessionID || followupBusy(sessionID)) return
+    const item = queuedFollowups().find((entry) => entry.id === id)
+    if (!item) return
+    const client =
+      item.sessionDirectory === sdk.directory
+        ? sdk.client
+        : sdk.createClient({ directory: item.sessionDirectory, throwOnError: true })
+    const created = await client.session
+      .create()
+      .then((res) => res.data)
+      .catch((err) => {
+        fail(err)
+        return undefined
+      })
+    if (!created) return
+    setFollowup("items", sessionID, (items) => (items ?? []).filter((entry) => entry.id !== id))
+    await sendFollowupDraft({
+      client,
+      sync,
+      globalSync,
+      draft: { ...item, sessionID: created.id },
+      optimisticBusy: false,
+    }).catch(fail)
+  }
+
   const sendFollowup = (sessionID: string, id: string, opts?: { manual?: boolean }) => {
     if (sync.session.get(sessionID)?.parentID) return Promise.resolve()
     const item = (followup.items[sessionID] ?? []).find((entry) => entry.id === id)
@@ -2095,6 +2128,7 @@ export default function Page() {
                       void sendFollowup(params.id!, id, { manual: true })
                     },
                     onEdit: editFollowup,
+                    onFresh: (id) => void freshFollowup(id),
                     onEditLoaded: clearFollowupEdit,
                   }
                 : undefined
