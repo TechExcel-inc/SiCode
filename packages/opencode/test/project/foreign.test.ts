@@ -47,6 +47,10 @@ describe("project.foreign", () => {
         expect(Foreign.owner(path.join(other.path, "src", "a.ts"))?.worktree).toBe(other.path)
         expect(Foreign.owner(path.join(home.path, "a.ts"))).toBeUndefined()
         expect(Foreign.here()).toBe(path.basename(home.path))
+        expect(Foreign.find(other.path)?.worktree).toBe(other.path)
+        expect(Foreign.find(path.basename(other.path).toUpperCase())?.worktree).toBe(other.path)
+        expect(Foreign.find(path.join(other.path, "src"))?.worktree).toBe(other.path)
+        expect(Foreign.find("src")).toBeUndefined()
       },
     })
   })

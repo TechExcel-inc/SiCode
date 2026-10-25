@@ -292,6 +292,16 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       await sdk.client.project.update({ projectID: project.id, related: next }).catch(() => undefined)
     }
 
+    // Moving work to another project used to relate the two both ways, and EAD Pilot lists a relation
+    // from either side, so both are removed; a side Pilot does not have is not an error.
+    const drop = async (client: NonNullable<ReturnType<typeof api>>, id: number, other: number) => {
+      await Promise.all([
+        client.unrelate(id, other).catch(() => undefined),
+        client.unrelate(other, id).catch(() => undefined),
+      ])
+      setStore("related", id, (list) => (list ?? []).filter((item) => item.relatedProjectId !== other))
+    }
+
     const loadRelated = async (projectId: number) => {
       const client = api()
       if (!client) return
@@ -397,7 +407,7 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
         await Promise.all(
           removed.flatMap((dir) => {
             const other = projectOf(dir)
-            return other ? [client.unrelate(id, other).catch(() => undefined)] : []
+            return other ? [drop(client, id, other)] : []
           }),
         )
         for (const dir of added) {
@@ -445,8 +455,13 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
         const id = projectOf(root)
         const other = projectOf(relatedDir)
         if (!client || !id || !other) return
-        await client.unrelate(id, other)
+        await drop(client, id, other)
         await loadRelated(id)
+        if (!(store.related[id] ?? []).some((item) => item.relatedProjectId === other)) return
+        showToast({
+          variant: "error",
+          title: language.t("cowork.related.removeFailed", { name: getFilename(relatedDir) || relatedDir }),
+        })
       },
       /** Pilot API as the signed-in person, or undefined while signed out. */
       api,

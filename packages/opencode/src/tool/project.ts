@@ -27,16 +27,17 @@ export const ProjectSwitchTool = Tool.define<typeof parameters, Metadata, Questi
       parameters,
       execute: (params: z.infer<typeof parameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
-          const list = Foreign.projects()
-          const target = list.find((item) => item.worktree === params.project) ?? Foreign.owner(params.project)
+          const target = Foreign.find(params.project)
           if (!target) {
             throw new Error(
-              `${params.project} is not another project. Projects: ${list.map((item) => item.worktree).join(", ") || "none"}`,
+              `${params.project} is not another project. Projects: ${Foreign.projects().map((item) => item.worktree).join(", ") || "none"}`,
             )
           }
           const name = Foreign.name(target)
           const here = Foreign.here()
           const meta = { project: target.worktree, name }
+          // The app starts the new session from the resolved folder, not from what the agent typed.
+          yield* ctx.metadata({ metadata: meta })
           const answers = yield* question.ask({
             sessionID: ctx.sessionID,
             questions: [

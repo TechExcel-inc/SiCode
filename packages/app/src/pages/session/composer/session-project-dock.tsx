@@ -12,12 +12,15 @@ import { useLanguage } from "@/context/language"
 import { useCowork } from "@/context/cowork"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { carried, type ProjectSwitch } from "./session-project"
 
 /**
- * Asked when the agent finds the work belongs to another project. Moving starts a session there and,
- * for a session that had only this request, removes the one left behind.
+ * Asked when the agent finds the work belongs to a project that is neither the current project nor one
+ * of its related projects. Either choice starts a session there: switching makes it the current project,
+ * adding keeps the current one and lists it under Related projects. A session that had only this
+ * request is removed once the work has moved.
  */
 export function SessionProjectDock(props: { request: QuestionRequest; target: ProjectSwitch; onSubmit: () => void }) {
   const sdk = useSDK()
@@ -27,6 +30,7 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
   const cowork = useCowork()
   const language = useLanguage()
   const navigate = useNavigate()
+  const server = useServer()
   const [busy, setBusy] = createSignal(false)
 
   const name = createMemo(() => getFilename(props.target.project))
@@ -40,15 +44,7 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
     () => users().length <= 1 && !sync.data.session.find((item) => item.id === props.request.sessionID)?.parentID,
   )
 
-  const keep = async () => {
-    setBusy(true)
-    props.onSubmit()
-    await sdk.client.question
-      .reply({ requestID: props.request.id, answers: [[language.t("session.project.keep", { name: here() })]] })
-      .catch(() => setBusy(false))
-  }
-
-  const move = async () => {
+  const move = async (to: "switch" | "relate") => {
     setBusy(true)
     props.onSubmit()
     const dir = props.target.project
@@ -82,13 +78,12 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
     if (!session) return
 
     await sdk.client.question.reply({ requestID: props.request.id, answers: [["moved", session.id]] }).catch(() => {})
-    // The two projects become related both ways, so whichever is current lists the other's sessions.
-    const root = sync.project?.worktree ?? sdk.directory
-    const from = cowork.projectOf(root)
-    const to = cowork.projectOf(dir)
-    if (from && to) {
-      void cowork.relate(root, to).catch(() => undefined)
-      void cowork.relate(dir, from).catch(() => undefined)
+    if (to === "switch") {
+      layout.projects.open(dir)
+      server.projects.touch(dir)
+    } else {
+      const root = server.projects.last() ?? sync.project?.worktree ?? sdk.directory
+      void cowork.relateFolder(root, dir).catch(() => undefined)
     }
     navigate(`/${base64Encode(dir)}/session/${session.id}`)
     if (!fresh()) return
@@ -112,25 +107,28 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
         <>
           <div />
           <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" data-action="project-keep" onClick={keep} disabled={busy()}>
-              {language.t(fresh() ? "session.project.keep" : "session.project.continue", { name: here() })}
+            <Button
+              variant="ghost"
+              size="normal"
+              data-action="project-relate"
+              onClick={() => move("relate")}
+              disabled={busy()}
+            >
+              {language.t("session.project.relate", { name: name() })}
             </Button>
-            <Button variant="primary" size="normal" data-action="project-move" onClick={move} disabled={busy()}>
-              {language.t(fresh() ? "session.project.move" : "session.project.start", { name: name() })}
+            <Button
+              variant="primary"
+              size="normal"
+              data-action="project-switch"
+              onClick={() => move("switch")}
+              disabled={busy()}
+            >
+              {language.t("session.project.switch", { name: name() })}
             </Button>
           </div>
         </>
       }
     >
-      <div data-slot="permission-row">
-        <span data-slot="permission-spacer" aria-hidden="true" />
-        <div data-slot="permission-hint">
-          {language.t(fresh() ? "session.project.hint.new" : "session.project.hint.existing", {
-            name: name(),
-            here: here(),
-          })}
-        </div>
-      </div>
       <div data-slot="permission-row">
         <span data-slot="permission-spacer" aria-hidden="true" />
         <code class="text-12-regular text-text-base break-all">{props.target.project}</code>

@@ -35,6 +35,19 @@ describe("session project switch", () => {
     expect(projectSwitch(request("call_1"), parts)).toEqual({ project: "/work/cowork", prompt: "Fix login" })
   })
 
+  test("uses the folder the tool resolved when the agent gave only a name", () => {
+    const resolved = {
+      ...tool("project_switch", {}),
+      state: {
+        status: "running",
+        input: { project: "cowork", prompt: "Fix login" },
+        metadata: { project: "/work/cowork", name: "cowork" },
+        time: { start: 0 },
+      },
+    } as Part
+    expect(projectSwitch(request("call_1"), { msg_1: [resolved] })).toEqual({ project: "/work/cowork", prompt: "Fix login" })
+  })
+
   test("leaves other questions to the question dock", () => {
     expect(projectSwitch(request(), {})).toBeUndefined()
     expect(projectSwitch(request("call_1"), { msg_1: [tool("question", { questions: [] })] })).toBeUndefined()

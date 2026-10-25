@@ -47,6 +47,21 @@ export namespace Foreign {
       .toSorted((a, b) => b.worktree.length - a.worktree.length)[0]
   }
 
+  /**
+   * The other project the agent named: its folder, a path inside it, or its name (models often give the
+   * name). A relative path is never resolved against the server's own folder.
+   */
+  export function find(input: string) {
+    const list = projects()
+    const key = input.trim().toLowerCase()
+    return (
+      list.find((item) => item.worktree === input) ??
+      (path.isAbsolute(input)
+        ? owner(input)
+        : list.find((item) => name(item).toLowerCase() === key || path.basename(item.worktree).toLowerCase() === key))
+    )
+  }
+
   /** Projects the person chose to keep working on from a session, by session. */
   const kept = new Map<string, Set<string>>()
 

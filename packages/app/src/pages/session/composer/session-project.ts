@@ -9,8 +9,11 @@ export function projectSwitch(request: QuestionRequest, parts: Record<string, Pa
   const part = parts[tool.messageID]?.find((item) => item.type === "tool" && item.callID === tool.callID)
   if (part?.type !== "tool" || part.tool !== "project_switch") return
   const input = part.state.input as Partial<ProjectSwitch>
-  if (typeof input.project !== "string" || !input.project) return
-  return { project: input.project, prompt: typeof input.prompt === "string" ? input.prompt : "" }
+  // The tool's metadata holds the project folder it resolved; the input may be only the project's name.
+  const meta = "metadata" in part.state ? (part.state.metadata as { project?: unknown } | undefined) : undefined
+  const project = typeof meta?.project === "string" && meta.project ? meta.project : input.project
+  if (typeof project !== "string" || !project) return
+  return { project, prompt: typeof input.prompt === "string" ? input.prompt : "" }
 }
 
 /** What the new session starts with: the person's own first message, or the agent's brief mid-conversation. */
