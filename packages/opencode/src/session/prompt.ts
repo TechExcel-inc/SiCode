@@ -152,28 +152,17 @@ export namespace SessionPrompt {
         return parts
       })
 
-      const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
+      /** A one-line title from the small title model for `user`, read with `context` (which ends with it). */
+      const named = Effect.fn("SessionPrompt.named")(function* (input: {
         session: Session.Info
-        history: MessageV2.WithParts[]
+        context: MessageV2.WithParts[]
+        user: MessageV2.WithParts
         providerID: ProviderID
         modelID: ModelID
       }) {
-        if (input.session.parentID) return
-        if (!Session.isDefaultTitle(input.session.title)) return
-
-        const real = (m: MessageV2.WithParts) =>
-          m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
-        const idx = input.history.findIndex(real)
-        if (idx === -1) return
-        if (input.history.filter(real).length !== 1) return
-
-        const context = input.history.slice(0, idx + 1)
-        const firstUser = context[idx]
-        if (!firstUser || firstUser.info.role !== "user") return
-        const firstInfo = firstUser.info
-
-        const subtasks = firstUser.parts.filter((p): p is MessageV2.SubtaskPart => p.type === "subtask")
-        const onlySubtasks = subtasks.length > 0 && firstUser.parts.every((p) => p.type === "subtask")
+        if (input.user.info.role !== "user") return
+        const subtasks = input.user.parts.filter((p): p is MessageV2.SubtaskPart => p.type === "subtask")
+        const onlySubtasks = subtasks.length > 0 && input.user.parts.every((p) => p.type === "subtask")
 
         const ag = yield* agents.get("title")
         if (!ag) return
@@ -183,11 +172,11 @@ export namespace SessionPrompt {
             (yield* provider.getModel(input.providerID, input.modelID)))
         const msgs = onlySubtasks
           ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-          : yield* MessageV2.toModelMessagesEffect(context, mdl)
+          : yield* MessageV2.toModelMessagesEffect(input.context, mdl)
         const text = yield* llm
           .stream({
             agent: ag,
-            user: firstInfo,
+            user: input.user.info,
             system: [],
             small: true,
             tools: {},
@@ -208,10 +197,63 @@ export namespace SessionPrompt {
           .map((line) => line.trim())
           .find((line) => line.length > 0)
         if (!cleaned) return
-        const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
+        return cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
+      })
+
+      const real = (m: MessageV2.WithParts) =>
+        m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
+
+      /** Keeps a request's name (the task box's "Task: name") on its user message. */
+      const keepName = Effect.fn("SessionPrompt.keepName")(function* (user: MessageV2.WithParts, name: string) {
+        // Read again: the turn's own summary (its file changes) may have been saved meanwhile.
+        const all = yield* sessions.messages({ sessionID: user.info.sessionID })
+        const info = all.find((m) => m.info.id === user.info.id)?.info ?? user.info
+        if (info.role !== "user") return
+        info.summary = { ...info.summary, diffs: info.summary?.diffs ?? [], title: name }
+        yield* sessions.updateMessage(info)
+      })
+
+      const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
+        session: Session.Info
+        history: MessageV2.WithParts[]
+        providerID: ProviderID
+        modelID: ModelID
+      }) {
+        if (input.session.parentID) return
+        if (!Session.isDefaultTitle(input.session.title)) return
+
+        const idx = input.history.findIndex(real)
+        if (idx === -1) return
+        if (input.history.filter(real).length !== 1) return
+        const first = input.history[idx]
+        if (!first) return
+
+        const t = yield* named({ ...input, context: input.history.slice(0, idx + 1), user: first })
+        if (!t) return
         yield* sessions
           .setTitle({ sessionID: input.session.id, title: t })
           .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))
+        // The first request's name is the session's title: one model call for both.
+        yield* keepName(first, t).pipe(Effect.ignore)
+      })
+
+      /**
+       * Names a request after the first (the first is named with the session's title). Only the request
+       * itself is read, so the name says what this request asks.
+       */
+      const name = Effect.fn("SessionPrompt.name")(function* (input: {
+        session: Session.Info
+        history: MessageV2.WithParts[]
+        user: MessageV2.WithParts
+        providerID: ProviderID
+        modelID: ModelID
+      }) {
+        if (input.session.parentID || !real(input.user)) return
+        if (input.user.info.role !== "user" || input.user.info.summary?.title) return
+        const first = input.history.find(real)
+        if (first?.info.id === input.user.info.id && Session.isDefaultTitle(input.session.title)) return
+        const t = yield* named({ ...input, context: [input.user] })
+        if (t) yield* keepName(input.user, t)
       })
 
       const insertReminders = Effect.fn("SessionPrompt.insertReminders")(function* (input: {
@@ -1391,13 +1433,23 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             }
 
             step++
-            if (step === 1)
+            if (step === 1) {
               yield* title({
                 session,
                 modelID: lastUser.model.modelID,
                 providerID: lastUser.model.providerID,
                 history: msgs,
               }).pipe(Effect.ignore, Effect.forkIn(scope))
+              const user = msgs.findLast((m) => m.info.id === lastUser.id)
+              if (user)
+                yield* name({
+                  session,
+                  modelID: lastUser.model.modelID,
+                  providerID: lastUser.model.providerID,
+                  history: msgs,
+                  user,
+                }).pipe(Effect.ignore, Effect.forkIn(scope))
+            }
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
             const task = tasks.pop()

@@ -10,6 +10,8 @@ import {
   latestChecklist,
   runningHelpers,
   doneActions,
+  taskLine,
+  taskName,
 } from "./session-turn-activity"
 
 let seq = 0
@@ -174,5 +176,24 @@ describe("checklistFolds", () => {
 describe("doneActions", () => {
   test("counts finished tool calls only", () => {
     expect(doneActions([tool("read", "completed", {}), tool("grep", "completed", {}), tool("bash", "running", {})])).toBe(2)
+  })
+})
+
+describe("task name", () => {
+  const text = (value: string, synthetic?: boolean) =>
+    ({ id: "t", sessionID: "s", messageID: "m", type: "text", text: value, synthetic }) as Part
+
+  test("uses the name the title model gave the request", () => {
+    expect(taskName({ summary: { title: "Restore Play tag", diffs: [] } }, [text("anything")])).toBe("Restore Play tag")
+  })
+
+  test("falls back to the request's first line, skipping text the app added", () => {
+    expect(taskName({}, [text("added by the app", true), text("\nFix the pager\nand the tags")])).toBe("Fix the pager")
+    expect(taskName(undefined, [])).toBeUndefined()
+  })
+
+  test("cuts a long first line", () => {
+    expect(taskLine("x".repeat(80))).toBe("x".repeat(57) + "...")
+    expect(taskLine("  ")).toBeUndefined()
   })
 })

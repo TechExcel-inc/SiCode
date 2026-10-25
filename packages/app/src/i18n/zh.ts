@@ -543,6 +543,8 @@ export const dict = {
   "session.todo.expand": "展开",
   "session.todo.dismiss": "放弃剩余步骤",
   "session.todo.continue": "继续",
+  "session.todo.next": "下一个：{{name}}",
+  "session.todo.nextMore": "下一个：{{name}} 等 {{count}} 个",
   "session.followupDock.summary.one": "{{count}} 条排队消息",
   "session.followupDock.summary.other": "{{count}} 条排队消息",
   "session.followupDock.sendNow": "立即发送",

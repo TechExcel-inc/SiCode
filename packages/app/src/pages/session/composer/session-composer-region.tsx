@@ -13,6 +13,7 @@ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { taskLine, taskName } from "@opencode-ai/ui/session-turn"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { OneTimeBanner, OneTimeClosed } from "@/components/one-time"
@@ -51,6 +52,30 @@ export function SessionComposerRegion(props: {
   const route = useSessionKey()
   const sync = useSync()
 
+  // The request whose turn last wrote the steps, so the box names the task they belong to.
+  const task = createMemo(() => {
+    const id = route.params.id
+    if (!id) return
+    const list = sync.data.message[id] ?? []
+    const writer = list.findLast(
+      (item) =>
+        item.role === "assistant" &&
+        (sync.data.part[item.id] ?? []).some((part) => part.type === "tool" && part.tool === "todowrite"),
+    )
+    const parent = writer?.role === "assistant" ? writer.parentID : undefined
+    const user = list.find((item) => item.id === parent) ?? list.findLast((item) => item.role === "user")
+    if (user?.role !== "user") return
+    return taskName(user, sync.data.part[user.id] ?? [])
+  })
+  const next = createMemo(() => {
+    const items = props.followup?.items ?? []
+    const first = items[0] ? taskLine(items[0].text) : undefined
+    if (!first) return
+    return items.length > 1
+      ? language.t("session.todo.nextMore", { name: first, count: items.length - 1 })
+      : language.t("session.todo.next", { name: first })
+  })
+
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
@@ -62,7 +87,7 @@ export function SessionComposerRegion(props: {
     return one?.status === "open" && one.limit !== undefined && one.requests >= one.limit
   })
   // A pending question stays usable: it is answered in the conversation or by typing a message.
-  const showComposer = createMemo(() => !props.state.permissionRequest() || child())
+  const showComposer = createMemo(() => (!props.state.permissionRequest() && !props.state.questionRequest()) || child())
 
   const previewPrompt = () =>
     prompt
@@ -206,6 +231,8 @@ export function SessionComposerRegion(props: {
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
+                    name={task()}
+                    next={next()}
                     live={props.state.live()}
                     collapseLabel={language.t("session.todo.collapse")}
                     expandLabel={language.t("session.todo.expand")}

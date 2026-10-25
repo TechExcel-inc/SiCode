@@ -16,6 +16,10 @@ import { stepDockMount } from "./step-dock-mount"
 export function SessionTodoDock(props: {
   sessionID?: string
   todos: Todo[]
+  /** The request the steps belong to. */
+  name?: string
+  /** "Next: …" for the first queued request, with how many more wait. */
+  next?: string
   live: boolean
   collapseLabel: string
   expandLabel: string
@@ -60,6 +64,8 @@ export function SessionTodoDock(props: {
     <div data-component="session-todo-dock" style={{ opacity: `${1 - shut()}`, "padding-bottom": "44px" }}>
       <TurnChecklist
         steps={steps()}
+        name={props.name}
+        next={props.next}
         working={props.live}
         collapsed={store.collapsed}
         note={props.live ? undefined : language.t("agent.status.waiting")}

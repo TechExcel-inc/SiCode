@@ -32,6 +32,7 @@ import {
   currentAction,
   elapsedParts,
   latestChecklist,
+  taskName,
   runningHelpers,
   doneActions,
   type TurnStep,
@@ -463,7 +464,14 @@ export function SessionTurn(
                       </div>
                     </Show>
                     <Show when={checklist()}>
-                      {(steps) => <TurnChecklist steps={steps()} working={working()} foldWhenDone />}
+                      {(steps) => (
+                        <TurnChecklist
+                          steps={steps()}
+                          name={taskName(message(), parts())}
+                          working={working()}
+                          foldWhenDone
+                        />
+                      )}
                     </Show>
                     <Show when={live() && liveStatus()}>
                       <div data-component="session-turn-live-status" class="session-turn-live-status">
@@ -638,6 +646,9 @@ function Docked(props: ParentProps<{ to?: HTMLElement }>) {
   )
 }
 
+/** For the task box above the composer, which names the request and the next queued one the same way. */
+export { taskLine, taskName } from "./session-turn-activity"
+
 /**
  * The task step box: the latest steps the AI wrote, updated in place as it works. Drawn inside a reply,
  * and above the composer while the session's steps are open; there `note` says the session waits on the
@@ -645,6 +656,10 @@ function Docked(props: ParentProps<{ to?: HTMLElement }>) {
  */
 export function TurnChecklist(props: {
   steps: TurnStep[]
+  /** The request the steps belong to: the header reads "Task: name". */
+  name?: string
+  /** Above the composer: the first queued request, shown as "Next: …" under the steps. */
+  next?: string
   working: boolean
   note?: string
   actions?: JSX.Element
@@ -685,7 +700,11 @@ export function TurnChecklist(props: {
         }}
       >
         <Icon name="checklist" size="small" />
-        <span data-slot="session-turn-checklist-label">{i18n.t("ui.sessionTurn.checklist.label")}</span>
+        <span data-slot="session-turn-checklist-label" title={props.name}>
+          {props.name
+            ? i18n.t("ui.sessionTurn.checklist.task", { name: props.name })
+            : i18n.t("ui.sessionTurn.checklist.label")}
+        </span>
         <Show
           when={foldable()}
           fallback={
@@ -727,6 +746,11 @@ export function TurnChecklist(props: {
             )}
           </For>
         </ul>
+      </Show>
+      <Show when={props.next}>
+        <div data-slot="session-turn-checklist-next" title={props.next}>
+          {props.next}
+        </div>
       </Show>
     </div>
   )

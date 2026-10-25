@@ -1,4 +1,4 @@
-import type { Part as PartType, ToolPart } from "@opencode-ai/sdk/v2"
+import type { Part as PartType, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 
 /**
  * Pure helpers for the "clean conversation" turn view: one checklist box per turn, one folded line
@@ -6,6 +6,21 @@ import type { Part as PartType, ToolPart } from "@opencode-ai/sdk/v2"
  */
 
 export type TurnStep = { content: string; status: string }
+
+/** A request's first line, short enough for one line of the task box. */
+export function taskLine(text: string) {
+  const line = text.trim().split("\n")[0]?.trim() ?? ""
+  if (!line) return
+  return line.length > 60 ? line.slice(0, 57) + "..." : line
+}
+
+/** What the task box calls a request: the name the title model gave it, until then its first line. */
+export function taskName(info: Pick<UserMessage, "summary"> | undefined, parts: readonly PartType[]) {
+  const title = info?.summary?.title?.trim()
+  if (title) return title
+  const text = parts.find((part) => part.type === "text" && !part.synthetic && part.text.trim())
+  return text?.type === "text" ? taskLine(text.text) : undefined
+}
 
 /** Tools that never show as a row: the checklist is drawn once per turn in the task box. */
 export const CHECKLIST_TOOLS = new Set(["todowrite"])

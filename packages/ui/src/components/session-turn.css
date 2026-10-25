@@ -282,8 +282,27 @@
     font-weight: var(--font-weight-medium);
   }
 
+  [data-slot="session-turn-checklist-label"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The first queued request, under the steps. */
+  [data-slot="session-turn-checklist-next"] {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-weak-base);
+    color: var(--text-weak);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   [data-slot="session-turn-checklist-progress"] {
     margin-left: auto;
+    flex-shrink: 0;
     color: var(--text-weak);
     font-weight: var(--font-weight-regular);
     font-variant-numeric: tabular-nums;
