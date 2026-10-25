@@ -477,8 +477,8 @@ export const BashTool = Tool.define(
             .replaceAll("${os}", process.platform)
             .replaceAll("${shell}", name)
             .replaceAll("${chaining}", chain)
-            .replaceAll("${maxLines}", String(Truncate.MAX_LINES))
-            .replaceAll("${maxBytes}", String(Truncate.MAX_BYTES)),
+            .replaceAll("${maxLines}", String(Truncate.SHELL.maxLines))
+            .replaceAll("${maxBytes}", String(Truncate.SHELL.maxBytes)),
           parameters: Parameters,
           execute: (params: z.infer<typeof Parameters>, ctx: Tool.Context) =>
             Effect.gen(function* () {

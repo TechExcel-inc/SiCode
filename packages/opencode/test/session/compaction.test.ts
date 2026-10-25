@@ -585,6 +585,83 @@ describe("session.compaction.prune", () => {
   )
 
   it.live(
+    "trims inside the running request only when asked, keeping the newest output",
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const session = yield* Session.Service
+        const info = yield* session.create({})
+        const user = yield* session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: info.id,
+          agent: "build",
+          model: ref,
+          time: { created: Date.now() },
+        })
+        yield* session.updatePart({ id: PartID.ascending(), messageID: user.id, sessionID: info.id, type: "text", text: "deploy" })
+        // One long request: two big shell outputs, the older first.
+        for (const output of ["old".repeat(70_000), "new".repeat(70_000)]) {
+          const step: MessageV2.Assistant = {
+            id: MessageID.ascending(),
+            role: "assistant",
+            sessionID: info.id,
+            mode: "build",
+            agent: "build",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: ref.modelID,
+            providerID: ref.providerID,
+            parentID: user.id,
+            time: { created: Date.now() },
+            finish: "tool-calls",
+          }
+          yield* session.updateMessage(step)
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            messageID: step.id,
+            sessionID: info.id,
+            type: "tool",
+            callID: crypto.randomUUID(),
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: {},
+              output,
+              title: "ssh",
+              metadata: {},
+              time: { start: Date.now(), end: Date.now() },
+            },
+          })
+        }
+        const compacted = () =>
+          session.messages({ sessionID: info.id }).pipe(
+            Effect.map((msgs) =>
+              msgs
+                .flatMap((msg) => msg.parts)
+                .flatMap((part) =>
+                  part.type === "tool" && part.state.status === "completed"
+                    ? [{ old: part.state.output.startsWith("old"), trimmed: !!part.state.time.compacted }]
+                    : [],
+                ),
+            ),
+          )
+
+        // After a request ends (the old behaviour) the request still running is left alone.
+        yield* compact.prune({ sessionID: info.id })
+        expect((yield* compacted()).some((item) => item.trimmed)).toBe(false)
+
+        yield* compact.prune({ sessionID: info.id, current: true })
+        expect(yield* compacted()).toEqual([
+          { old: true, trimmed: true },
+          { old: false, trimmed: false },
+        ])
+      }),
+    ),
+  )
+
+  it.live(
     "skips protected skill tool output",
     provideTmpdirInstance((dir) =>
       Effect.gen(function* () {

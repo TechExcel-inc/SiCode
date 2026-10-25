@@ -30,8 +30,10 @@ export namespace SessionCompaction {
     ),
   }
 
-  export const PRUNE_MINIMUM = 20_000
-  export const PRUNE_PROTECT = 40_000
+  // Chosen by replaying a real 323-call session (2026-10-24): about a fifth less input, while the
+  // newest 16k tokens of tool output (several whole files) stay in full.
+  export const PRUNE_MINIMUM = 8_000
+  export const PRUNE_PROTECT = 16_000
   const PRUNE_PROTECTED_TOOLS = ["skill"]
 
   export interface Interface {
@@ -39,7 +41,8 @@ export namespace SessionCompaction {
       tokens: MessageV2.Assistant["tokens"]
       model: Provider.Model
     }) => Effect.Effect<boolean>
-    readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
+    /** `current`: also trim inside the request still running, so a long task stops carrying old output. */
+    readonly prune: (input: { sessionID: SessionID; current?: boolean }) => Effect.Effect<void>
     readonly process: (input: {
       parentID: MessageID
       messages: MessageV2.WithParts[]
@@ -88,7 +91,10 @@ export namespace SessionCompaction {
 
       // goes backwards through parts until there are PRUNE_PROTECT tokens worth of tool
       // calls, then erases output of older tool calls to free context space
-      const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID }) {
+      // Every model call re-sends the whole conversation, so output kept here is paid for on each later step.
+      // Trimming happens in batches of at least PRUNE_MINIMUM tokens: each trim changes what the provider
+      // has cached, so trimming a little every step would cost more than it saves.
+      const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID; current?: boolean }) {
         const cfg = yield* config.get()
         if (cfg.compaction?.prune === false) return
         log.info("pruning")
@@ -102,12 +108,15 @@ export namespace SessionCompaction {
         let pruned = 0
         const toPrune: MessageV2.ToolPart[] = []
         let turns = 0
+        // The latest step's results have not reached the model yet: they are never trimmed or counted.
+        const newest = input.current ? msgs.findLast((msg) => msg.info.role === "assistant")?.info.id : undefined
 
         loop: for (let msgIndex = msgs.length - 1; msgIndex >= 0; msgIndex--) {
           const msg = msgs[msgIndex]
           if (msg.info.role === "user") turns++
-          if (turns < 2) continue
+          if (turns < 2 && !input.current) continue
           if (msg.info.role === "assistant" && msg.info.summary) break loop
+          if (msg.info.id === newest) continue
           for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
             const part = msg.parts[partIndex]
             if (part.type === "tool")

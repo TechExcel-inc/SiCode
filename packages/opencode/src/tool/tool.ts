@@ -99,7 +99,7 @@ export namespace Tool {
               return result
             }
             const agent = yield* agents.get(ctx.agent)
-            const truncated = yield* truncate.output(result.output, {}, agent)
+            const truncated = yield* truncate.output(result.output, id === "bash" ? Truncate.SHELL : {}, agent)
             return {
               ...result,
               output: truncated.content,

@@ -23,8 +23,12 @@ export namespace Truncate {
   export interface Options {
     maxLines?: number
     maxBytes?: number
-    direction?: "head" | "tail"
+    /** "both" keeps the start and the end, where a command and its result or error usually are. */
+    direction?: "head" | "tail" | "both"
   }
+
+  /** Shell output kept in the conversation: the full text goes to a file the agent can search. */
+  export const SHELL: Options = { maxLines: 200, maxBytes: 8 * 1024, direction: "both" }
 
   function hasTaskTool(agent?: Agent.Info) {
     if (!agent?.permission) return false
@@ -59,6 +63,18 @@ export namespace Truncate {
         }
       })
 
+      const save = Effect.fn("Truncate.save")(function* (text: string) {
+        const file = path.join(TRUNCATION_DIR, ToolID.ascending())
+        yield* fs.ensureDir(TRUNCATION_DIR).pipe(Effect.orDie)
+        yield* fs.writeFileString(file, text).pipe(Effect.orDie)
+        return file
+      })
+
+      const note = (file: string, agent?: Agent.Info) =>
+        hasTaskTool(agent)
+          ? `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
+          : `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
+
       const output = Effect.fn("Truncate.output")(function* (text: string, options: Options = {}, agent?: Agent.Info) {
         const maxLines = options.maxLines ?? MAX_LINES
         const maxBytes = options.maxBytes ?? MAX_BYTES
@@ -74,6 +90,35 @@ export namespace Truncate {
         let i = 0
         let bytes = 0
         let hitBytes = false
+
+        if (direction === "both") {
+          // A quarter for the start, the rest for the end.
+          const take = (from: string[], budget: number, lines: number) => {
+            const kept: string[] = []
+            let used = 0
+            for (const line of from) {
+              const size = Buffer.byteLength(line, "utf-8") + 1
+              if (used + size > budget || kept.length >= lines) break
+              kept.push(line)
+              used += size
+            }
+            return kept
+          }
+          const head = take(lines, Math.floor(maxBytes / 4), Math.floor(maxLines / 4))
+          const tail = take(lines.slice(head.length).toReversed(), maxBytes - Math.floor(maxBytes / 4), maxLines - head.length).toReversed()
+          // One enormous line fits neither part: keep its first and last characters instead.
+          if (!head.length && !tail.length) {
+            head.push(text.slice(0, Math.floor(maxBytes / 4)))
+            tail.push(text.slice(-(maxBytes - Math.floor(maxBytes / 4))))
+          }
+          const removed = Math.max(0, lines.length - head.length - tail.length)
+          const file = yield* save(text)
+          return {
+            content: `${head.join("\n")}\n\n...${removed} lines truncated...\n\n${note(file, agent)}\n\n${tail.join("\n")}`,
+            truncated: true,
+            outputPath: file,
+          } as const
+        }
 
         if (direction === "head") {
           for (i = 0; i < lines.length && i < maxLines; i++) {
@@ -100,14 +145,9 @@ export namespace Truncate {
         const removed = hitBytes ? totalBytes - bytes : lines.length - out.length
         const unit = hitBytes ? "bytes" : "lines"
         const preview = out.join("\n")
-        const file = path.join(TRUNCATION_DIR, ToolID.ascending())
+        const file = yield* save(text)
+        const hint = note(file, agent)
 
-        yield* fs.ensureDir(TRUNCATION_DIR).pipe(Effect.orDie)
-        yield* fs.writeFileString(file, text).pipe(Effect.orDie)
-
-        const hint = hasTaskTool(agent)
-          ? `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
-          : `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
 
         return {
           content:

@@ -1391,6 +1391,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             yield* status.set(sessionID, { type: "busy" })
             yield* slog.info("loop", { step })
 
+            // A long task trims its own old tool output as it goes (see SessionCompaction.prune).
+            if (step > 0) yield* compaction.prune({ sessionID, current: true }).pipe(Effect.ignore)
+
             let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
 
             let lastUser: MessageV2.User | undefined

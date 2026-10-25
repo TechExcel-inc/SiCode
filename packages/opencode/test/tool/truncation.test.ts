@@ -28,6 +28,31 @@ describe("Truncate", () => {
       }),
     )
 
+    it.live("shell output keeps its start and end, where the command and its error are", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const lines = ["$ deploy", ...Array.from({ length: 5000 }, (_, i) => `progress ${i}`), "Error: file is in use"].join("\n")
+        const result = yield* svc.output(lines, Truncate.SHELL)
+
+        expect(result.truncated).toBe(true)
+        expect(result.content.startsWith("$ deploy")).toBe(true)
+        expect(result.content.endsWith("Error: file is in use")).toBe(true)
+        expect(result.content).toContain("lines truncated...")
+        expect(Buffer.byteLength(result.content)).toBeLessThan(9 * 1024)
+      }),
+    )
+
+    it.live("one enormous line keeps its first and last characters", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const result = yield* svc.output("a".repeat(5000) + "END", { maxBytes: 400, maxLines: 10, direction: "both" })
+
+        expect(result.truncated).toBe(true)
+        expect(result.content.startsWith("a")).toBe(true)
+        expect(result.content.endsWith("END")).toBe(true)
+      }),
+    )
+
     it.live("returns content unchanged when under limits", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
