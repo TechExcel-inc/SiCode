@@ -33,6 +33,7 @@ import {
   elapsedParts,
   latestChecklist,
   taskName,
+  errorKind,
   runningHelpers,
   doneActions,
   type TurnStep,
@@ -314,6 +315,10 @@ export function SessionTurn(
 
     return undefined
   })
+  // The failed reply, for its model's name in the plain-language message.
+  const failed = createMemo(() => assistantMessages().find((m) => m.error && m.error.name !== "MessageAbortedError"))
+  const kind = createMemo(() => errorKind(error()))
+  const [details, setDetails] = createSignal(false)
   const errorText = createMemo(() => {
     const msg = error()?.data?.message
     if (typeof msg === "string") return unwrap(msg)
@@ -624,8 +629,27 @@ export function SessionTurn(
                 </div>
               </Show>
               <Show when={error()}>
-                <Card variant="error" class="error-card">
-                  {errorText()}
+                {/* What went wrong and what to do, in plain words; the provider's own text only under Details. */}
+                <Card variant="warning" class="error-card" data-kind={kind()}>
+                  <div data-slot="session-turn-error-title">
+                    {i18n.t(`ui.sessionTurn.error.title.${kind()}` as UiI18nKey, {
+                      model: failed()?.modelID || i18n.t("ui.sessionTurn.error.model"),
+                    })}
+                  </div>
+                  <div data-slot="session-turn-error-hint">{i18n.t(`ui.sessionTurn.error.hint.${kind()}` as UiI18nKey)}</div>
+                  <Show when={errorText()}>
+                    <button
+                      type="button"
+                      data-slot="session-turn-error-toggle"
+                      aria-expanded={details()}
+                      onClick={() => setDetails((value) => !value)}
+                    >
+                      {i18n.t(details() ? "ui.sessionTurn.error.details.hide" : "ui.sessionTurn.error.details.show")}
+                    </button>
+                    <Show when={details()}>
+                      <pre data-slot="session-turn-error-details">{errorText().replaceAll("<EOL>", "\n")}</pre>
+                    </Show>
+                  </Show>
                 </Card>
               </Show>
             </div>

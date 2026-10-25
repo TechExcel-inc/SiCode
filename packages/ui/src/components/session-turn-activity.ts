@@ -194,3 +194,26 @@ export function elapsedParts(ms: number): { key: string; params: Record<string, 
   if (minutes > 0) return { key: "ui.sessionTurn.live.elapsed.minutes", params: { minutes, seconds } }
   return { key: "ui.sessionTurn.live.elapsed.seconds", params: { seconds } }
 }
+
+/** The kinds of model failure the conversation explains in plain words. */
+export type ErrorKind = "signin" | "tooLong" | "busy" | "unreachable" | "refused" | "failed"
+
+/**
+ * Sorts a failed reply's error into a kind a person can act on. `error` is the reply's error as the
+ * server stored it; the provider's own text is only read for clues and is still shown under Details.
+ */
+export function errorKind(error: { name?: string; data?: { message?: unknown; statusCode?: unknown } } | undefined): ErrorKind {
+  const name = error?.name ?? ""
+  const text = String(error?.data?.message ?? "").toLowerCase()
+  const status =
+    typeof error?.data?.statusCode === "number"
+      ? error.data.statusCode
+      : Number(/^\W*(\d{3})\s/.exec(text)?.[1] ?? 0)
+  if (name === "ProviderAuthError" || status === 401 || status === 403 || /unauthori[sz]ed|invalid api key|authentication/.test(text))
+    return "signin"
+  if (name === "ContextOverflowError" || /context[ _]length|context window|maximum context|too many tokens/.test(text)) return "tooLong"
+  if (status === 429 || /rate limit|quota|insufficient|overloaded/.test(text)) return "busy"
+  if (status >= 500 || /timed? ?out|econn|fetch failed|network|unavailable|could not reach/.test(text)) return "unreachable"
+  if (status === 400 || /invalid_request|unsupported|not supported|bad request/.test(text)) return "refused"
+  return "failed"
+}

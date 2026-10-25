@@ -70,12 +70,43 @@
   }
 
   .error-card {
-    color: var(--text-on-critical-base);
-    max-height: 240px;
-    white-space: pre-wrap;
+    color: var(--text-base);
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  [data-slot="session-turn-error-title"] {
+    color: var(--text-strong);
+    font-weight: var(--font-weight-medium);
+  }
+
+  [data-slot="session-turn-error-hint"] {
+    margin-top: 2px;
+    color: var(--text-base);
+  }
+
+  [data-slot="session-turn-error-toggle"] {
+    display: block;
+    align-self: flex-start;
+    text-align: left;
+    margin-top: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-interactive-base);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  /* The provider's own message, for whoever looks into it. */
+  [data-slot="session-turn-error-details"] {
+    margin: 6px 0 0;
+    max-height: 200px;
     overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-small);
+    color: var(--text-weak);
   }
 
   [data-slot="session-turn-assistant-content"] {

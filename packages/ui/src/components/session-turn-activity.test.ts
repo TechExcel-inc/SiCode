@@ -12,6 +12,7 @@ import {
   doneActions,
   taskLine,
   taskName,
+  errorKind,
 } from "./session-turn-activity"
 
 let seq = 0
@@ -195,5 +196,35 @@ describe("task name", () => {
   test("cuts a long first line", () => {
     expect(taskLine("x".repeat(80))).toBe("x".repeat(57) + "...")
     expect(taskLine("  ")).toBeUndefined()
+  })
+})
+
+describe("error kind", () => {
+  const unknown = (message: string) => ({ name: "UnknownError", data: { message } })
+
+  test("a request the model refused, as EAD 3.2's Design slot did", () => {
+    expect(
+      errorKind(
+        unknown(
+          `"400 Bad Request: \\"{<EOL>  \\"error\\": {<EOL>    \\"message\\": \\"Unsupported parameter: 'max_tokens' is not supported with this model."`,
+        ),
+      ),
+    ).toBe("refused")
+    expect(errorKind({ name: "APIError", data: { message: "Function tools with reasoning_effort are not supported", statusCode: 400 } })).toBe(
+      "refused",
+    )
+  })
+
+  test("sign-in, length, busy and unreachable", () => {
+    expect(errorKind({ name: "ProviderAuthError", data: { message: "bad key" } })).toBe("signin")
+    expect(errorKind({ name: "ContextOverflowError", data: { message: "" } })).toBe("tooLong")
+    expect(errorKind({ name: "APIError", data: { message: "Rate limit reached", statusCode: 429 } })).toBe("busy")
+    expect(errorKind({ name: "APIError", data: { message: "Bad gateway", statusCode: 502 } })).toBe("unreachable")
+    expect(errorKind(unknown("fetch failed"))).toBe("unreachable")
+  })
+
+  test("anything else is a plain failure", () => {
+    expect(errorKind(unknown("something odd"))).toBe("failed")
+    expect(errorKind(undefined)).toBe("failed")
   })
 })
