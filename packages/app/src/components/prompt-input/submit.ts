@@ -1,6 +1,7 @@
-import type { Message, Session } from "@opencode-ai/sdk/v2/client"
+import type { Message, Session, SessionRoute } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/util/encode"
+import { getFilename } from "@opencode-ai/util/path"
 import { Binary } from "@opencode-ai/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
 import type { Accessor } from "solid-js"
@@ -10,6 +11,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
+import { useServer } from "@/context/server"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -18,6 +20,7 @@ import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
+import { routable, routeFolder, routeTitle } from "./route"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionQuestionRequest, typedAnswers } from "@/pages/session/composer/session-request-tree"
 import { formatSystemPrompt } from "@/ead/api"
@@ -227,6 +230,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const layout = useLayout()
   const language = useLanguage()
   const params = useParams()
+  const server = useServer()
 
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
@@ -298,6 +302,76 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
       next.splice(result.index, 0, info)
       return next
+    })
+  }
+
+  /** Where the server says a request belongs. Any failure keeps it here. */
+  const route = (draft: FollowupDraft, text: string, images: ImageAttachmentPart[]) =>
+    sdk.client.session
+      .route({ sessionID: draft.sessionID, text, files: images.map((item) => item.filename) })
+      .then((x): SessionRoute => x.data ?? { where: "here" })
+      .catch((): SessionRoute => ({ where: "here" }))
+
+  /**
+   * Starts a request the server judged a new task in a session of its own (in this project or the one it
+   * names) and opens it. Keep it here removes that session and sends the request where it was typed
+   * (queued, when it was queued). If the new session can't start, the request goes there too.
+   */
+  const move = async (draft: FollowupDraft, result: SessionRoute, text: string, queued: boolean) => {
+    const dir = routeFolder(result, draft.sessionDirectory)
+    const same = dir === draft.sessionDirectory
+    const client = sdk.createClient({ directory: dir, throwOnError: true })
+    const back = async () => {
+      navigate(`/${base64Encode(draft.sessionDirectory)}/session/${draft.sessionID}`)
+      if (queued) return input.onQueue?.(draft)
+      await sendFollowupDraft({ client: sdk.client, sync, globalSync, draft, optimisticBusy: true }).catch((err) =>
+        showToast({ title: language.t("prompt.toast.promptSendFailed.title"), description: errorMessage(err) }),
+      )
+    }
+    const session = await (async () => {
+      globalSync.child(dir)
+      const created = (await client.session.create()).data
+      if (!created) throw new Error(language.t("common.requestFailed"))
+      seed(dir, created)
+      local.session.promote(dir, created.id)
+      if (permission.isAutoAccepting(draft.sessionID, draft.sessionDirectory)) permission.enableAutoAccept(created.id, dir)
+      if (!same) {
+        layout.projects.open(dir)
+        server.projects.touch(dir)
+      }
+      navigate(`/${base64Encode(dir)}/session/${created.id}`)
+      await sendFollowupDraft({
+        client,
+        sync: same ? sync : undefined,
+        globalSync,
+        // File context points into this project, so it goes along only within it.
+        draft: { ...draft, sessionID: created.id, sessionDirectory: dir, context: same ? draft.context : [] },
+        optimisticBusy: true,
+      })
+      return created
+    })().catch((err: unknown) => {
+      showToast({ title: language.t("session.suggest.failed"), description: errorMessage(err) })
+    })
+    if (!session) return back()
+
+    const title = routeTitle(result, text)
+    showToast({
+      title: same
+        ? language.t("prompt.route.started", { title })
+        : language.t("prompt.route.startedIn", { project: result.project ?? getFilename(dir), title }),
+      duration: 10000,
+      actions: [
+        {
+          label: language.t("prompt.route.keep"),
+          onClick: () => {
+            void (async () => {
+              await client.session.abort({ sessionID: session.id }).catch(() => {})
+              await client.session.delete({ sessionID: session.id }).catch(() => {})
+              await back()
+            })()
+          },
+        },
+      ],
     })
   }
 
@@ -461,10 +535,24 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
+    // A plain request in a session with earlier work is checked first: a new task moves to its own session.
+    const info = (sync.data.session ?? []).find((item) => item.id === session.id)
+    const check =
+      !isNewSession &&
+      mode === "normal" &&
+      routable({
+        text,
+        users: (sync.data.message?.[session.id] ?? []).filter((item) => item.role === "user").length,
+        parentID: info?.parentID,
+        oneTime: !!info?.oneTime,
+      })
+
     if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
-      input.onQueue?.(draft)
       clearContext()
       clearInput()
+      const result = check ? await route(draft, text, images) : undefined
+      if (result && result.where !== "here") return move(draft, result, text, true)
+      input.onQueue?.(draft)
       return
     }
 
@@ -599,7 +687,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       draft,
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
-      before: waitForWorktree,
+      before: async () => {
+        if (!(await waitForWorktree())) return false
+        if (!check) return true
+        const result = await route(draft, text, images)
+        if (result.where === "here") return true
+        void move(draft, result, text, false)
+        return false
+      },
     }).catch((err) => {
       pending.delete(session.id)
       if (sessionDirectory === projectDirectory) {

@@ -221,7 +221,9 @@ export namespace ToolRegistry {
             custom,
             builtin: [
               tool.invalid,
-              ...(questionEnabled ? [tool.question, tool.suggest] : []),
+              ...(questionEnabled ? [tool.question] : []),
+              // The app checks every request before it runs (SessionRoute), so its agents don't suggest moving.
+              ...(questionEnabled && !["app", "desktop"].includes(Flag.OPENCODE_CLIENT) ? [tool.suggest] : []),
               ...(Foreign.enabled() ? [tool.project] : []),
               tool.bash,
               tool.job,

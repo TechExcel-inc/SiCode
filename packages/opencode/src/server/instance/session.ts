@@ -29,6 +29,7 @@ import { lazy } from "../../util/lazy"
 import { Bus } from "../../bus"
 import { NamedError } from "@opencode-ai/util/error"
 import { SessionOneTime } from "../../session/one-time"
+import { SessionRoute } from "../../session/route"
 import { Flag } from "../../flag/flag"
 import { Job } from "@/tool/job"
 
@@ -1050,6 +1051,48 @@ export const SessionRoutes = lazy(() =>
           const msg = await SessionPrompt.prompt({ ...body, sessionID })
           stream.write(JSON.stringify(msg))
         })
+      },
+    )
+    .post(
+      "/:sessionID/route",
+      describeRoute({
+        summary: "Route a request",
+        description:
+          "Decide, before sending, whether a request continues this session's work or is a new task for a new session in this project or another one.",
+        operationId: "session.route",
+        responses: {
+          200: {
+            description: "Where the request belongs",
+            content: {
+              "application/json": {
+                schema: resolver(SessionRoute.Result),
+              },
+            },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator(
+        "param",
+        z.object({
+          sessionID: SessionID.zod,
+        }),
+      ),
+      validator("json", SessionRoute.Input),
+      async (c) => {
+        const sessionID = c.req.valid("param").sessionID
+        // Any failure or a slow model keeps the request here: the check never blocks sending.
+        const result = await AppRuntime.runPromise(
+          SessionRoute.route(sessionID, c.req.valid("json")).pipe(
+            Effect.timeout("8 seconds"),
+            Effect.catchCause((cause) =>
+              Effect.sync(() => log.warn("route failed", { sessionID, cause })).pipe(
+                Effect.as<SessionRoute.Result>({ where: "here" }),
+              ),
+            ),
+          ),
+        )
+        return c.json(result)
       },
     )
     .post(

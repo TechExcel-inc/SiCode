@@ -2038,6 +2038,19 @@ export type SubtaskPartInput = {
   command?: string
 }
 
+export type SessionRoute = {
+  where: "here" | "new" | "project"
+  title?: string
+  /**
+   * The project folder for where=project
+   */
+  directory?: string
+  /**
+   * The project's name for where=project
+   */
+  project?: string
+}
+
 export type SessionDiscardResult = {
   discarded: Array<string>
   refused: Array<string>
@@ -4339,6 +4352,43 @@ export type PartUpdateResponses = {
 }
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
+
+export type SessionRouteData = {
+  body?: {
+    text: string
+    files?: Array<string>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/route"
+}
+
+export type SessionRouteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionRouteError = SessionRouteErrors[keyof SessionRouteErrors]
+
+export type SessionRouteResponses = {
+  /**
+   * Where the request belongs
+   */
+  200: SessionRoute
+}
+
+export type SessionRouteResponse = SessionRouteResponses[keyof SessionRouteResponses]
 
 export type SessionPromptAsyncData = {
   body?: {

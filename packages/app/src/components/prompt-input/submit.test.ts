@@ -191,6 +191,12 @@ beforeAll(async () => {
     }),
   }))
 
+  mock.module("@/context/server", () => ({
+    useServer: () => ({
+      projects: { open: () => undefined, touch: () => undefined },
+    }),
+  }))
+
   mock.module("@/context/language", () => ({
     useLanguage: () => ({
       t: (key: string) => key,
