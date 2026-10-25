@@ -1697,7 +1697,8 @@ export default function Page() {
   const queueEnabled = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return settings.general.followup() === "queue" && busy(id) && !composer.blocked() && !isChildSession()
+    // While a task runs, Enter queues the request behind it; the composer also offers a new session.
+    return busy(id) && !composer.blocked() && !isChildSession()
   })
 
   const followupText = (item: FollowupDraft) => {

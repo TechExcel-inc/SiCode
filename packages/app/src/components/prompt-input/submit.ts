@@ -299,8 +299,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
   }
 
-  const handleSubmit = async (event: Event) => {
+  /** `fresh` sends the request as a new session in this project, leaving the current session on screen. */
+  const handleSubmit = async (event: Event, opts?: { fresh?: boolean }) => {
     event.preventDefault()
+    const fresh = !!opts?.fresh && !!params.id
 
     const currentPrompt = prompt.current()
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
@@ -313,7 +315,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     // While the AI waits on a question, a typed message is the answer in the person's own words.
-    const asked = params.id ? sessionQuestionRequest(sync.data.session ?? [], sync.data.question ?? {}, params.id) : undefined
+    const asked = params.id && !fresh ? sessionQuestionRequest(sync.data.session ?? [], sync.data.question ?? {}, params.id) : undefined
     if (asked && text.trim().length > 0) {
       input.addToHistory(currentPrompt, mode)
       input.resetHistoryNavigation()
@@ -343,9 +345,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     promptProbe.start()
 
     const projectDirectory = sdk.directory
-    const isNewSession = !params.id
+    const isNewSession = !params.id || fresh
     const shouldAutoAccept = isNewSession && input.autoAccept()
-    const worktreeSelection = input.newSessionWorktree?.() || "main"
+    const worktreeSelection = fresh ? "main" : input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory
     let client = sdk.client
@@ -386,10 +388,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         globalSync.child(sessionDirectory)
       }
 
-      input.onNewSessionWorktreeReset?.()
+      if (!fresh) input.onNewSessionWorktreeReset?.()
     }
 
-    let session = input.info()
+    let session = fresh ? undefined : input.info()
     if (!session && isNewSession) {
       const created = await client.session
         .create()
@@ -406,8 +408,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         session = created
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)
-        layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
-        navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        if (!fresh) {
+          layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+          navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        }
       }
     }
     if (!session) {

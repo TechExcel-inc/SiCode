@@ -291,6 +291,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
   const stopping = createMemo(() => working() && blank())
+  // A request typed while a task runs: queue it behind the task (Enter) or start it as a new session.
+  const choosing = createMemo(() => working() && !blank() && store.mode === "normal" && !!props.shouldQueue?.())
   const tip = () => {
     if (stopping()) {
       return (
@@ -1416,6 +1418,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
 
             <div class="flex items-center gap-1 pointer-events-auto">
+              <Show when={choosing()}>
+                <Button
+                  data-action="prompt-new-session"
+                  type="button"
+                  variant="secondary"
+                  size="small"
+                  onClick={(event: MouseEvent) => void handleSubmit(event, { fresh: true })}
+                >
+                  {language.t("prompt.action.newSession")}
+                </Button>
+                <Button data-action="prompt-queue" type="submit" variant="primary" size="small">
+                  {language.t("prompt.action.queue")}
+                </Button>
+              </Show>
+              <Show when={!choosing()}>
               <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                 <IconButton
                   data-action="prompt-submit"
@@ -1429,6 +1446,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
                 />
               </Tooltip>
+              </Show>
             </div>
           </div>
 
