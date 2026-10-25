@@ -41,6 +41,7 @@ import { PluginRegistryProvider } from "@/context/plugin-registry"
 import { EadProvider } from "@/ead/settings"
 import { CoworkProvider } from "@/context/cowork"
 import { NotificationProvider } from "@/context/notification"
+import { FollowupProvider } from "@/context/followup"
 import { PermissionProvider } from "@/context/permission"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
@@ -134,6 +135,7 @@ function AppShellProviders(props: ParentProps) {
             <EadProvider>
             <CoworkProvider>
             <NotificationProvider>
+            <FollowupProvider>
             <ModelsProvider>
               <CommandProvider>
                 <ArchiveProvider>
@@ -143,6 +145,7 @@ function AppShellProviders(props: ParentProps) {
                 </ArchiveProvider>
               </CommandProvider>
             </ModelsProvider>
+            </FollowupProvider>
           </NotificationProvider>
             </CoworkProvider>
             </EadProvider>

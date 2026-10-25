@@ -56,7 +56,8 @@ function formatNodeSystemPrompt(ctx: NodeContext | string | undefined): string |
 type FollowupSendInput = {
   client: ReturnType<typeof useSDK>["client"]
   globalSync: ReturnType<typeof useGlobalSync>
-  sync: ReturnType<typeof useSync>
+  /** The project's sync, when sending from its page: the request shows at once. Without it, it shows when the server has it. */
+  sync?: ReturnType<typeof useSync>
   draft: FollowupDraft
   messageID?: string
   optimisticBusy?: boolean
@@ -90,7 +91,8 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
   const [head, ...tail] = text.split(" ")
   const cmd = head?.startsWith("/") ? head.slice(1) : undefined
-  if (cmd && input.sync.data.command.find((item) => item.name === cmd)) {
+  const commands = input.sync?.data.command ?? input.globalSync.child(input.draft.sessionDirectory, { bootstrap: false })[0].command ?? []
+  if (cmd && commands.find((item) => item.name === cmd)) {
     setBusy()
     try {
       if (!(await wait())) {
@@ -141,7 +143,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   }
 
   const add = () =>
-    input.sync.session.optimistic.add({
+    input.sync?.session.optimistic.add({
       directory: input.draft.sessionDirectory,
       sessionID: input.draft.sessionID,
       message,
@@ -149,7 +151,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     })
 
   const remove = () =>
-    input.sync.session.optimistic.remove({
+    input.sync?.session.optimistic.remove({
       directory: input.draft.sessionDirectory,
       sessionID: input.draft.sessionID,
       messageID,

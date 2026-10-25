@@ -43,7 +43,6 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
-import { setQueued } from "@/pages/session/queued"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import {
   createOpenReviewFile,
@@ -70,7 +69,6 @@ import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
-import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
@@ -78,10 +76,9 @@ import { WikiView } from "@/pages/session/wiki-view"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { DialogDiscardChanges } from "@/components/dialog-discard-changes"
 import { formatServerError } from "@/utils/server-errors"
+import { type FollowupItem, useFollowup } from "@/context/followup"
 
 const emptyUserMessages: UserMessage[] = []
-type FollowupItem = FollowupDraft & { id: string }
-type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
 const emptyFollowups: FollowupItem[] = []
 
 type ChangeMode = "git" | "branch" | "turn"
@@ -594,20 +591,9 @@ export default function Page() {
     },
   })
 
-  const [followup, setFollowup] = persisted(
-    Persist.workspace(sdk.directory, "followup", ["followup.v1"]),
-    createStore<{
-      items: Record<string, FollowupItem[] | undefined>
-      failed: Record<string, string | undefined>
-      paused: Record<string, boolean | undefined>
-      edit: Record<string, FollowupEdit | undefined>
-    }>({
-      items: {},
-      failed: {},
-      paused: {},
-      edit: {},
-    }),
-  )
+  // The project's queue, shared with the app-wide runner that starts queued requests when a task ends.
+  const followups = useFollowup()
+  const [followup, setFollowup] = followups.store(sdk.directory)
 
   createComputed((prev) => {
     const key = sessionKey()
@@ -1659,41 +1645,9 @@ export default function Page() {
     return followup.edit[id]
   })
 
-  const followupMutation = useMutation(() => ({
-    mutationFn: async (input: { sessionID: string; id: string; manual?: boolean }) => {
-      const item = (followup.items[input.sessionID] ?? []).find((entry) => entry.id === input.id)
-      if (!item) return
+  const followupBusy = (sessionID: string) => !!followups.sending(sessionID)
 
-      if (input.manual) setFollowup("paused", input.sessionID, undefined)
-      setFollowup("failed", input.sessionID, undefined)
-
-      const ok = await sendFollowupDraft({
-        client: sdk.client,
-        sync,
-        globalSync,
-        draft: item,
-        optimisticBusy: item.sessionDirectory === sdk.directory,
-      }).catch((err) => {
-        setFollowup("failed", input.sessionID, input.id)
-        fail(err)
-        return false
-      })
-      if (!ok) return
-
-      setFollowup("items", input.sessionID, (items) => (items ?? []).filter((entry) => entry.id !== input.id))
-      if (input.manual) resumeScroll()
-    },
-  }))
-
-  const followupBusy = (sessionID: string) =>
-    followupMutation.isPending && followupMutation.variables?.sessionID === sessionID
-
-  const sendingFollowup = createMemo(() => {
-    const id = params.id
-    if (!id) return
-    if (!followupBusy(id)) return
-    return followupMutation.variables?.id
-  })
+  const sendingFollowup = createMemo(() => (params.id ? followups.sending(params.id) : undefined))
 
   const queueEnabled = createMemo(() => {
     const id = params.id
@@ -1730,10 +1684,6 @@ export default function Page() {
 
   const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
 
-  createEffect(() => {
-    for (const [id, items] of Object.entries(followup.items)) setQueued(id, items?.length || undefined)
-  })
-
   /** Takes a queued request out of the queue and runs it now in a new session in the same project. */
   const freshFollowup = async (id: string) => {
     const sessionID = params.id
@@ -1768,7 +1718,9 @@ export default function Page() {
     if (!item) return Promise.resolve()
     if (followupBusy(sessionID)) return Promise.resolve()
 
-    return followupMutation.mutateAsync({ sessionID, id, manual: opts?.manual })
+    return followups.send(sdk.directory, sessionID, id, opts?.manual).then(() => {
+      if (opts?.manual) resumeScroll()
+    })
   }
 
   const editFollowup = (id: string) => {
@@ -1903,21 +1855,6 @@ export default function Page() {
     },
   }
 
-  createEffect(() => {
-    const sessionID = params.id
-    if (!sessionID) return
-
-    const item = queuedFollowups()[0]
-    if (!item) return
-    if (followupBusy(sessionID)) return
-    if (followup.failed[sessionID] === item.id) return
-    if (followup.paused[sessionID]) return
-    if (isChildSession()) return
-    if (composer.blocked()) return
-    if (busy(sessionID)) return
-
-    void sendFollowup(sessionID, item.id)
-  })
 
   createResizeObserver(
     () => promptDock,
