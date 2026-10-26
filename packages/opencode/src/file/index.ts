@@ -336,6 +336,8 @@ export namespace File {
     readonly status: () => Effect.Effect<File.Info[]>
     readonly read: (file: string) => Effect.Effect<File.Content>
     readonly write: (file: string, content: string) => Effect.Effect<void>
+    readonly move: (from: string, to: string) => Effect.Effect<void>
+    readonly remove: (file: string) => Effect.Effect<void>
     readonly list: (dir?: string) => Effect.Effect<File.Node[]>
     readonly search: (input: {
       query: string
@@ -515,6 +517,23 @@ export namespace File {
         yield* appFs.writeWithDirs(full, content).pipe(Effect.orDie)
       })
 
+      const move: Interface["move"] = Effect.fn("File.move")(function* (from: string, to: string) {
+        const src = path.join(Instance.directory, from)
+        const dest = path.join(Instance.directory, to)
+        if (!Instance.containsPath(src) || !Instance.containsPath(dest))
+          throw new Error("Access denied: path escapes project directory")
+        if (yield* appFs.existsSafe(dest)) throw new Error(`${to} already exists`)
+        yield* appFs.makeDirectory(path.dirname(dest), { recursive: true }).pipe(Effect.orDie)
+        yield* appFs.rename(src, dest).pipe(Effect.orDie)
+      })
+
+      const remove: Interface["remove"] = Effect.fn("File.remove")(function* (file: string) {
+        const full = path.join(Instance.directory, file)
+        if (!Instance.containsPath(full) || full === Instance.directory)
+          throw new Error("Access denied: path escapes project directory")
+        yield* appFs.remove(full).pipe(Effect.orDie)
+      })
+
       const read: Interface["read"] = Effect.fn("File.read")(function* (file: string) {
         using _ = log.time("read", { file })
         const full = path.join(Instance.directory, file)
@@ -664,7 +683,7 @@ export namespace File {
       })
 
       log.info("init")
-      return Service.of({ init, status, read, write, list, search })
+      return Service.of({ init, status, read, write, move, remove, list, search })
     }),
   )
 

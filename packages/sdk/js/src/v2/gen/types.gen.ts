@@ -5064,6 +5064,26 @@ export type FileListResponses = {
 
 export type FileListResponse = FileListResponses[keyof FileListResponses]
 
+export type FileRemoveData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/file/content"
+}
+
+export type FileRemoveResponses = {
+  /**
+   * File deleted
+   */
+  200: boolean
+}
+
+export type FileRemoveResponse = FileRemoveResponses[keyof FileRemoveResponses]
+
 export type FileReadData = {
   body?: never
   path?: never
@@ -5105,6 +5125,28 @@ export type FileWriteResponses = {
 }
 
 export type FileWriteResponse = FileWriteResponses[keyof FileWriteResponses]
+
+export type FileMoveData = {
+  body?: {
+    from: string
+    to: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/move"
+}
+
+export type FileMoveResponses = {
+  /**
+   * File moved
+   */
+  200: boolean
+}
+
+export type FileMoveResponse = FileMoveResponses[keyof FileMoveResponses]
 
 export type FileStatusData = {
   body?: never

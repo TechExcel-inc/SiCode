@@ -211,6 +211,65 @@ export const FileRoutes = lazy(() =>
         return c.json(true)
       },
     )
+    .post(
+      "/file/move",
+      describeRoute({
+        summary: "Move file",
+        description: "Rename or move a file inside the project. Fails if the destination exists.",
+        operationId: "file.move",
+        responses: {
+          200: {
+            description: "File moved",
+            content: {
+              "application/json": {
+                schema: resolver(z.boolean()),
+              },
+            },
+          },
+        },
+      }),
+      validator(
+        "json",
+        z.object({
+          from: z.string(),
+          to: z.string(),
+        }),
+      ),
+      async (c) => {
+        const body = c.req.valid("json")
+        await AppRuntime.runPromise(File.Service.use((svc) => svc.move(body.from, body.to)))
+        return c.json(true)
+      },
+    )
+    .delete(
+      "/file/content",
+      describeRoute({
+        summary: "Delete file",
+        description: "Delete a file inside the project.",
+        operationId: "file.remove",
+        responses: {
+          200: {
+            description: "File deleted",
+            content: {
+              "application/json": {
+                schema: resolver(z.boolean()),
+              },
+            },
+          },
+        },
+      }),
+      validator(
+        "query",
+        z.object({
+          path: z.string(),
+        }),
+      ),
+      async (c) => {
+        const path = c.req.valid("query").path
+        await AppRuntime.runPromise(File.Service.use((svc) => svc.remove(path)))
+        return c.json(true)
+      },
+    )
     .get(
       "/file/status",
       describeRoute({

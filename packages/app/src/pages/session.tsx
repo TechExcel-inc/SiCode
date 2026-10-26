@@ -73,6 +73,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
 import { DesignChatEmpty, DesignChatHeader, DesignView, useDesignLinks } from "@/pages/session/design-view"
+import { design } from "@/pages/session/design-state"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { formatServerError } from "@/utils/server-errors"
 import { type FollowupItem, useFollowup } from "@/context/followup"
@@ -445,7 +446,7 @@ export default function Page() {
     return Math.max(0, layout.session.width() - eadExtra())
   })
   const sessionPanelWidth = createMemo(() => {
-    if (designView()) return layout.code.chat() ? `${layout.code.width()}px` : "0px"
+    if (designView()) return design.open && layout.code.chat() ? `${layout.code.width()}px` : "0px"
     const ead = sideExtra()
     if (!desktopSidePanelOpen()) {
       if (ead === 0) return "100%"
@@ -1882,7 +1883,8 @@ export default function Page() {
     on(
       () => params.id,
       (id) => {
-        if (!id) requestAnimationFrame(() => inputRef?.focus())
+        // A Design doc keeps focus in its editor; its chat starts blank without taking it.
+        if (!id && !(designView() && design.open)) requestAnimationFrame(() => inputRef?.focus())
       },
     ),
   )
@@ -1942,7 +1944,9 @@ export default function Page() {
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
             "md:order-2 border-l border-border-weaker-base": codeView() && desktopReviewOpen(),
-            "overflow-hidden invisible": ((codeView() && desktopReviewOpen()) || designView()) && !layout.code.chat(),
+            "overflow-hidden invisible":
+              (((codeView() && desktopReviewOpen()) || designView()) && !layout.code.chat()) ||
+              (designView() && !design.open),
             "md:ml-auto border-l border-border-weaker-base": designView(),
             "pointer-events-none": sessionChatWidth() === 0,
             "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":

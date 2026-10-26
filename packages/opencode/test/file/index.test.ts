@@ -18,6 +18,8 @@ const run = <A, E>(eff: Effect.Effect<A, E, File.Service>) =>
 const status = () => run(File.Service.use((svc) => svc.status()))
 const read = (file: string) => run(File.Service.use((svc) => svc.read(file)))
 const list = (dir?: string) => run(File.Service.use((svc) => svc.list(dir)))
+const move = (from: string, to: string) => run(File.Service.use((svc) => svc.move(from, to)))
+const remove = (file: string) => run(File.Service.use((svc) => svc.remove(file)))
 const search = (input: { query: string; limit?: number; dirs?: boolean; type?: "file" | "directory" }) =>
   run(File.Service.use((svc) => svc.search(input)))
 
@@ -91,6 +93,29 @@ describe("file/index Filesystem patterns", () => {
         fn: async () => {
           const result = await read("multiline.txt")
           expect(result.content).toBe("line1\nline2\nline3")
+        },
+      })
+    })
+  })
+
+  describe("move() and remove()", () => {
+    test("rename a doc, refuse to overwrite, and delete it", async () => {
+      await using tmp = await tmpdir()
+      await fs.mkdir(path.join(tmp.path, "design"))
+      await fs.writeFile(path.join(tmp.path, "design", "a.md"), "# A\n")
+      await fs.writeFile(path.join(tmp.path, "design", "b.md"), "# B\n")
+
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          await move("design/a.md", "design/api/plan.md")
+          expect(await fs.readFile(path.join(tmp.path, "design", "api", "plan.md"), "utf-8")).toBe("# A\n")
+          expect(await Filesystem.exists(path.join(tmp.path, "design", "a.md"))).toBe(false)
+          await expect(move("design/b.md", "design/api/plan.md")).rejects.toThrow()
+          await expect(move("design/b.md", "../outside.md")).rejects.toThrow()
+          await remove("design/b.md")
+          expect(await Filesystem.exists(path.join(tmp.path, "design", "b.md"))).toBe(false)
+          await expect(remove("../outside.md")).rejects.toThrow()
         },
       })
     })

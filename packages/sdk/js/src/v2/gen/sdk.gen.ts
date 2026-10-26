@@ -37,9 +37,11 @@ import type {
   ExperimentalWorkspaceRemoveResponses,
   ExperimentalWorkspaceStatusResponses,
   FileListResponses,
+  FileMoveResponses,
   FilePartInput,
   FilePartSource,
   FileReadResponses,
+  FileRemoveResponses,
   FileStatusResponses,
   FileWriteResponses,
   FindFilesResponses,
@@ -3552,6 +3554,38 @@ export class File extends HeyApiClient {
   }
 
   /**
+   * Delete file
+   *
+   * Delete a file inside the project.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<FileRemoveResponses, unknown, ThrowOnError>({
+      url: "/file/content",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Read file
    *
    * Read the content of a specified file.
@@ -3612,6 +3646,45 @@ export class File extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<FileWriteResponses, unknown, ThrowOnError>({
       url: "/file/content",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Move file
+   *
+   * Rename or move a file inside the project. Fails if the destination exists.
+   */
+  public move<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      from?: string
+      to?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "from" },
+            { in: "body", key: "to" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<FileMoveResponses, unknown, ThrowOnError>({
+      url: "/file/move",
       ...options,
       ...params,
       headers: {

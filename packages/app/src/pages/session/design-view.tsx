@@ -5,7 +5,9 @@ import DOMPurify from "dompurify"
 import type Vditor from "vditor"
 import type { FileContent } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { showToast } from "@opencode-ai/ui/toast"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -16,6 +18,7 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { design, setDesign } from "./design-state"
+import { Gallery, type Type } from "./design-gallery"
 import { useSessionKey } from "./session-layout"
 import "vditor/dist/index.css"
 import "./design.css"
@@ -56,9 +59,8 @@ const title = (path: string) => path.slice(root(path).length + 1).replace(/\.(md
 const slug = (name: string) =>
   name
     .trim()
-    .replace(/[\\:*?"<>|]+/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "")
     .replace(/\s+/g, " ")
-    .replace(/^\/+|\/+$/g, "")
 
 const page = (file: string, dir: string) => {
   const value = file.replace(/\\/g, "/")
@@ -134,7 +136,9 @@ export function useDesignLinks() {
       if (event.details.type !== "file.edited") return
       const id = event.details.properties.sessionID
       const file = page(event.details.properties.file, sdk.directory)
-      if (!id || !file || kind(file) !== "markdown") return
+      if (!file) return
+      layout.design.touch(sdk.directory, file, "edited")
+      if (!id || kind(file) !== "markdown") return
       void top(id).then((session) => layout.design.link(sdk.directory, file, session))
     })
     onCleanup(stop)
@@ -184,14 +188,13 @@ function Design() {
   const prompt = usePrompt()
   const language = useLanguage()
   const navigate = useNavigate()
+  const dialog = useDialog()
   const sync = useSync()
   const { params } = useSessionKey()
   const [state, setState] = createStore({
     pages: [] as string[],
     listed: false,
     active: "",
-    query: "",
-    draft: undefined as string | undefined,
     status: "idle" as "idle" | "saving" | "saved" | "error" | "updated",
     conflict: false,
     file: undefined as FileContent | undefined,
@@ -232,30 +235,19 @@ function Design() {
     if (gone) return
     if (next.join("\n") !== state.pages.join("\n")) setState("pages", next)
     if (!state.listed) setState("listed", true)
-    restore()
   }
 
-  // With nothing open, show the doc open last in this project, else the first one.
-  const restore = () => {
-    if (state.active || state.pages.length === 0) return
-    const prev = layout.design.last(sdk.directory)
-    void open(
-      prev && state.pages.includes(prev)
-        ? prev
-        : (state.pages.find((path) => kind(path) === "markdown") ?? state.pages[0]),
-    )
-  }
-
-  const untitled = () => {
-    const base = language.t("design.untitled")
+  const untitled = (type: Type) => {
+    const base = language.t(type.untitled)
     const names = [base, ...Array.from({ length: 98 }, (_, i) => `${base} ${i + 2}`)]
-    return names.find((name) => !state.pages.includes(`${ROOT}/${name}.md`)) ?? base
+    return names.find((name) => !state.pages.includes(`${ROOT}/${name}.${type.ext}`)) ?? base
   }
 
   const pick = () => {
     if (!fresh || !ready) return
     fresh = false
-    requestAnimationFrame(() => {
+    // After the chat beside it has switched to this doc's session, which can move focus.
+    window.setTimeout(() => {
       const heading = host?.querySelector(".vditor-wysiwyg h1")
       if (!heading) return
       editor?.focus()
@@ -263,7 +255,7 @@ function Design() {
       range.selectNodeContents(heading)
       window.getSelection()?.removeAllRanges()
       window.getSelection()?.addRange(range)
-    })
+    }, 250)
   }
 
   // The chat beside a doc is the session that wrote it. A doc without one gets a blank chat, and the
@@ -303,16 +295,6 @@ function Design() {
     ),
   )
 
-  const shown = createMemo(() => {
-    const query = state.query.trim().toLowerCase()
-    if (!query) return state.pages
-    return state.pages.filter((path) => title(path).toLowerCase().includes(query))
-  })
-  const groups = createMemo(() =>
-    [ROOT, LEGACY]
-      .map((dir) => ({ dir, items: shown().filter((path) => root(path) === dir) }))
-      .filter((group) => group.dir === ROOT || group.items.length > 0),
-  )
   const editable = createMemo(() => kind(state.active) === "markdown")
 
   const load = (path: string) =>
@@ -354,6 +336,7 @@ function Design() {
     await sdk.client.file
       .write({ path, content })
       .then(() => {
+        layout.design.touch(sdk.directory, path, "edited")
         if (state.active === path) last = content
         setState({ status: state.active === path && !dirty ? "saved" : state.status, conflict: false })
       })
@@ -405,7 +388,13 @@ function Design() {
     }),
   )
 
-  createEffect(() => setDesign({ doc: editable() ? state.active : "", title: state.active ? title(state.active) : "" }))
+  createEffect(() =>
+    setDesign({
+      open: !!state.active,
+      doc: editable() ? state.active : "",
+      title: state.active ? title(state.active) : "",
+    }),
+  )
 
   const reload = async () => {
     const disk = await read(state.active)
@@ -453,18 +442,73 @@ function Design() {
     editor?.focus()
   }
 
-  const create = async () => {
-    const name = slug(state.draft ?? "")
-    if (!name) return
-    const path = `${ROOT}/${name}.md`
-    setState("draft", undefined)
-    if (!state.pages.includes(path)) {
-      await sdk.client.file.write({ path, content: `# ${name.split("/").pop()}\n\n` })
-      fresh = true
-      await list()
-    }
+  // Back to the gallery; the doc's typing is saved and it is no longer attached to the chat.
+  const close = async () => {
+    await flush()
+    setState({ active: "", file: undefined, undo: undefined, conflict: false, status: "idle" })
+    prompt.context
+      .items()
+      .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory))
+      .forEach((item) => prompt.context.remove(item.key))
+  }
+
+  const create = async (type: Type) => {
+    const name = untitled(type)
+    const path = `${ROOT}/${name}.${type.ext}`
+    await sdk.client.file.write({ path, content: type.content(name) })
+    fresh = type.ext === "md"
+    await list()
     await open(path)
   }
+
+  const fail = (err: unknown) =>
+    showToast({
+      title: language.t("common.requestFailed"),
+      description: err instanceof Error ? err.message : String(err),
+    })
+
+  const rename = async (path: string, name: string) => {
+    const base = slug(name)
+    if (!base) return
+    const dir = path.slice(0, path.lastIndexOf("/"))
+    const ext = path.slice(path.lastIndexOf("."))
+    const to = `${dir}/${base}${ext}`
+    if (to === path) return
+    const res = await sdk.client.file.move({ from: path, to }).catch((err: unknown) => ({ error: err }))
+    if ("error" in res && res.error) return fail(res.error)
+    layout.design.moved(sdk.directory, path, to)
+    await list()
+  }
+
+  const remove = (path: string) =>
+    dialog.show(() => (
+      <Dialog title={language.t("design.delete.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <span class="text-14-regular text-text-strong">
+            {language.t("design.delete.confirm", { name: title(path) })}
+          </span>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              data-action="design-delete-confirm"
+              onClick={async () => {
+                dialog.close()
+                const res = await sdk.client.file.remove({ path }).catch((err: unknown) => ({ error: err }))
+                if ("error" in res && res.error) return fail(res.error)
+                layout.design.moved(sdk.directory, path)
+                await list()
+              }}
+            >
+              {language.t("common.delete")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
 
   const theme = () => {
     const value = dark()
@@ -541,7 +585,7 @@ function Design() {
   })
 
   onCleanup(() => {
-    setDesign({ doc: "", title: "", flush: undefined })
+    setDesign({ open: false, doc: "", title: "", flush: undefined })
     if (timer !== undefined) window.clearTimeout(timer)
     void save().then(() => editor?.destroy())
     gone = true
@@ -566,114 +610,34 @@ function Design() {
     <div
       data-component="design-view"
       class="absolute inset-y-0 left-0 z-40 flex bg-background-base"
-      style={{ right: layout.code.chat() ? `${layout.code.width()}px` : "0px" }}
+      style={{ right: state.active && layout.code.chat() ? `${layout.code.width()}px` : "0px" }}
     >
-      <aside class="w-64 shrink-0 h-full flex flex-col min-h-0 border-r border-border-weaker-base bg-background-base">
-        <div class="shrink-0 h-12 px-3 flex items-center justify-between">
-          <div class="flex items-center gap-2 text-14-medium text-text-strong">
-            <Icon name="design" size="small" />
-            {language.t("rail.design")}
-          </div>
-        </div>
-        <div class="shrink-0 px-3 pb-2 flex flex-col gap-2">
-          <div class="flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
-            <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
-            <input
-              type="text"
-              data-action="design-search"
-              value={state.query}
-              onInput={(event) => setState("query", event.currentTarget.value)}
-              placeholder={language.t("design.search")}
-              class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
-            />
-          </div>
-          <button
-            type="button"
-            data-action="design-new"
-            class="h-8 px-2 rounded-md flex items-center gap-2 text-left text-14-regular text-text-base hover:bg-surface-base-hover"
-            onClick={() => setState("draft", untitled())}
-          >
-            <Icon name="plus-small" size="small" class="shrink-0 text-icon-weak" />
-            {language.t("design.new")}
-          </button>
-          <Show when={state.draft !== undefined}>
-            <input
-              type="text"
-              data-action="design-new-name"
-              ref={(el) =>
-                requestAnimationFrame(() => {
-                  el.focus()
-                  el.select()
-                })
-              }
-              value={state.draft ?? ""}
-              onInput={(event) => setState("draft", event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void create()
-                if (event.key === "Escape") setState("draft", undefined)
-              }}
-              onBlur={() => {
-                if (!state.draft?.trim()) setState("draft", undefined)
-              }}
-              placeholder={language.t("design.new.placeholder")}
-              class="h-8 px-2 rounded-md bg-surface-base border border-border-interactive-base text-12-regular text-text-strong placeholder:text-text-weak outline-none"
-            />
-          </Show>
-        </div>
-        <nav class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2 pb-3 flex flex-col gap-0.5">
-          <For each={groups()}>
-            {(group) => (
-              <>
-                <Show when={group.dir === LEGACY}>
-                  <div class="px-2 pt-3 pb-1 text-12-regular text-text-weak">{LEGACY}/</div>
-                </Show>
-                <For each={group.items}>
-                  {(path) => (
-                    <button
-                      type="button"
-                      data-action="design-page"
-                      class="w-full min-w-0 px-2 py-1.5 rounded-md flex items-center gap-2 text-left text-14-regular"
-                      classList={{
-                        "bg-surface-base-active text-text-strong": state.active === path,
-                        "text-text-base hover:bg-surface-base-hover": state.active !== path,
-                      }}
-                      onClick={() => void open(path)}
-                    >
-                      <FileIcon node={{ path, type: "file" }} class="shrink-0 size-4" />
-                      <span class="truncate">{title(path)}</span>
-                    </button>
-                  )}
-                </For>
-              </>
-            )}
-          </For>
-          <Show when={state.listed && shown().length === 0}>
-            <div class="px-2 py-3 text-12-regular text-text-weak">
-              {state.query ? language.t("design.none") : language.t("design.empty")}
-            </div>
-          </Show>
-        </nav>
-      </aside>
+      <Show when={!state.active}>
+        <Gallery
+          pages={state.pages}
+          listed={state.listed}
+          kind={kind}
+          title={title}
+          load={load}
+          onOpen={(path) => void open(path)}
+          onCreate={(type) => void create(type)}
+          onRename={(path, name) => void rename(path, name)}
+          onDelete={remove}
+        />
+      </Show>
 
-      <section class="flex-1 min-w-0 h-full flex flex-col">
-        <Show
-          when={state.active}
-          fallback={
-            <Show when={state.listed && state.pages.length === 0}>
-              <div class="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                <div class="size-12 rounded-xl bg-surface-base flex items-center justify-center text-text-weak">
-                  <Icon name="design" size="large" />
-                </div>
-                <div class="text-16-medium text-text-strong">{language.t("design.start.title")}</div>
-                <div class="text-14-regular text-text-weak max-w-md">{language.t("design.start.body")}</div>
-                <Button variant="primary" size="large" icon="plus-small" onClick={() => setState("draft", untitled())}>
-                  {language.t("design.new")}
-                </Button>
-              </div>
-            </Show>
-          }
-        >
-          <div class="shrink-0 h-12 px-4 flex items-center gap-3 border-b border-border-weaker-base">
+      <section class="flex-1 min-w-0 h-full flex flex-col" classList={{ hidden: !state.active }}>
+        <Show when={state.active}>
+          <div class="shrink-0 h-12 pl-2 pr-4 flex items-center gap-2 border-b border-border-weaker-base">
+            <Tooltip placement="bottom" value={language.t("design.back")}>
+              <IconButton
+                icon="chevron-left"
+                variant="ghost"
+                data-action="design-back"
+                aria-label={language.t("design.back")}
+                onClick={() => void close()}
+              />
+            </Tooltip>
             <div class="min-w-0 flex items-center gap-1 text-12-regular text-text-weak">
               <span>{root(state.active)}</span>
               <span>/</span>

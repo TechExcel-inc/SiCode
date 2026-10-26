@@ -294,7 +294,17 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         eadDefaultOpenV1: true,
         nav: "ead" as Nav,
         // Per project directory: the design doc open last, and the session each doc belongs to.
-        design: {} as Record<string, { last?: string; links?: Record<string, string> }>,
+        design: {} as Record<
+          string,
+          {
+            last?: string
+            links?: Record<string, string>
+            pins?: string[]
+            // When each doc was last opened or edited here, for the gallery's "Opened 2h ago".
+            times?: Record<string, { opened?: number; edited?: number }>
+          }
+        >,
+        designList: false,
         code: {
           chat: true,
           width: DEFAULT_CODE_CHAT_WIDTH,
@@ -661,6 +671,51 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         open(dir: string, path: string) {
           setStore("design", (all) => ({ ...all, [dir]: { ...all?.[dir], last: path } }))
+          this.touch(dir, path, "opened")
+        },
+        touch(dir: string, path: string, kind: "opened" | "edited") {
+          setStore("design", (all) => ({
+            ...all,
+            [dir]: {
+              ...all?.[dir],
+              times: { ...all?.[dir]?.times, [path]: { ...all?.[dir]?.times?.[path], [kind]: Date.now() } },
+            },
+          }))
+        },
+        time(dir: string, path: string) {
+          return store.design?.[dir]?.times?.[path]
+        },
+        pins(dir: string) {
+          return store.design?.[dir]?.pins ?? []
+        },
+        pin(dir: string, path: string) {
+          const pins = store.design?.[dir]?.pins ?? []
+          const next = pins.includes(path) ? pins.filter((item) => item !== path) : [...pins, path]
+          setStore("design", (all) => ({ ...all, [dir]: { ...all?.[dir], pins: next } }))
+        },
+        // A doc was renamed or deleted (to: undefined): carry or drop what is remembered about it.
+        moved(dir: string, from: string, to?: string) {
+          const entry = store.design?.[dir]
+          if (!entry) return
+          const key = <T,>(record: Record<string, T> | undefined) => {
+            if (!record || !(from in record)) return record
+            const { [from]: value, ...rest } = record
+            return to ? { ...rest, [to]: value } : rest
+          }
+          setStore("design", (all) => ({
+            ...all,
+            [dir]: {
+              ...entry,
+              last: entry.last === from ? to : entry.last,
+              links: key(entry.links),
+              times: key(entry.times),
+              pins: entry.pins?.flatMap((item) => (item === from ? (to ? [to] : []) : [item])),
+            },
+          }))
+        },
+        list: createMemo(() => store.designList ?? false),
+        setList(value: boolean) {
+          setStore("designList", value)
         },
         session(dir: string, path: string) {
           return store.design?.[dir]?.links?.[path]
