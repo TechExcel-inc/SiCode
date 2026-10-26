@@ -61,8 +61,19 @@ export function clearProviderRev(directory: string) {
   providerRev.delete(directory)
 }
 
+/** A start-up request with no answer by now counts as failed, so one stuck call cannot keep a list loading forever. */
+export const BOOTSTRAP_TIMEOUT_MS = 20_000
+
+export function withTimeout<T>(promise: Promise<T>, ms = BOOTSTRAP_TIMEOUT_MS) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`No answer from the engine after ${Math.round(ms / 1000)}s`)), ms)
+  })
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer))
+}
+
 function runAll(list: Array<() => Promise<unknown>>) {
-  return Promise.allSettled(list.map((item) => item()))
+  return Promise.allSettled(list.map((item) => withTimeout(item())))
 }
 
 function showErrors(input: {
@@ -195,6 +206,8 @@ export async function bootstrapDirectory(input: {
   vcsCache: VcsCache
   loadSessions: (directory: string) => Promise<void> | void
   translate: (key: string, vars?: Record<string, string | number>) => string
+  /** Skips the error toasts, for a retry after a failure the user was already told about. */
+  quiet?: boolean
   global: {
     config: Config
     path: Path
@@ -315,7 +328,7 @@ export async function bootstrapDirectory(input: {
   ]
 
   const errs = errors(await runAll(fast))
-  if (errs.length > 0) {
+  if (errs.length > 0 && !input.quiet) {
     console.error("Failed to bootstrap instance", errs[0])
     const project = getFilename(input.directory)
     showToast({
@@ -327,7 +340,7 @@ export async function bootstrapDirectory(input: {
 
   await waitForPaint()
   const slowErrs = errors(await runAll(slow))
-  if (slowErrs.length > 0) {
+  if (slowErrs.length > 0 && !input.quiet) {
     console.error("Failed to finish bootstrap instance", slowErrs[0])
     const project = getFilename(input.directory)
     showToast({
@@ -337,7 +350,8 @@ export async function bootstrapDirectory(input: {
     })
   }
 
-  if (loading && errs.length === 0 && slowErrs.length === 0) input.setStore("status", "complete")
+  const ok = errs.length === 0 && slowErrs.length === 0
+  if (loading && ok) input.setStore("status", "complete")
 
   const rev = (providerRev.get(input.directory) ?? 0) + 1
   providerRev.set(input.directory, rev)
@@ -357,4 +371,5 @@ export async function bootstrapDirectory(input: {
         description: formatServerError(err, input.translate),
       })
     })
+  return ok
 }
