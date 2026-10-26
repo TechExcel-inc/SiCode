@@ -8,6 +8,7 @@ import { LSP } from "../../src/lsp"
 import { AppFileSystem } from "../../src/filesystem"
 import { FileTime } from "../../src/file/time"
 import { Bus } from "../../src/bus"
+import { File } from "../../src/file"
 import { Format } from "../../src/format"
 import { Truncate } from "../../src/tool/truncate"
 import { Tool } from "../../src/tool/tool"
@@ -99,6 +100,22 @@ describe("tool.write", () => {
 
           const content = yield* Effect.promise(() => fs.readFile(path.join(dir, "relative.txt"), "utf-8"))
           expect(content).toBe("relative content")
+        }),
+      ),
+    )
+  })
+
+  describe("edit events", () => {
+    it.live("name the session whose agent wrote the file", () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          const bus = yield* Bus.Service
+          const seen: { file: string; sessionID?: string }[] = []
+          const stop = yield* bus.subscribeCallback(File.Event.Edited, (event) => seen.push(event.properties))
+          const filepath = path.join(dir, "design", "plan.md")
+          yield* run({ filePath: filepath, content: "# Plan\n" })
+          stop()
+          expect(seen).toContainEqual({ file: filepath, sessionID: ctx.sessionID })
         }),
       ),
     )

@@ -62,7 +62,8 @@ export type LocalProject = Partial<Project> & { worktree: string; expanded: bool
 
 export type ReviewDiffStyle = "unified" | "split"
 
-const NAVS = ["ead", "agent", "code", "design", "spec", "task"] as const
+// Spec and Task stay valid ids, but the rail shows them combined as P1 Work.
+const NAVS = ["ead", "agent", "code", "design", "work", "spec", "task"] as const
 export type Nav = (typeof NAVS)[number]
 
 export function ensureSessionKey(key: string, touch: (key: string) => void, seed: (key: string) => void) {
@@ -236,8 +237,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return base
       })()
 
-      // The Wiki tab became the Design tab.
-      const nav = value.nav === "wiki" ? "design" : value.nav
+      // The Wiki tab became the Design tab; Spec and Task became P1 Work.
+      const nav = value.nav === "wiki" ? "design" : value.nav === "spec" || value.nav === "task" ? "work" : value.nav
 
       if (
         nav === value.nav &&
@@ -292,6 +293,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         pluginPanels: { ...DEFAULT_EAD_PANELS } as Record<string, { opened: boolean; width: number }>,
         eadDefaultOpenV1: true,
         nav: "ead" as Nav,
+        // Per project directory: the design doc open last, and the session each doc belongs to.
+        design: {} as Record<string, { last?: string; links?: Record<string, string> }>,
         code: {
           chat: true,
           width: DEFAULT_CODE_CHAT_WIDTH,
@@ -650,6 +653,24 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         set(nav: Nav) {
           setStore("nav", nav)
           setStore("sidebar", "opened", nav === "agent")
+        },
+      },
+      design: {
+        last(dir: string) {
+          return store.design?.[dir]?.last
+        },
+        open(dir: string, path: string) {
+          setStore("design", (all) => ({ ...all, [dir]: { ...all?.[dir], last: path } }))
+        },
+        session(dir: string, path: string) {
+          return store.design?.[dir]?.links?.[path]
+        },
+        link(dir: string, path: string, session: string) {
+          if (store.design?.[dir]?.links?.[path] === session) return
+          setStore("design", (all) => ({
+            ...all,
+            [dir]: { ...all?.[dir], links: { ...all?.[dir]?.links, [path]: session } },
+          }))
         },
       },
       code: {

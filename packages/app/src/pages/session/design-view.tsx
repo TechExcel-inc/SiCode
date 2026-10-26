@@ -1,5 +1,6 @@
 import { createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useNavigate } from "@solidjs/router"
 import DOMPurify from "dompurify"
 import type Vditor from "vditor"
 import type { FileContent } from "@opencode-ai/sdk/v2"
@@ -13,6 +14,7 @@ import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useSessionKey } from "./session-layout"
 import "vditor/dist/index.css"
 import "./design.css"
 
@@ -113,6 +115,30 @@ const TOOLBAR = [
 
 const dark = () => document.documentElement.dataset.colorScheme === "dark"
 
+// Remembers which session's agent last wrote each design doc, whichever tab is open at the time.
+export function useDesignLinks() {
+  const sdk = useSDK()
+  const layout = useLayout()
+  // Subagents write on behalf of the session that started them; link the doc to that one.
+  const top = async (id: string): Promise<string> => {
+    const info = await sdk.client.session
+      .get({ sessionID: id })
+      .then((res) => res.data)
+      .catch(() => undefined)
+    return info?.parentID ? top(info.parentID) : id
+  }
+  onMount(() => {
+    const stop = sdk.event.listen((event) => {
+      if (event.details.type !== "file.edited") return
+      const id = event.details.properties.sessionID
+      const file = page(event.details.properties.file, sdk.directory)
+      if (!id || !file || kind(file) !== "markdown") return
+      void top(id).then((session) => layout.design.link(sdk.directory, file, session))
+    })
+    onCleanup(stop)
+  })
+}
+
 export function DesignView() {
   const layout = useLayout()
   return (
@@ -128,6 +154,8 @@ function Design() {
   const platform = usePlatform()
   const prompt = usePrompt()
   const language = useLanguage()
+  const navigate = useNavigate()
+  const { params } = useSessionKey()
   const [state, setState] = createStore({
     pages: [] as string[],
     listed: false,
@@ -145,6 +173,8 @@ function Design() {
   let gone = false
   let timer: number | undefined
   let dirty = false
+  // A doc just created opens with its title selected.
+  let fresh = false
   // Markdown last loaded from or written to disk for the open page; anything else on disk is an outside edit.
   let last = ""
 
@@ -168,7 +198,76 @@ function Design() {
     if (gone) return
     if (next.join("\n") !== state.pages.join("\n")) setState("pages", next)
     if (!state.listed) setState("listed", true)
+    restore()
   }
+
+  // With nothing open, show the doc open last in this project, else the first one.
+  const restore = () => {
+    if (state.active || state.pages.length === 0) return
+    const prev = layout.design.last(sdk.directory)
+    void open(
+      prev && state.pages.includes(prev)
+        ? prev
+        : (state.pages.find((path) => kind(path) === "markdown") ?? state.pages[0]),
+    )
+  }
+
+  const untitled = () => {
+    const base = language.t("design.untitled")
+    const names = [base, ...Array.from({ length: 98 }, (_, i) => `${base} ${i + 2}`)]
+    return names.find((name) => !state.pages.includes(`${ROOT}/${name}.md`)) ?? base
+  }
+
+  const pick = () => {
+    if (!fresh || !ready) return
+    fresh = false
+    requestAnimationFrame(() => {
+      const heading = host?.querySelector(".vditor-wysiwyg h1")
+      if (!heading) return
+      editor?.focus()
+      const range = document.createRange()
+      range.selectNodeContents(heading)
+      window.getSelection()?.removeAllRanges()
+      window.getSelection()?.addRange(range)
+    })
+  }
+
+  // The chat beside a doc is the session that wrote it. A doc without one gets a blank chat, and the
+  // session is only created when the first message is sent (see the params.id effect below).
+  const chat = async (path: string) => {
+    const id = layout.design.session(sdk.directory, path)
+    const alive = id
+      ? await sdk.client.session
+          .get({ sessionID: id })
+          .then((res) => !!res.data)
+          .catch(() => false)
+      : false
+    if (state.active !== path) return
+    const target = alive ? id : undefined
+    if (target === params.id) return
+    navigate(`/${params.dir}/session${target ? `/${target}` : ""}`)
+  }
+
+  // Prompt context belongs to the session on screen, so attach the open doc again whenever either changes.
+  createEffect(
+    on(
+      () => [state.active, params.id] as const,
+      ([path]) => {
+        if (path) attach(path)
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => params.id,
+      (id, prev) => {
+        if (!id || prev || !state.active) return
+        if (!layout.design.session(sdk.directory, state.active)) layout.design.link(sdk.directory, state.active, id)
+      },
+      { defer: true },
+    ),
+  )
 
   const shown = createMemo(() => {
     const query = state.query.trim().toLowerCase()
@@ -201,7 +300,9 @@ function Design() {
   const show = (content: string) => {
     last = content
     dirty = false
-    if (ready) editor?.setValue(content, true)
+    if (!ready) return
+    editor?.setValue(content, true)
+    pick()
   }
 
   // force: the user chose to keep their version over an outside edit.
@@ -274,16 +375,17 @@ function Design() {
   const open = async (path: string) => {
     if (timer !== undefined) window.clearTimeout(timer)
     await save()
+    layout.design.open(sdk.directory, path)
     if (kind(path) !== "markdown") {
       setState({ active: path, status: "idle", conflict: false, file: undefined, loading: true })
-      attach(path)
+      void chat(path)
       await preview(path)
       return
     }
     const content = await read(path)
     setState({ active: path, status: "idle", conflict: false, file: undefined })
+    void chat(path)
     show(content ?? "")
-    attach(path)
     editor?.focus()
   }
 
@@ -294,6 +396,7 @@ function Design() {
     setState("draft", undefined)
     if (!state.pages.includes(path)) {
       await sdk.client.file.write({ path, content: `# ${name.split("/").pop()}\n\n` })
+      fresh = true
       await list()
     }
     await open(path)
@@ -334,6 +437,7 @@ function Design() {
         after: () => {
           ready = true
           editor?.setValue(last, true)
+          pick()
         },
         input: schedule,
         blur: () => void save(),
@@ -401,22 +505,38 @@ function Design() {
             <Icon name="design" size="small" />
             {language.t("rail.design")}
           </div>
-          <Tooltip placement="bottom" value={language.t("design.new")}>
-            <IconButton
-              icon="plus-small"
-              variant="ghost"
-              data-action="design-new"
-              aria-label={language.t("design.new")}
-              onClick={() => setState("draft", "")}
-            />
-          </Tooltip>
         </div>
         <div class="shrink-0 px-3 pb-2 flex flex-col gap-2">
+          <div class="flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
+            <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
+            <input
+              type="text"
+              data-action="design-search"
+              value={state.query}
+              onInput={(event) => setState("query", event.currentTarget.value)}
+              placeholder={language.t("design.search")}
+              class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            data-action="design-new"
+            class="h-8 px-2 rounded-md flex items-center gap-2 text-left text-14-regular text-text-base hover:bg-surface-base-hover"
+            onClick={() => setState("draft", untitled())}
+          >
+            <Icon name="plus-small" size="small" class="shrink-0 text-icon-weak" />
+            {language.t("design.new")}
+          </button>
           <Show when={state.draft !== undefined}>
             <input
               type="text"
               data-action="design-new-name"
-              ref={(el) => requestAnimationFrame(() => el.focus())}
+              ref={(el) =>
+                requestAnimationFrame(() => {
+                  el.focus()
+                  el.select()
+                })
+              }
               value={state.draft ?? ""}
               onInput={(event) => setState("draft", event.currentTarget.value)}
               onKeyDown={(event) => {
@@ -430,17 +550,6 @@ function Design() {
               class="h-8 px-2 rounded-md bg-surface-base border border-border-interactive-base text-12-regular text-text-strong placeholder:text-text-weak outline-none"
             />
           </Show>
-          <div class="flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
-            <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
-            <input
-              type="text"
-              data-action="design-search"
-              value={state.query}
-              onInput={(event) => setState("query", event.currentTarget.value)}
-              placeholder={language.t("design.search")}
-              class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
-            />
-          </div>
         </div>
         <nav class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2 pb-3 flex flex-col gap-0.5">
           <For each={groups()}>
@@ -481,16 +590,18 @@ function Design() {
         <Show
           when={state.active}
           fallback={
-            <div class="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-              <div class="size-12 rounded-xl bg-surface-base flex items-center justify-center text-text-weak">
-                <Icon name="design" size="large" />
+            <Show when={state.listed && state.pages.length === 0}>
+              <div class="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                <div class="size-12 rounded-xl bg-surface-base flex items-center justify-center text-text-weak">
+                  <Icon name="design" size="large" />
+                </div>
+                <div class="text-16-medium text-text-strong">{language.t("design.start.title")}</div>
+                <div class="text-14-regular text-text-weak max-w-md">{language.t("design.start.body")}</div>
+                <Button variant="primary" size="large" icon="plus-small" onClick={() => setState("draft", untitled())}>
+                  {language.t("design.new")}
+                </Button>
               </div>
-              <div class="text-16-medium text-text-strong">{language.t("design.start.title")}</div>
-              <div class="text-14-regular text-text-weak max-w-md">{language.t("design.start.body")}</div>
-              <Button variant="primary" size="large" icon="plus-small" onClick={() => setState("draft", "")}>
-                {language.t("design.new")}
-              </Button>
-            </div>
+            </Show>
           }
         >
           <div class="shrink-0 h-12 px-4 flex items-center gap-3 border-b border-border-weaker-base">
@@ -520,10 +631,7 @@ function Design() {
                 />
               </Tooltip>
             </Show>
-            <Tooltip
-              placement="bottom"
-              value={language.t(layout.code.chat() ? "code.chat.hide" : "code.chat.show")}
-            >
+            <Tooltip placement="bottom" value={language.t(layout.code.chat() ? "code.chat.hide" : "code.chat.show")}>
               <IconButton
                 icon={layout.code.chat() ? "layout-right-full" : "layout-right"}
                 variant="ghost"
@@ -542,7 +650,12 @@ function Design() {
               <span class="flex-1 min-w-0 text-12-regular text-text-on-warning-base">
                 {language.t("design.conflict")}
               </span>
-              <Button size="small" variant="secondary" data-action="design-conflict-reload" onClick={() => void reload()}>
+              <Button
+                size="small"
+                variant="secondary"
+                data-action="design-conflict-reload"
+                onClick={() => void reload()}
+              >
                 {language.t("design.conflict.reload")}
               </Button>
               <Button size="small" variant="ghost" data-action="design-conflict-keep" onClick={keep}>

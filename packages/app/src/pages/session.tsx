@@ -72,7 +72,7 @@ import { diffs as list } from "@/utils/diffs"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
-import { DesignView } from "@/pages/session/design-view"
+import { DesignView, useDesignLinks } from "@/pages/session/design-view"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { formatServerError } from "@/utils/server-errors"
 import { type FollowupItem, useFollowup } from "@/context/followup"
@@ -344,6 +344,7 @@ export default function Page() {
   const terminal = useTerminal()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const { params, sessionKey, tabs, view } = useSessionLayout()
+  useDesignLinks()
 
   createEffect(() => {
     if (!prompt.ready()) return

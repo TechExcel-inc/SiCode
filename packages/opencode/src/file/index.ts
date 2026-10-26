@@ -77,6 +77,8 @@ export namespace File {
       "file.edited",
       z.object({
         file: z.string(),
+        // The session whose agent made the edit, when a tool made it.
+        sessionID: z.string().optional(),
       }),
     ),
   }

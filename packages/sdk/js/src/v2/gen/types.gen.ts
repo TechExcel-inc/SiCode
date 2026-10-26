@@ -107,6 +107,7 @@ export type EventFileEdited = {
   type: "file.edited"
   properties: {
     file: string
+    sessionID?: string
   }
 }
 

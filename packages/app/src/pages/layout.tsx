@@ -2405,8 +2405,7 @@ export default function Layout(props: ParentProps) {
       { id: "agent", icon: "brain" },
       { id: "code", icon: "code" },
       { id: "design", icon: "design" },
-      { id: "spec", icon: "edit" },
-      { id: "task", icon: "checklist" },
+      { id: "work", icon: "checklist" },
     ]
     return views.map((item) => ({
       id: item.id,
