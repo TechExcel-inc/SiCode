@@ -282,6 +282,12 @@ export namespace File {
     heif: "image/heif",
   }
 
+  // Documents the app can preview read-only; returned base64 but still typed "binary".
+  const documents: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  }
+
   type Entry = { files: string[]; dirs: string[] }
 
   const ext = (file: string) => path.extname(file).toLowerCase().slice(1)
@@ -525,6 +531,17 @@ export namespace File {
             }
           }
           return { type: "text" as const, content: "" }
+        }
+
+        const doc = documents[ext(file)]
+        if (doc) {
+          const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+          return {
+            type: "binary" as const,
+            content: Buffer.from(bytes).toString("base64"),
+            mimeType: doc,
+            encoding: "base64" as const,
+          }
         }
 
         const knownText = isTextByExtension(file) || isTextByName(file)

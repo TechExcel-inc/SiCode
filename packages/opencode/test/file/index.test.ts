@@ -129,6 +129,23 @@ describe("file/index Filesystem patterns", () => {
         },
       })
     })
+
+    test("returns base64 for previewable documents", async () => {
+      await using tmp = await tmpdir()
+      const bytes = Buffer.from("%PDF-1.4\n%\xff\n", "binary")
+      await fs.writeFile(path.join(tmp.path, "spec.pdf"), bytes)
+
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const result = await read("spec.pdf")
+          expect(result.type).toBe("binary")
+          expect(result.encoding).toBe("base64")
+          expect(result.mimeType).toBe("application/pdf")
+          expect(result.content).toBe(bytes.toString("base64"))
+        },
+      })
+    })
   })
 
   describe("read() - Filesystem.mimeType()", () => {

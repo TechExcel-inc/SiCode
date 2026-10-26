@@ -62,7 +62,7 @@ export type LocalProject = Partial<Project> & { worktree: string; expanded: bool
 
 export type ReviewDiffStyle = "unified" | "split"
 
-const NAVS = ["ead", "agent", "code", "spec", "task", "wiki"] as const
+const NAVS = ["ead", "agent", "code", "design", "spec", "task"] as const
 export type Nav = (typeof NAVS)[number]
 
 export function ensureSessionKey(key: string, touch: (key: string) => void, seed: (key: string) => void) {
@@ -236,7 +236,11 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return base
       })()
 
+      // The Wiki tab became the Design tab.
+      const nav = value.nav === "wiki" ? "design" : value.nav
+
       if (
+        nav === value.nav &&
         migratedSidebar === sidebar &&
         migratedReview === review &&
         migratedFileTree === fileTree &&
@@ -255,6 +259,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         sessionTabs: migratedSessionTabs,
         pluginPanels: migratedPanels,
         eadDefaultOpenV1: true,
+        nav: nav ?? "ead",
       }
     }
 

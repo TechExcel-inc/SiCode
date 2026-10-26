@@ -2380,7 +2380,7 @@ export default function Layout(props: ParentProps) {
       layout.fileTree.close()
       return
     }
-    if (next === "wiki") {
+    if (next === "design") {
       sessionView.reviewPanel.close()
       layout.fileTree.close()
       return
@@ -2404,9 +2404,9 @@ export default function Layout(props: ParentProps) {
       { id: "ead", icon: "ead" },
       { id: "agent", icon: "brain" },
       { id: "code", icon: "code" },
+      { id: "design", icon: "design" },
       { id: "spec", icon: "edit" },
       { id: "task", icon: "checklist" },
-      { id: "wiki", icon: "open-file" },
     ]
     return views.map((item) => ({
       id: item.id,

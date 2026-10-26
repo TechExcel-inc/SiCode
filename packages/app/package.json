@@ -66,14 +66,17 @@
     "fuzzysort": "catalog:",
     "ghostty-web": "github:anomalyco/ghostty-web#main",
     "luxon": "catalog:",
+    "mammoth": "1.13.0",
     "marked": "catalog:",
     "marked-shiki": "catalog:",
+    "mermaid": "12.2.0",
     "remeda": "catalog:",
     "shiki": "catalog:",
     "solid-js": "catalog:",
     "solid-list": "catalog:",
     "tailwindcss": "catalog:",
     "turndown": "7.2.0",
+    "turndown-plugin-gfm": "1.0.2",
     "virtua": "catalog:",
     "zod": "catalog:"
   }

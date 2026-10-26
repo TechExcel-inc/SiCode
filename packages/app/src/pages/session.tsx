@@ -72,7 +72,7 @@ import { diffs as list } from "@/utils/diffs"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
-import { WikiView } from "@/pages/session/wiki-view"
+import { DesignView } from "@/pages/session/design-view"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { formatServerError } from "@/utils/server-errors"
 import { type FollowupItem, useFollowup } from "@/context/followup"
@@ -439,14 +439,14 @@ export default function Page() {
   )
   const sideExtra = createMemo(() => eadExtra() + (editsOpen() ? EDITS_WIDTH : 0))
   const codeView = createMemo(() => layout.nav.current() === "code")
-  const wikiView = createMemo(() => isDesktop() && layout.nav.current() === "wiki")
+  const designView = createMemo(() => isDesktop() && layout.nav.current() === "design")
   const sessionChatWidth = createMemo(() => {
     if (!desktopReviewOpen()) return undefined
     if (codeView()) return layout.code.chat() ? layout.code.width() : 0
     return Math.max(0, layout.session.width() - eadExtra())
   })
   const sessionPanelWidth = createMemo(() => {
-    if (wikiView()) return layout.code.chat() ? `${layout.code.width()}px` : "0px"
+    if (designView()) return layout.code.chat() ? `${layout.code.width()}px` : "0px"
     const ead = sideExtra()
     if (!desktopSidePanelOpen()) {
       if (ead === 0) return "100%"
@@ -1909,7 +1909,7 @@ export default function Page() {
     <div class="relative bg-background-base size-full overflow-hidden flex flex-col">
       <SessionHeader />
       <div class="relative flex-1 min-h-0 flex flex-col md:flex-row">
-        <WikiView />
+        <DesignView />
         <div classList={{ contents: eadView(), hidden: !eadView() }}>
           <EadMapPanel sizing={eadMapSizing} />
           <EadPilotPanel sizing={eadPilotSizing} />
@@ -1944,8 +1944,8 @@ export default function Page() {
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
             "md:order-2 border-l border-border-weaker-base": codeView() && desktopReviewOpen(),
-            "overflow-hidden invisible": (codeView() && desktopReviewOpen() || wikiView()) && !layout.code.chat(),
-            "md:ml-auto border-l border-border-weaker-base": wikiView(),
+            "overflow-hidden invisible": (codeView() && desktopReviewOpen() || designView()) && !layout.code.chat(),
+            "md:ml-auto border-l border-border-weaker-base": designView(),
             "pointer-events-none": sessionChatWidth() === 0,
             "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !panelResizeActive() && !ui.reviewSnap,
