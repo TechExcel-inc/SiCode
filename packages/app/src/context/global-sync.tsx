@@ -15,7 +15,7 @@ import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
 import type { InitError } from "../pages/error"
 import { useGlobalSDK } from "./global-sdk"
-import { bootstrapDirectory, bootstrapGlobal, clearProviderRev } from "./global-sync/bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, clearProviderRev, withTimeout } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { createRefreshQueue } from "./global-sync/queue"
@@ -51,6 +51,9 @@ function createGlobalSync() {
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
   const sessionMeta = new Map<string, { limit: number }>()
+  /** Failed bootstraps in a row per directory, and the timer that tries again. */
+  const failures = new Map<string, number>()
+  const retries = new Map<string, ReturnType<typeof setTimeout>>()
 
   const [projectCache, setProjectCache, projectInit] = persisted(
     Persist.global("globalSync.project", ["globalSync.project.v1"]),
@@ -159,6 +162,9 @@ function createGlobalSync() {
     onDispose: (directory) => {
       queue.clear(directory)
       sessionMeta.delete(directory)
+      failures.delete(directory)
+      clearTimeout(retries.get(directory))
+      retries.delete(directory)
       sdkCache.delete(directory)
       clearProviderRev(directory)
       clearSessionPrefetchDirectory(directory)
@@ -201,7 +207,7 @@ function createGlobalSync() {
     const promise = loadRootSessionsWithFallback({
       directory,
       limit,
-      list: (query) => globalSDK.client.session.list(query),
+      list: (query) => withTimeout(globalSDK.client.session.list(query)),
     })
       .then((x) => {
         const nonArchived = (x.data ?? [])
@@ -255,7 +261,8 @@ function createGlobalSync() {
       const cache = children.vcsCache.get(directory)
       if (!cache) return
       const sdk = sdkFor(directory)
-      await bootstrapDirectory({
+      const failed = failures.get(directory) ?? 0
+      const ok = await bootstrapDirectory({
         directory,
         global: {
           config: globalStore.config,
@@ -269,7 +276,25 @@ function createGlobalSync() {
         vcsCache: cache,
         loadSessions,
         translate: language.t,
+        quiet: failed > 0,
       })
+      if (ok) {
+        failures.delete(directory)
+        return
+      }
+      // A project whose start-up failed would show a loading list until something reloads it, so it tries
+      // again by itself: after 5s, 10s, 20s, 40s, then every minute.
+      failures.set(directory, failed + 1)
+      if (retries.has(directory)) return
+      const wait = Math.min(5_000 * 2 ** failed, 60_000)
+      retries.set(
+        directory,
+        setTimeout(() => {
+          retries.delete(directory)
+          if (!active || !children.children[directory]) return
+          queue.push(directory)
+        }, wait),
+      )
     })()
 
     booting.set(directory, promise)
@@ -330,6 +355,8 @@ function createGlobalSync() {
   onCleanup(unsub)
   onCleanup(() => {
     queue.dispose()
+    for (const timer of retries.values()) clearTimeout(timer)
+    retries.clear()
   })
   onCleanup(() => {
     for (const directory of Object.keys(children.children)) {

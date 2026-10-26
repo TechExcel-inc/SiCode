@@ -115,22 +115,35 @@ pub fn sweep_sidecar_processes() {
             .stderr(Stdio::null())
             .status();
     }
-    #[cfg(target_os = "macos")]
+    // Only this app's own sidecar: other apps built on the same engine (KloudCode, a second SiCode build)
+    // run an `opencode-cli` too, and killing theirs leaves them on "Loading" with no server.
+    #[cfg(unix)]
     {
-        let _ = std::process::Command::new("killall")
-            .arg("opencode-cli")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(target_os = "linux")]
-    {
+        let Some(sidecar) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("opencode-cli")))
+        else {
+            return;
+        };
         let _ = std::process::Command::new("pkill")
-            .args(["-x", "opencode-cli"])
+            .args(["-f", &sidecar_pattern(&sidecar.to_string_lossy())])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
     }
+}
+
+/// A `pkill -f` pattern that matches a process started from exactly this binary path.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn sidecar_pattern(path: &str) -> String {
+    let mut out = String::from("^");
+    for c in path.chars() {
+        if "\\.^$|?*+()[]{}".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 pub async fn get_config(app: &AppHandle) -> Option<Config> {
@@ -750,6 +763,14 @@ async fn read_line<F: Fn(String) -> CommandEvent + Send + Copy + 'static>(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn sidecar_pattern_matches_only_this_apps_binary() {
+        assert_eq!(
+            sidecar_pattern("/Applications/EAD SiCode.app/Contents/MacOS/opencode-cli"),
+            "^/Applications/EAD SiCode\\.app/Contents/MacOS/opencode-cli"
+        );
+    }
 
     #[test]
     fn parse_shell_env_supports_null_delimited_pairs() {
