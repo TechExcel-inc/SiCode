@@ -1,18 +1,19 @@
-import { createMemo, createResource, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import DOMPurify from "dompurify"
+import type Vditor from "vditor"
 import type { FileContent } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { useLanguage } from "@/context/language"
+import { useLanguage, type Locale } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
-import { html, markdown } from "./design-markdown"
+import "vditor/dist/index.css"
 import "./design.css"
 
 const ROOT = "design"
@@ -20,6 +21,8 @@ const ROOT = "design"
 const LEGACY = "wiki"
 const DELAY = 800
 const POLL = 4000
+// Vditor's runtime scripts (markdown engine, icons, languages, diagrams), served by the app; see vite.js.
+const CDN = "/vditor"
 
 const KINDS = {
   md: "markdown",
@@ -65,6 +68,51 @@ const same = (a: string, b: string) => a.trim() === b.trim()
 
 const bytes = (file: FileContent) => Uint8Array.from(atob(file.content), (c) => c.charCodeAt(0))
 
+const LANGS: Partial<Record<Locale, NonNullable<IOptions["lang"]>>> = {
+  en: "en_US",
+  zh: "zh_CN",
+  zht: "zh_TW",
+  ko: "ko_KR",
+  de: "de_DE",
+  es: "es_ES",
+  fr: "fr_FR",
+  ja: "ja_JP",
+  ru: "ru_RU",
+  br: "pt_BR",
+}
+
+// Same toolbar as Kloud-Web's markdown editor.
+const TOOLBAR = [
+  "headings",
+  "bold",
+  "italic",
+  "strike",
+  "link",
+  "|",
+  "list",
+  "ordered-list",
+  "check",
+  "outdent",
+  "indent",
+  "|",
+  "quote",
+  "line",
+  "code",
+  "inline-code",
+  "insert-before",
+  "insert-after",
+  "|",
+  "table",
+  "|",
+  "undo",
+  "redo",
+  "|",
+  "fullscreen",
+  "edit-mode",
+]
+
+const dark = () => document.documentElement.dataset.colorScheme === "dark"
+
 export function DesignView() {
   const layout = useLayout()
   return (
@@ -81,18 +129,22 @@ function Design() {
   const prompt = usePrompt()
   const language = useLanguage()
   const [state, setState] = createStore({
+    pages: [] as string[],
+    listed: false,
     active: "",
     query: "",
     draft: undefined as string | undefined,
     status: "idle" as "idle" | "saving" | "saved" | "error" | "updated",
     conflict: false,
-    tick: 0,
-    version: 0,
+    file: undefined as FileContent | undefined,
+    loading: false,
   })
-  let editor: HTMLDivElement | undefined
+  let host: HTMLDivElement | undefined
+  let editor: Vditor | undefined
+  let ready = false
+  let gone = false
   let timer: number | undefined
   let dirty = false
-  let count = 0
   // Markdown last loaded from or written to disk for the open page; anything else on disk is an outside edit.
   let last = ""
 
@@ -110,15 +162,18 @@ function Design() {
     ].sort((a, b) => a.localeCompare(b))
   }
 
-  const [pages, { refetch }] = createResource(
-    () => state.tick,
-    () => Promise.all([walk(ROOT), walk(LEGACY)]).then((all) => all.flat()),
-    { initialValue: [] },
-  )
+  // Polled; the list only changes (and re-renders) when the files on disk do.
+  const list = async () => {
+    const next = await Promise.all([walk(ROOT), walk(LEGACY)]).then((all) => all.flat())
+    if (gone) return
+    if (next.join("\n") !== state.pages.join("\n")) setState("pages", next)
+    if (!state.listed) setState("listed", true)
+  }
+
   const shown = createMemo(() => {
     const query = state.query.trim().toLowerCase()
-    if (!query) return pages()
-    return pages().filter((path) => title(path).toLowerCase().includes(query))
+    if (!query) return state.pages
+    return state.pages.filter((path) => title(path).toLowerCase().includes(query))
   })
   const groups = createMemo(() =>
     [ROOT, LEGACY]
@@ -135,58 +190,23 @@ function Design() {
 
   const read = (path: string) => load(path).then((file) => (file ? file.content : undefined))
 
-  const [file] = createResource(
-    () => (state.active && !editable() ? { path: state.active, version: state.version } : undefined),
-    (input) => load(input.path),
-  )
-
-  // Mermaid blocks get a drawn diagram just above their source; the source only shows while editing it.
-  const draw = async () => {
-    const blocks = Array.from(editor?.querySelectorAll<HTMLElement>("pre > code.language-mermaid") ?? [])
-    if (blocks.length === 0) return
-    const mermaid = (await import("mermaid")).default
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: document.documentElement.dataset.colorScheme === "dark" ? "dark" : "default",
-    })
-    for (const code of blocks) {
-      const pre = code.parentElement
-      if (!pre?.isConnected) continue
-      const source = code.textContent ?? ""
-      const prev = pre.previousElementSibling
-      const figure = prev instanceof HTMLElement && prev.hasAttribute("data-diagram") ? prev : document.createElement("div")
-      if (figure.dataset.source === source) continue
-      figure.setAttribute("data-diagram", "")
-      figure.contentEditable = "false"
-      figure.dataset.source = source
-      if (!figure.isConnected) pre.before(figure)
-      await mermaid
-        .render(`design-diagram-${++count}`, source)
-        .then((res) => {
-          figure.innerHTML = res.svg
-          figure.removeAttribute("data-error")
-        })
-        .catch((err: unknown) => {
-          figure.textContent = err instanceof Error ? err.message : String(err)
-          figure.setAttribute("data-error", "")
-          figure.setAttribute("data-open", "")
-        })
-    }
+  // Read-only files: replaced only when their bytes change, so polling never flickers the view.
+  const preview = async (path: string) => {
+    const file = await load(path)
+    if (state.active !== path) return
+    if (file?.content !== state.file?.content || file?.encoding !== state.file?.encoding) setState("file", file)
+    setState("loading", false)
   }
 
   const show = (content: string) => {
     last = content
     dirty = false
-    if (!editor) return
-    editor.innerHTML = html(content)
-    editor.querySelectorAll("input[type=checkbox]").forEach((box) => box.removeAttribute("disabled"))
-    void draw()
+    if (ready) editor?.setValue(content, true)
   }
 
   // force: the user chose to keep their version over an outside edit.
   const save = async (force?: boolean) => {
-    if (!dirty || !editor || !editable() || (state.conflict && !force)) return
+    if (!dirty || !editor || !ready || !editable() || (state.conflict && !force)) return
     const path = state.active
     const disk = await read(path)
     if (!force && disk !== undefined && !same(disk, last)) {
@@ -194,14 +214,13 @@ function Design() {
       return
     }
     dirty = false
-    const content = markdown(editor.innerHTML)
+    const content = editor.getValue().trim() + "\n"
     setState("status", "saving")
     await sdk.client.file
       .write({ path, content })
       .then(() => {
         if (state.active === path) last = content
         setState({ status: state.active === path && !dirty ? "saved" : state.status, conflict: false })
-        void draw()
       })
       .catch(() => {
         dirty = true
@@ -209,14 +228,11 @@ function Design() {
       })
   }
 
-  // Picks up edits made by the agent or another window.
+  // Picks up edits made by the agent or another window, but never replaces what the user is typing.
   const check = async () => {
     const path = state.active
     if (!path || state.status === "saving") return
-    if (!editable()) {
-      setState("version", (n) => n + 1)
-      return
-    }
+    if (!editable()) return preview(path)
     const disk = await read(path)
     if (disk === undefined || same(disk, last) || state.active !== path) return
     if (dirty) {
@@ -259,12 +275,13 @@ function Design() {
     if (timer !== undefined) window.clearTimeout(timer)
     await save()
     if (kind(path) !== "markdown") {
-      setState({ active: path, status: "idle", conflict: false })
+      setState({ active: path, status: "idle", conflict: false, file: undefined, loading: true })
       attach(path)
+      await preview(path)
       return
     }
     const content = await read(path)
-    setState({ active: path, status: "idle", conflict: false })
+    setState({ active: path, status: "idle", conflict: false, file: undefined })
     show(content ?? "")
     attach(path)
     editor?.focus()
@@ -275,29 +292,78 @@ function Design() {
     if (!name) return
     const path = `${ROOT}/${name}.md`
     setState("draft", undefined)
-    if (!pages().includes(path)) {
+    if (!state.pages.includes(path)) {
       await sdk.client.file.write({ path, content: `# ${name.split("/").pop()}\n\n` })
-      setState("tick", (n) => n + 1)
-      await refetch()
+      await list()
     }
     await open(path)
   }
 
+  const theme = () => {
+    const value = dark()
+    editor?.setTheme(value ? "dark" : "classic", value ? "dark" : "light", value ? "native" : "github")
+  }
+
   onMount(() => {
+    void list()
+    void import("vditor").then((mod) => {
+      if (gone || !host) return
+      const value = dark()
+      editor = new mod.default(host, {
+        cdn: CDN,
+        mode: "wysiwyg",
+        lang: LANGS[language.locale()] ?? "en_US",
+        height: "100%",
+        placeholder: language.t("design.placeholder"),
+        toolbar: TOOLBAR,
+        toolbarConfig: { pin: true },
+        cache: { enable: false },
+        theme: value ? "dark" : "classic",
+        preview: {
+          actions: [],
+          theme: { current: value ? "dark" : "light" },
+          hljs: { style: value ? "native" : "github" },
+        },
+        link: {
+          isOpen: false,
+          click: (el) => {
+            const href = el.getAttribute("href")
+            if (href) platform.openLink(href)
+          },
+        },
+        after: () => {
+          ready = true
+          editor?.setValue(last, true)
+        },
+        input: schedule,
+        blur: () => void save(),
+        keydown: (event) => {
+          if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return
+          event.preventDefault()
+          if (timer !== undefined) window.clearTimeout(timer)
+          void save()
+        },
+      })
+    })
+
+    const watch = new MutationObserver(theme)
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-scheme"] })
+
     const stop = sdk.event.listen((event) => {
       const detail = event.details as { type: string; properties?: { file?: unknown } }
       if (detail.type !== "file.edited" && detail.type !== "file.watcher.updated") return
       const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, sdk.directory) : undefined
       if (!file) return
-      if (!pages().includes(file)) setState("tick", (n) => n + 1)
+      if (!state.pages.includes(file)) void list()
       if (file === state.active) void check()
     })
     const poll = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
-      setState("tick", (n) => n + 1)
+      void list()
       if (editable()) void check()
     }, POLL)
     onCleanup(() => {
+      watch.disconnect()
       stop()
       window.clearInterval(poll)
     })
@@ -305,33 +371,14 @@ function Design() {
 
   onCleanup(() => {
     if (timer !== undefined) window.clearTimeout(timer)
-    void save()
+    void save().then(() => editor?.destroy())
+    gone = true
     // The open page is only attached while the Design tab is on screen.
     prompt.context
       .items()
       .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory))
       .forEach((item) => prompt.context.remove(item.key))
   })
-
-  const run = (cmd: string, value?: string) => {
-    editor?.focus()
-    document.execCommand(cmd, false, value)
-    schedule()
-  }
-
-  const tools: { icon?: IconProps["name"]; text?: string; label: Parameters<typeof language.t>[0]; act: () => void }[] = [
-    { text: "H1", label: "design.tool.h1", act: () => run("formatBlock", "h1") },
-    { text: "H2", label: "design.tool.h2", act: () => run("formatBlock", "h2") },
-    { text: "H3", label: "design.tool.h3", act: () => run("formatBlock", "h3") },
-    { text: "B", label: "design.tool.bold", act: () => run("bold") },
-    { text: "I", label: "design.tool.italic", act: () => run("italic") },
-    { text: "S", label: "design.tool.strike", act: () => run("strikeThrough") },
-    { icon: "bullet-list", label: "design.tool.bullets", act: () => run("insertUnorderedList") },
-    { text: "1.", label: "design.tool.numbers", act: () => run("insertOrderedList") },
-    { text: "❝", label: "design.tool.quote", act: () => run("formatBlock", "blockquote") },
-    { icon: "code", label: "design.tool.code", act: () => run("formatBlock", "pre") },
-    { text: "¶", label: "design.tool.text", act: () => run("formatBlock", "p") },
-  ]
 
   const status = createMemo(() => {
     if (!editable()) return language.t("design.readonly")
@@ -422,7 +469,7 @@ function Design() {
               </>
             )}
           </For>
-          <Show when={!pages.loading && shown().length === 0}>
+          <Show when={state.listed && shown().length === 0}>
             <div class="px-2 py-3 text-12-regular text-text-weak">
               {state.query ? language.t("design.none") : language.t("design.empty")}
             </div>
@@ -503,64 +550,16 @@ function Design() {
               </Button>
             </div>
           </Show>
-          <Show when={editable()}>
-            <div class="shrink-0 px-4 py-1.5 flex items-center gap-0.5 border-b border-border-weaker-base">
-              <For each={tools}>
-                {(tool) => (
-                  <Tooltip placement="bottom" value={language.t(tool.label)}>
-                    <button
-                      type="button"
-                      data-action="design-tool"
-                      aria-label={language.t(tool.label)}
-                      class="h-7 min-w-7 px-1.5 rounded-md flex items-center justify-center text-12-medium text-text-base hover:bg-surface-base-hover"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={tool.act}
-                    >
-                      <Show when={tool.icon} fallback={tool.text}>
-                        {(name) => <Icon name={name()} size="small" />}
-                      </Show>
-                    </button>
-                  </Tooltip>
-                )}
-              </For>
-            </div>
-          </Show>
           <Show when={!editable()}>
             <div class="flex-1 min-h-0 overflow-y-auto">
-              <Show when={file()} fallback={<Show when={!file.loading}>{<Empty />}</Show>}>
+              <Show when={state.file} fallback={<Show when={!state.loading}>{<Empty />}</Show>}>
                 {(item) => <Preview path={state.active} file={item()} />}
               </Show>
             </div>
           </Show>
         </Show>
-        <div class="flex-1 min-h-0 overflow-y-auto" classList={{ hidden: !state.active || !editable() }}>
-          <div class="max-w-3xl mx-auto px-10 py-8 h-full">
-            <div
-              ref={editor}
-              data-component="design-editor"
-              data-placeholder={language.t("design.placeholder")}
-              contentEditable
-              spellcheck
-              onInput={schedule}
-              onBlur={() => void save()}
-              onClick={(event) => {
-                const target = event.target
-                if (target instanceof HTMLInputElement && target.type === "checkbox") {
-                  target.toggleAttribute("checked", target.checked)
-                  schedule()
-                  return
-                }
-                const figure = target instanceof Element ? target.closest("[data-diagram]") : null
-                if (figure) figure.toggleAttribute("data-open")
-              }}
-              onKeyDown={(event) => {
-                if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return
-                event.preventDefault()
-                if (timer !== undefined) window.clearTimeout(timer)
-                void save()
-              }}
-            />
-          </div>
+        <div class="flex-1 min-h-0" classList={{ hidden: !state.active || !editable() }}>
+          <div ref={host} data-component="design-editor" />
         </div>
       </section>
     </div>
@@ -578,6 +577,7 @@ function Empty() {
 
 // Read-only views. Nothing here runs the file's own scripts or reaches the app.
 function Preview(props: { path: string; file: FileContent }) {
+  const [state, setState] = createStore({ doc: undefined as string | undefined, failed: false })
   const encoded = () => props.file.encoding === "base64" && props.file.content.length > 0
   const image = createMemo(() => {
     if (kind(props.path) !== "image") return
@@ -590,13 +590,17 @@ function Preview(props: { path: string; file: FileContent }) {
     onCleanup(() => URL.revokeObjectURL(url))
     return url
   })
-  const [doc] = createResource(
-    () => (kind(props.path) === "docx" && encoded() ? props.file : undefined),
-    async (file) => {
-      const mammoth = (await import("mammoth/mammoth.browser.js")).default
-      const res = await mammoth.convertToHtml({ arrayBuffer: bytes(file).buffer })
-      return DOMPurify.sanitize(res.value)
-    },
+  createEffect(
+    on(
+      () => props.file,
+      (file) => {
+        if (kind(props.path) !== "docx" || !encoded()) return
+        void import("mammoth/mammoth.browser.js")
+          .then((mod) => mod.default.convertToHtml({ arrayBuffer: bytes(file).buffer }))
+          .then((res) => setState({ doc: DOMPurify.sanitize(res.value), failed: false }))
+          .catch(() => setState({ doc: undefined, failed: true }))
+      },
+    ),
   )
 
   return (
@@ -617,13 +621,14 @@ function Preview(props: { path: string; file: FileContent }) {
             sandbox=""
             srcdoc={text()}
             title={title(props.path)}
-            class="block w-full h-full border-0 bg-white"
+            class="block w-full h-full border-0"
+            style={{ background: "#fff" }}
           />
         )}
       </Match>
       <Match when={kind(props.path) === "docx" && encoded()}>
         <div class="max-w-3xl mx-auto px-10 py-8">
-          <Show when={doc()} fallback={<Show when={doc.error}>{<Empty />}</Show>}>
+          <Show when={state.doc} fallback={<Show when={state.failed}>{<Empty />}</Show>}>
             {(value) => <div data-component="design-doc" innerHTML={value()} />}
           </Show>
         </div>

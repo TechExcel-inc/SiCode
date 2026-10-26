@@ -1,17 +1,33 @@
-[data-component="design-editor"],
+/* Vditor, blended into the app's surfaces. */
+[data-component="design-editor"] {
+  height: 100%;
+
+  &.vditor {
+    border: none;
+    border-radius: 0;
+    --border-color: var(--border-weaker-base);
+    --panel-background-color: var(--background-base);
+    --toolbar-background-color: var(--background-base);
+    --textarea-background-color: var(--background-base);
+  }
+
+  .vditor-toolbar {
+    padding-left: 12px !important;
+    border-bottom: 1px solid var(--border-weaker-base);
+  }
+
+  .vditor-reset {
+    font-family: var(--font-family-sans);
+    color: var(--text-strong);
+  }
+}
+
 [data-component="design-doc"] {
-  min-height: 100%;
-  outline: none;
   color: var(--text-strong);
   font-family: var(--font-family-sans);
   font-size: 15px;
   line-height: 1.7;
   overflow-wrap: break-word;
-
-  &:empty::before {
-    content: attr(data-placeholder);
-    color: var(--text-weak);
-  }
 
   > *:first-child {
     margin-top: 0;
@@ -123,45 +139,5 @@
 
   img {
     max-width: 100%;
-  }
-
-  li:has(> input[type="checkbox"]) {
-    list-style: none;
-    margin-left: -1.3em;
-  }
-
-  input[type="checkbox"] {
-    margin-right: 0.4em;
-    vertical-align: middle;
-  }
-
-  [data-diagram] {
-    margin: 0.8em 0;
-    padding: 1em;
-    border-radius: 8px;
-    border: 1px solid var(--border-weak-base);
-    display: flex;
-    justify-content: center;
-    overflow-x: auto;
-    cursor: pointer;
-    user-select: none;
-
-    svg {
-      max-width: 100%;
-      height: auto;
-    }
-  }
-
-  [data-diagram][data-error] {
-    font-family: var(--font-family-mono);
-    font-size: 12px;
-    color: var(--text-diff-delete-base);
-    white-space: pre-wrap;
-    justify-content: flex-start;
-  }
-
-  /* The source of a drawn diagram shows only after clicking the diagram. */
-  [data-diagram]:not([data-open]) + pre {
-    display: none;
   }
 }
