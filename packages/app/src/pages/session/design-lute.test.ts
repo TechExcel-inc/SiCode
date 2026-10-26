@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test"
+import { code160to32 } from "vditor/src/ts/util/code160to32"
 
 // In WYSIWYG mode Vditor's setValue renders markdown with Lute's Md2VditorDOM, and getValue
-// turns the editor DOM back with VditorDOM2Md. This runs the same bundled Lute the app serves.
+// turns the editor DOM back with VditorDOM2Md plus code160to32. This runs the same bundled Lute the app serves.
 type Lute = {
   Md2VditorDOM(md: string): string
   VditorDOM2Md(dom: string): string
@@ -28,7 +29,7 @@ const edit = (md: string, change?: (root: HTMLElement) => void) => {
   const root = document.createElement("div")
   root.innerHTML = lute.Md2VditorDOM(md)
   change?.(root)
-  return lute.VditorDOM2Md(root.innerHTML)
+  return code160to32(lute.VditorDOM2Md(root.innerHTML))
 }
 
 const cases = {
@@ -54,6 +55,13 @@ describe("design markdown through Vditor", () => {
     const once = edit(md)
     expect(once).toBe("| Name | Role |\n| ---- | ---- |\n| Ada  | Lead |\n\n- [X] done\n")
     expect(edit(once)).toBe(once)
+  })
+
+  test("spaces typed in the editor are saved as plain spaces", () => {
+    const out = edit("Some text.\n", (root) => {
+      root.querySelector("p")!.textContent = "two\u00a0small\u00a0words"
+    })
+    expect(out).toBe("two small words\n")
   })
 
   test("a hand edit elsewhere leaves tables, tasks, strikethrough and diagrams intact", () => {
