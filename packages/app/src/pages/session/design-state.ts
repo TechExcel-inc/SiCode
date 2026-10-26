@@ -9,6 +9,8 @@ export const [design, setDesign] = createStore({
   open: false,
   doc: "",
   title: "",
+  // The open doc is an image with nothing drawn yet: the chat asks what to draw.
+  blank: false,
   // Saves what the user typed but has not saved yet, so the agent reads the latest doc.
   flush: undefined as (() => Promise<void>) | undefined,
 })

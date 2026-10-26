@@ -29,8 +29,9 @@ export const TYPES = [
     label: "design.type.image",
     untitled: "design.untitled.image",
     ext: "svg",
-    content: (name: string) =>
-      `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">\n  <rect width="1200" height="800" fill="#f6f8fa"/>\n  <text x="600" y="400" text-anchor="middle" dominant-baseline="middle" font-family="system-ui, sans-serif" font-size="40" fill="#57606a">${name.replace(/&/g, "&amp;")}</text>\n</svg>\n`,
+    // An empty canvas; the user describes the image in the chat and the assistant draws it.
+    content: () =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">\n  <rect width="1200" height="800" fill="#ffffff"/>\n</svg>\n`,
   },
   {
     id: "page",

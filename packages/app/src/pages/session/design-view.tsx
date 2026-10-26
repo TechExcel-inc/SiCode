@@ -166,8 +166,12 @@ export function DesignChatEmpty() {
   const language = useLanguage()
   return (
     <div class="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
-      <div class="text-14-medium text-text-strong">{language.t("design.chat.empty.title")}</div>
-      <div class="text-13-regular text-text-weak max-w-xs">{language.t("design.chat.empty.body")}</div>
+      <div class="text-14-medium text-text-strong">
+        {language.t(design.blank ? "design.chat.image.title" : "design.chat.empty.title")}
+      </div>
+      <div class="text-13-regular text-text-weak max-w-xs">
+        {language.t(design.blank ? "design.chat.image.body" : "design.chat.empty.body")}
+      </div>
     </div>
   )
 }
@@ -400,11 +404,19 @@ function Design() {
     }),
   )
 
+  // Nothing drawn yet: only the background shape the Image card starts with.
+  const blank = createMemo(() => {
+    const value = state.active.endsWith(".svg") ? text(state.active, state.file) : undefined
+    if (value === undefined) return false
+    return (value.match(/<(rect|circle|ellipse|line|polyline|polygon|path|text|image|use)\b/g) ?? []).length <= 1
+  })
+
   createEffect(() =>
     setDesign({
       open: !!state.active,
       doc: editable() ? state.active : "",
       title: state.active ? title(state.active) : "",
+      blank: blank(),
     }),
   )
 
@@ -471,6 +483,10 @@ function Design() {
     fresh = type.ext === "md"
     await list()
     await open(path)
+    if (type.id !== "image") return
+    // A new image is designed by describing it: show the chat and put the cursor in its request box.
+    if (!layout.code.chat()) layout.code.toggle()
+    window.setTimeout(() => document.querySelector<HTMLElement>('[data-component="prompt-input"]')?.focus(), 300)
   }
 
   const fail = (err: unknown) =>

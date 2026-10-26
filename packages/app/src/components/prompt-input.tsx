@@ -15,6 +15,7 @@ import {
   FileAttachmentPart,
 } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
+import { design as drawing } from "@/pages/session/design-state"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useComments } from "@/context/comments"
@@ -350,6 +351,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const placeholder = createMemo(() =>
     promptPlaceholder({
       design: design(),
+      blank: design() && drawing.blank,
       mode: store.mode,
       commentCount: commentCount(),
       example: suggest() ? language.t(EXAMPLES[store.placeholder]) : "",
