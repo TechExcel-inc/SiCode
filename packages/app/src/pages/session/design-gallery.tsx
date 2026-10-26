@@ -24,11 +24,13 @@ export const TYPES = [
     content: (name: string) => `# ${name}\n\n`,
   },
   {
-    id: "diagram",
-    label: "design.type.diagram",
-    untitled: "design.untitled.diagram",
-    ext: "md",
-    content: (name: string) => `# ${name}\n\n\`\`\`mermaid\nflowchart LR\n  A[Start] --> B[Next step]\n\`\`\`\n`,
+    // A real image the assistant draws and edits as SVG, not a markdown doc.
+    id: "image",
+    label: "design.type.image",
+    untitled: "design.untitled.image",
+    ext: "svg",
+    content: (name: string) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">\n  <rect width="1200" height="800" fill="#f6f8fa"/>\n  <text x="600" y="400" text-anchor="middle" dominant-baseline="middle" font-family="system-ui, sans-serif" font-size="40" fill="#57606a">${name.replace(/&/g, "&amp;")}</text>\n</svg>\n`,
   },
   {
     id: "page",
@@ -441,11 +443,10 @@ function Art(props: { type: Type["id"] }) {
           <rect x="34" y="6" width="52" height="60" rx="4" />
           <path d="M44 20H76M44 30H76M44 40H68M44 50H72" stroke-linecap="round" />
         </Match>
-        <Match when={props.type === "diagram"}>
-          <rect x="10" y="26" width="26" height="20" rx="3" />
-          <rect x="84" y="8" width="26" height="20" rx="3" />
-          <rect x="84" y="44" width="26" height="20" rx="3" />
-          <path d="M36 36H60M60 36V18H84M60 36V54H84" stroke-linecap="round" />
+        <Match when={props.type === "image"}>
+          <rect x="26" y="8" width="68" height="56" rx="4" />
+          <circle cx="44" cy="26" r="6" />
+          <path d="M26 56L48 38L62 50L72 42L94 60" stroke-linejoin="round" />
         </Match>
         <Match when={props.type === "page"}>
           <rect x="20" y="8" width="80" height="56" rx="4" />

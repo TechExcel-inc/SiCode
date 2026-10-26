@@ -306,10 +306,21 @@ function Design() {
   const read = (path: string) => load(path).then((file) => (file ? file.content : undefined))
 
   // Read-only files: replaced only when their bytes change, so polling never flickers the view.
+  // The text of an SVG or HTML file: the assistant edits these, so undo can write the old text back.
+  const text = (path: string, file: FileContent | undefined) => {
+    if (!file || !/\.(svg|html?)$/i.test(path)) return
+    return file.encoding === "base64" ? new TextDecoder().decode(bytes(file)) : file.content
+  }
+
   const preview = async (path: string) => {
     const file = await load(path)
     if (state.active !== path) return
-    if (file?.content !== state.file?.content || file?.encoding !== state.file?.encoding) setState("file", file)
+    if (file?.content !== state.file?.content || file?.encoding !== state.file?.encoding) {
+      const prev = text(path, state.file)
+      if (state.file && prev !== undefined && (ai || busy()) && state.undo === undefined) setState("undo", prev)
+      ai = false
+      setState("file", file)
+    }
     setState("loading", false)
   }
 
@@ -372,8 +383,9 @@ function Design() {
     if (prev === undefined || !path) return
     await sdk.client.file.write({ path, content: prev })
     if (state.active !== path) return
-    show(prev)
     setState({ undo: undefined, status: "saved" })
+    if (editable()) return show(prev)
+    await preview(path)
   }
 
   const flush = async () => {
@@ -597,8 +609,8 @@ function Design() {
   })
 
   const status = createMemo(() => {
-    if (!editable()) return language.t("design.readonly")
     if (busy()) return language.t("design.status.ai")
+    if (!editable()) return language.t("design.readonly")
     if (state.status === "saving") return language.t("design.status.saving")
     if (state.status === "saved") return language.t("design.status.saved")
     if (state.status === "error") return language.t("design.status.error")
