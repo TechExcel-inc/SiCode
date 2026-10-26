@@ -1,4 +1,5 @@
 import type { Message, Session, SessionRoute } from "@opencode-ai/sdk/v2/client"
+import { DESIGN_AGENT, design } from "@/pages/session/design-state"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
@@ -94,7 +95,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
   const [head, ...tail] = text.split(" ")
   const cmd = head?.startsWith("/") ? head.slice(1) : undefined
-  const commands = input.sync?.data.command ?? input.globalSync.child(input.draft.sessionDirectory, { bootstrap: false })[0].command ?? []
+  const commands =
+    input.sync?.data.command ??
+    input.globalSync.child(input.draft.sessionDirectory, { bootstrap: false })[0].command ??
+    []
   if (cmd && commands.find((item) => item.name === cmd)) {
     setBusy()
     try {
@@ -334,7 +338,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       if (!created) throw new Error(language.t("common.requestFailed"))
       seed(dir, created)
       local.session.promote(dir, created.id)
-      if (permission.isAutoAccepting(draft.sessionID, draft.sessionDirectory)) permission.enableAutoAccept(created.id, dir)
+      if (permission.isAutoAccepting(draft.sessionID, draft.sessionDirectory))
+        permission.enableAutoAccept(created.id, dir)
       if (!same) {
         layout.projects.open(dir)
         server.projects.touch(dir)
@@ -391,17 +396,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     // While the AI waits on a question, a typed message is the answer in the person's own words.
-    const asked = params.id && !fresh ? sessionQuestionRequest(sync.data.session ?? [], sync.data.question ?? {}, params.id) : undefined
+    const asked =
+      params.id && !fresh
+        ? sessionQuestionRequest(sync.data.session ?? [], sync.data.question ?? {}, params.id)
+        : undefined
     if (asked && text.trim().length > 0) {
       input.addToHistory(currentPrompt, mode)
       input.resetHistoryNavigation()
       prompt.reset()
-      await sdk.client.question
-        .reply({ requestID: asked.id, answers: typedAnswers(asked, text) })
-        .catch((err) => {
-          prompt.set(currentPrompt, input.promptLength(currentPrompt))
-          showToast({ title: language.t("common.requestFailed"), description: errorMessage(err) })
-        })
+      await sdk.client.question.reply({ requestID: asked.id, answers: typedAnswers(asked, text) }).catch((err) => {
+        prompt.set(currentPrompt, input.promptLength(currentPrompt))
+        showToast({ title: language.t("common.requestFailed"), description: errorMessage(err) })
+      })
       return
     }
 
@@ -415,6 +421,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
       return
     }
+
+    // The agent reads the doc from disk, so save what the user typed first.
+    if (layout.nav.current() === "design") await design.flush?.()
 
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
@@ -502,7 +511,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       modelID: currentModel.id,
       providerID: currentModel.provider.id,
     }
-    const agent = currentAgent.name
+    const agent = layout.nav.current() === "design" ? DESIGN_AGENT : currentAgent.name
     const context = prompt.context.items().slice()
     const nodeSystem = formatNodeSystemPrompt(input.currentNode())
     const draft: FollowupDraft = {

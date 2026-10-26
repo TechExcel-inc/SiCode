@@ -72,7 +72,7 @@ import { diffs as list } from "@/utils/diffs"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
-import { DesignView, useDesignLinks } from "@/pages/session/design-view"
+import { DesignChatEmpty, DesignChatHeader, DesignView, useDesignLinks } from "@/pages/session/design-view"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { formatServerError } from "@/utils/server-errors"
 import { type FollowupItem, useFollowup } from "@/context/followup"
@@ -435,9 +435,7 @@ export default function Page() {
       },
     ),
   )
-  const editsOpen = createMemo(
-    () => isDesktop() && layout.nav.current() === "agent" && !desktopReviewOpen(),
-  )
+  const editsOpen = createMemo(() => isDesktop() && layout.nav.current() === "agent" && !desktopReviewOpen())
   const sideExtra = createMemo(() => eadExtra() + (editsOpen() ? EDITS_WIDTH : 0))
   const codeView = createMemo(() => layout.nav.current() === "code")
   const designView = createMemo(() => isDesktop() && layout.nav.current() === "design")
@@ -1837,7 +1835,6 @@ export default function Page() {
 
   const actions = { revert }
 
-
   createResizeObserver(
     () => promptDock,
     ({ height }) => {
@@ -1945,7 +1942,7 @@ export default function Page() {
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
             "md:order-2 border-l border-border-weaker-base": codeView() && desktopReviewOpen(),
-            "overflow-hidden invisible": (codeView() && desktopReviewOpen() || designView()) && !layout.code.chat(),
+            "overflow-hidden invisible": ((codeView() && desktopReviewOpen()) || designView()) && !layout.code.chat(),
             "md:ml-auto border-l border-border-weaker-base": designView(),
             "pointer-events-none": sessionChatWidth() === 0,
             "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
@@ -1955,11 +1952,15 @@ export default function Page() {
             width: sessionPanelWidth(),
           }}
         >
+          <Show when={designView()}>
+            <DesignChatHeader />
+          </Show>
           <div class="flex-1 min-h-0 overflow-hidden">
             <Switch>
               <Match when={params.id}>
                 <Show when={messagesReady()}>
                   <MessageTimeline
+                    hideHeader={designView()}
                     footer={
                       <Show when={composer.questionRequest()} keyed>
                         {(request) => (
@@ -2009,6 +2010,9 @@ export default function Page() {
                     anchor={anchor}
                   />
                 </Show>
+              </Match>
+              <Match when={designView()}>
+                <DesignChatEmpty />
               </Match>
               <Match when={true}>
                 <NewSessionView worktree={newSessionWorktree()} />

@@ -746,6 +746,41 @@ it.live("reply - always persists approval and resolves", () =>
   }),
 )
 
+it.live("an always approval never overrides a deny in the agent's rules", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped({ git: true })
+    const run = withProvided(dir)
+    const fiber = yield* ask({
+      id: PermissionID.make("per_test_deny"),
+      sessionID: SessionID.make("session_build"),
+      permission: "edit",
+      patterns: ["src/app.ts"],
+      metadata: {},
+      always: ["*"],
+      ruleset: [],
+    }).pipe(run, Effect.forkScoped)
+
+    yield* waitForPending(1).pipe(run)
+    yield* reply({ requestID: PermissionID.make("per_test_deny"), reply: "always" }).pipe(run)
+    yield* Fiber.join(fiber)
+
+    const err = yield* fail(
+      ask({
+        sessionID: SessionID.make("session_design"),
+        permission: "edit",
+        patterns: ["src/app.ts"],
+        metadata: {},
+        always: [],
+        ruleset: [
+          { permission: "edit", pattern: "*", action: "deny" },
+          { permission: "edit", pattern: "design/*", action: "allow" },
+        ],
+      }).pipe(run),
+    )
+    expect(err).toBeInstanceOf(Permission.DeniedError)
+  }),
+)
+
 it.live("reply - reject cancels all pending for same session", () =>
   withDir({ git: true }, () =>
     Effect.gen(function* () {

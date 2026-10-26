@@ -35,6 +35,12 @@ describe("promptPlaceholder", () => {
     expect(value).toBe("prompt.placeholder.normal:translated-example")
   })
 
+  test("returns the design-doc placeholder on the Design tab", () => {
+    expect(
+      promptPlaceholder({ mode: "normal", commentCount: 0, example: "example", suggest: true, design: true, t }),
+    ).toBe("design.chat.placeholder")
+  })
+
   test("returns simple placeholder when suggestions disabled", () => {
     const value = promptPlaceholder({
       mode: "normal",

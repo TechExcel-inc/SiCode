@@ -14,6 +14,8 @@ import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useSync } from "@/context/sync"
+import { design, setDesign } from "./design-state"
 import { useSessionKey } from "./session-layout"
 import "vditor/dist/index.css"
 import "./design.css"
@@ -139,6 +141,33 @@ export function useDesignLinks() {
   })
 }
 
+// Top of the chat beside the Design tab: which doc the assistant is working on.
+export function DesignChatHeader() {
+  const language = useLanguage()
+  return (
+    <div
+      data-component="design-chat-header"
+      class="shrink-0 h-12 px-4 flex items-center gap-2 border-b border-border-weaker-base"
+    >
+      <Icon name="design" size="small" class="shrink-0 text-icon-weak" />
+      <span class="min-w-0 truncate text-14-medium text-text-strong">
+        {design.title ? language.t("design.chat.title", { doc: design.title }) : language.t("design.chat.assistant")}
+      </span>
+    </div>
+  )
+}
+
+// Shown in the chat before the doc has a conversation; nothing is created until the first message.
+export function DesignChatEmpty() {
+  const language = useLanguage()
+  return (
+    <div class="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
+      <div class="text-14-medium text-text-strong">{language.t("design.chat.empty.title")}</div>
+      <div class="text-13-regular text-text-weak max-w-xs">{language.t("design.chat.empty.body")}</div>
+    </div>
+  )
+}
+
 export function DesignView() {
   const layout = useLayout()
   return (
@@ -155,6 +184,7 @@ function Design() {
   const prompt = usePrompt()
   const language = useLanguage()
   const navigate = useNavigate()
+  const sync = useSync()
   const { params } = useSessionKey()
   const [state, setState] = createStore({
     pages: [] as string[],
@@ -166,6 +196,8 @@ function Design() {
     conflict: false,
     file: undefined as FileContent | undefined,
     loading: false,
+    // The doc as it was before the AI's latest round of edits, for one-click undo.
+    undo: undefined as string | undefined,
   })
   let host: HTMLDivElement | undefined
   let editor: Vditor | undefined
@@ -175,6 +207,8 @@ function Design() {
   let dirty = false
   // A doc just created opens with its title selected.
   let fresh = false
+  // Set when the agent reports an edit to the open doc; the next reload is offered for undo.
+  let ai = false
   // Markdown last loaded from or written to disk for the open page; anything else on disk is an outside edit.
   let last = ""
 
@@ -329,6 +363,8 @@ function Design() {
       })
   }
 
+  const busy = createMemo(() => !!params.id && (sync.data.session_status[params.id]?.type ?? "idle") !== "idle")
+
   // Picks up edits made by the agent or another window, but never replaces what the user is typing.
   const check = async () => {
     const path = state.active
@@ -340,9 +376,36 @@ function Design() {
       setState("conflict", true)
       return
     }
+    const agent = ai || busy()
+    ai = false
+    if (agent && state.undo === undefined) setState("undo", last)
     show(disk)
     setState("status", "updated")
   }
+
+  const revert = async () => {
+    const prev = state.undo
+    const path = state.active
+    if (prev === undefined || !path) return
+    await sdk.client.file.write({ path, content: prev })
+    if (state.active !== path) return
+    show(prev)
+    setState({ undo: undefined, status: "saved" })
+  }
+
+  const flush = async () => {
+    if (timer !== undefined) window.clearTimeout(timer)
+    await save()
+  }
+
+  // The agent reads the doc from disk: save the user's typing as soon as it starts working.
+  createEffect(
+    on(busy, (value) => {
+      if (value) void flush()
+    }),
+  )
+
+  createEffect(() => setDesign({ doc: editable() ? state.active : "", title: state.active ? title(state.active) : "" }))
 
   const reload = async () => {
     const disk = await read(state.active)
@@ -367,6 +430,7 @@ function Design() {
 
   const schedule = () => {
     dirty = true
+    if (state.undo !== undefined) setState("undo", undefined)
     setState("status", "idle")
     if (timer !== undefined) window.clearTimeout(timer)
     timer = window.setTimeout(() => void save(), DELAY)
@@ -377,13 +441,13 @@ function Design() {
     await save()
     layout.design.open(sdk.directory, path)
     if (kind(path) !== "markdown") {
-      setState({ active: path, status: "idle", conflict: false, file: undefined, loading: true })
+      setState({ active: path, status: "idle", conflict: false, file: undefined, loading: true, undo: undefined })
       void chat(path)
       await preview(path)
       return
     }
     const content = await read(path)
-    setState({ active: path, status: "idle", conflict: false, file: undefined })
+    setState({ active: path, status: "idle", conflict: false, file: undefined, undo: undefined })
     void chat(path)
     show(content ?? "")
     editor?.focus()
@@ -408,6 +472,7 @@ function Design() {
   }
 
   onMount(() => {
+    setDesign("flush", () => flush)
     void list()
     void import("vditor").then((mod) => {
       if (gone || !host) return
@@ -459,7 +524,9 @@ function Design() {
       const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, sdk.directory) : undefined
       if (!file) return
       if (!state.pages.includes(file)) void list()
-      if (file === state.active) void check()
+      if (file !== state.active) return
+      if (event.details.type === "file.edited" && event.details.properties.sessionID) ai = true
+      void check()
     })
     const poll = window.setInterval(() => {
       if (document.visibilityState !== "visible") return
@@ -474,6 +541,7 @@ function Design() {
   })
 
   onCleanup(() => {
+    setDesign({ doc: "", title: "", flush: undefined })
     if (timer !== undefined) window.clearTimeout(timer)
     void save().then(() => editor?.destroy())
     gone = true
@@ -486,6 +554,7 @@ function Design() {
 
   const status = createMemo(() => {
     if (!editable()) return language.t("design.readonly")
+    if (busy()) return language.t("design.status.ai")
     if (state.status === "saving") return language.t("design.status.saving")
     if (state.status === "saved") return language.t("design.status.saved")
     if (state.status === "error") return language.t("design.status.error")
@@ -620,6 +689,11 @@ function Design() {
             >
               {status()}
             </span>
+            <Show when={state.undo !== undefined && !busy()}>
+              <Button size="small" variant="secondary" data-action="design-undo-ai" onClick={() => void revert()}>
+                {language.t("design.undo")}
+              </Button>
+            </Show>
             <Show when={!editable() && platform.openPath}>
               <Tooltip placement="bottom" value={language.t("design.open")}>
                 <IconButton

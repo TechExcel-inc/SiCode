@@ -1,10 +1,13 @@
-import { Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
+import { useLayout } from "@/context/layout"
+import { ACTIONS } from "@/pages/session/design-actions"
+import { design } from "@/pages/session/design-state"
 import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -49,6 +52,13 @@ export function SessionComposerRegion(props: {
 }) {
   const navigate = useNavigate()
   const prompt = usePrompt()
+  const layout = useLayout()
+  let input: HTMLElement | undefined
+  // On the Design tab, one click sends a ready-made request about the open doc.
+  const ask = (text: string) => {
+    prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+    requestAnimationFrame(() => input?.closest("form")?.requestSubmit())
+  }
   const language = useLanguage()
   const route = useSessionKey()
   const sync = useSync()
@@ -286,8 +296,27 @@ export function SessionComposerRegion(props: {
                 when={child() || once()?.status === "closed" || spent()}
                 fallback={
                   <Show when={!props.state.permissionRequest()}>
+                    <Show when={layout.nav.current() === "design" && design.doc}>
+                      <div data-component="design-actions" class="flex flex-wrap gap-1.5 pb-2">
+                        <For each={ACTIONS}>
+                          {(action) => (
+                            <button
+                              type="button"
+                              data-action={`design-action-${action.id}`}
+                              class="h-7 px-2.5 rounded-full border border-border-weak-base text-12-regular text-text-base hover:bg-surface-base-hover"
+                              onClick={() => ask(action.prompt(design.doc))}
+                            >
+                              {language.t(action.label)}
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                     <PromptInput
-                      ref={props.inputRef}
+                      ref={(el) => {
+                        input = el
+                        props.inputRef(el)
+                      }}
                       newSessionWorktree={props.newSessionWorktree}
                       onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
                       edit={props.followup?.edit}

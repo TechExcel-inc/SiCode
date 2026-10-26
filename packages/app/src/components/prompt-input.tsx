@@ -344,8 +344,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const suggest = createMemo(() => !hasUserPrompt())
 
+  // The Design tab's chat always talks to the Design agent, which has no shell.
+  const design = createMemo(() => layout.nav.current() === "design")
+
   const placeholder = createMemo(() =>
     promptPlaceholder({
+      design: design(),
       mode: store.mode,
       commentCount: commentCount(),
       example: suggest() ? language.t(EXAMPLES[store.placeholder]) : "",
@@ -1148,7 +1152,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
 
-    if (event.key === "!" && store.mode === "normal") {
+    if (event.key === "!" && store.mode === "normal" && !design()) {
       const cursorPosition = getCursorPosition(editorRef)
       if (cursorPosition === 0) {
         setStore("mode", "shell")
@@ -1433,19 +1437,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </Button>
               </Show>
               <Show when={!choosing()}>
-              <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
-                <IconButton
-                  data-action="prompt-submit"
-                  type="submit"
-                  disabled={store.mode !== "normal" || (!working() && blank())}
-                  tabIndex={store.mode === "normal" ? undefined : -1}
-                  icon={stopping() ? "stop" : "arrow-up"}
-                  variant="primary"
-                  class="size-8"
-                  style={buttons()}
-                  aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                />
-              </Tooltip>
+                <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+                  <IconButton
+                    data-action="prompt-submit"
+                    type="submit"
+                    disabled={store.mode !== "normal" || (!working() && blank())}
+                    tabIndex={store.mode === "normal" ? undefined : -1}
+                    icon={stopping() ? "stop" : "arrow-up"}
+                    variant="primary"
+                    class="size-8"
+                    style={buttons()}
+                    aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                  />
+                </Tooltip>
               </Show>
             </div>
           </div>
@@ -1496,7 +1500,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 <div class="size-4 shrink-0" />
               </div>
               <div class="flex items-center gap-1.5 min-w-0 flex-1">
-                <div data-component="prompt-agent-control">
+                <Show when={design()}>
+                  <div
+                    data-component="prompt-agent-control"
+                    class="h-7 px-2 flex items-center text-13-regular text-text-base"
+                  >
+                    {language.t("design.chat.agent")}
+                  </div>
+                </Show>
+                <div data-component="prompt-agent-control" classList={{ hidden: design() }}>
                   <TooltipKeybind
                     placement="top"
                     gutter={4}

@@ -169,7 +169,9 @@ export namespace Permission {
         let needsAsk = false
 
         for (const pattern of request.patterns) {
-          const rule = evaluate(request.permission, pattern, ruleset, approved)
+          // An "always" approval answers an ask; it never overrides an explicit deny in the agent's rules.
+          const own = evaluate(request.permission, pattern, ruleset)
+          const rule = own.action === "deny" ? own : evaluate(request.permission, pattern, ruleset, approved)
           log.info("evaluated", { permission: request.permission, pattern, action: rule })
           if (rule.action === "deny") {
             return yield* new DeniedError({

@@ -722,3 +722,36 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
     },
   })
 })
+
+test("design agent writes only design docs and has no shell", async () => {
+  await using tmp = await tmpdir({
+    // Even a user config that allows everything cannot widen the Design agent.
+    config: { permission: { bash: "allow", edit: "allow", task: "allow" } },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const design = await load(tmp.path, (svc) => svc.get("design"))
+      expect(design?.mode).toBe("primary")
+      expect(design?.hidden).toBe(true)
+      const rule = (permission: string, pattern: string) =>
+        Permission.evaluate(permission, pattern, design!.permission).action
+      expect(rule("edit", "design/plan.md")).toBe("allow")
+      expect(rule("edit", "design/api/data-model.md")).toBe("allow")
+      expect(rule("edit", "wiki/old.md")).toBe("allow")
+      expect(rule("edit", "src/index.ts")).toBe("deny")
+      expect(rule("edit", "designs/plan.md")).toBe("deny")
+      expect(rule("edit", "../outside/design/plan.md")).toBe("deny")
+      expect(rule("read", "src/index.ts")).toBe("allow")
+      expect(rule("grep", "*")).toBe("allow")
+      expect(rule("bash", "ls")).toBe("deny")
+      expect(rule("task", "general")).toBe("deny")
+      expect(rule("webfetch", "*")).toBe("deny")
+      expect(rule("external_directory", "/etc/*")).toBe("deny")
+      expect([...Permission.disabled(["bash", "task", "write", "edit", "read"], design!.permission)].sort()).toEqual([
+        "bash",
+        "task",
+      ])
+    },
+  })
+})

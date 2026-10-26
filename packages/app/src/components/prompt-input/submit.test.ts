@@ -22,6 +22,7 @@ const sentShell: string[] = []
 const syncedDirectories: string[] = []
 
 let params: { id?: string } = {}
+let nav = "agent"
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 
@@ -121,6 +122,9 @@ beforeAll(async () => {
       handoff: {
         setTabs: () => undefined,
       },
+      nav: {
+        current: () => nav,
+      },
     }),
   }))
 
@@ -215,6 +219,7 @@ beforeEach(() => {
   optimisticSeeded.length = 0
   promoted.length = 0
   params = {}
+  nav = "agent"
   sentShell.length = 0
   syncedDirectories.length = 0
   selected = "/repo/worktree-a"
@@ -322,6 +327,42 @@ describe("prompt submit worktree selection", () => {
         model: { providerID: "provider", modelID: "model", variant: "high" },
       },
     })
+  })
+
+  test("sends from the Design tab to the Design agent after saving the doc", async () => {
+    params = { id: "session-1" }
+    nav = "design"
+    const { setDesign } = await import("@/pages/session/design-state")
+    const order: string[] = []
+    setDesign("flush", () => async () => {
+      order.push("flush")
+    })
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => {
+        order.push("send")
+      },
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      currentNode: () => "",
+      onSubmit: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    setDesign("flush", undefined)
+
+    expect(order).toEqual(["flush", "send"])
+    expect(optimistic[0]).toMatchObject({ message: { agent: "design" } })
   })
 
   test("seeds new sessions before optimistic prompts are added", async () => {

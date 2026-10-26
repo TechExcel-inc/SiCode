@@ -11,6 +11,7 @@ import { ProviderTransform } from "../provider/transform"
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
+import PROMPT_DESIGN from "./prompt/design.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
@@ -148,6 +149,45 @@ export namespace Agent {
               ),
               mode: "primary",
               native: true,
+            },
+            // Used by the app's Design tab. Its limits come after the user's config so they cannot be widened:
+            // it reads the project, but writes only design docs and has no shell, subagents or other tools.
+            design: {
+              name: "design",
+              description:
+                "Design-doc assistant for the Design tab. Reads the project; writes only under design/ and wiki/.",
+              prompt: PROMPT_DESIGN,
+              options: {},
+              permission: Permission.merge(
+                defaults,
+                user,
+                Permission.fromConfig({
+                  "*": "deny",
+                  read: {
+                    "*": "allow",
+                    "*.env": "ask",
+                    "*.env.*": "ask",
+                    "*.env.example": "allow",
+                  },
+                  grep: "allow",
+                  glob: "allow",
+                  list: "allow",
+                  todowrite: "allow",
+                  question: "allow",
+                  edit: {
+                    "*": "deny",
+                    "design/*": "allow",
+                    "wiki/*": "allow",
+                  },
+                  external_directory: {
+                    "*": "deny",
+                    ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
+                  },
+                }),
+              ),
+              mode: "primary",
+              native: true,
+              hidden: true,
             },
             general: {
               name: "general",
