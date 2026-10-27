@@ -170,6 +170,7 @@ export const dict = {
   "ui.common.back": "返回",
   "ui.common.cancel": "取消",
   "ui.common.confirm": "確認",
+  "ui.toast.earlier": "顯示之前的 {{count}} 則訊息",
   "ui.common.dismiss": "忽略",
   "ui.common.close": "關閉",
   "ui.common.next": "下一步",

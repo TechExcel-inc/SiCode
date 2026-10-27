@@ -64,16 +64,21 @@ export function clearProviderRev(directory: string) {
 /** A start-up request with no answer by now counts as failed, so one stuck call cannot keep a list loading forever. */
 export const BOOTSTRAP_TIMEOUT_MS = 20_000
 
+class Timeout extends Error {}
+
+/** A call that got no answer is tried again: after the Mac sleeps, its connections to the engine are dead. */
+export const expired = (error: unknown) => error instanceof Timeout
+
 export function withTimeout<T>(promise: Promise<T>, ms = BOOTSTRAP_TIMEOUT_MS) {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`No answer from the engine after ${Math.round(ms / 1000)}s`)), ms)
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Timeout(`No answer from the engine after ${Math.round(ms / 1000)}s`)), ms)
   })
-  return Promise.race([promise, expired]).finally(() => clearTimeout(timer))
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
 }
 
 function runAll(list: Array<() => Promise<unknown>>) {
-  return Promise.allSettled(list.map((item) => withTimeout(item())))
+  return Promise.allSettled(list.map((item) => retry(() => withTimeout(item()), { retryIf: expired })))
 }
 
 function showErrors(input: {

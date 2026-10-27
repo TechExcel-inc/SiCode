@@ -182,6 +182,7 @@ export const dict: Record<string, string> = {
   "ui.common.back": "Back",
   "ui.common.cancel": "Cancel",
   "ui.common.confirm": "Confirm",
+  "ui.toast.earlier": "Show {{count}} earlier messages",
   "ui.common.dismiss": "Dismiss",
   "ui.common.close": "Close",
   "ui.common.next": "Next",

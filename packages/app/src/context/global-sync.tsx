@@ -15,7 +15,8 @@ import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
 import type { InitError } from "../pages/error"
 import { useGlobalSDK } from "./global-sdk"
-import { bootstrapDirectory, bootstrapGlobal, clearProviderRev, withTimeout } from "./global-sync/bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, clearProviderRev, expired, withTimeout } from "./global-sync/bootstrap"
+import { retry } from "@opencode-ai/util/retry"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { createRefreshQueue } from "./global-sync/queue"
@@ -207,7 +208,7 @@ function createGlobalSync() {
     const promise = loadRootSessionsWithFallback({
       directory,
       limit,
-      list: (query) => withTimeout(globalSDK.client.session.list(query)),
+      list: (query) => retry(() => withTimeout(globalSDK.client.session.list(query)), { retryIf: expired }),
     })
       .then((x) => {
         const nonArchived = (x.data ?? [])

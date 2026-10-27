@@ -77,6 +77,13 @@ describe("withTimeout", () => {
   test("passes an answer through", async () => {
     expect(await bootstrap.withTimeout(Promise.resolve(1), 10)).toBe(1)
   })
+
+  test("marks no answer as worth another try, and other errors not", async () => {
+    const never = new Promise<void>(() => undefined)
+    const err = await bootstrap.withTimeout(never, 10).catch((e) => e)
+    expect(bootstrap.expired(err)).toBe(true)
+    expect(bootstrap.expired(new Error("Not found"))).toBe(false)
+  })
 })
 
 describe("bootstrapDirectory", () => {
