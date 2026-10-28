@@ -10,9 +10,10 @@ type State = {
   user: string
   name: string
   project: number
+  view: "list" | "board"
 }
 
-const empty: State = { server: "", token: "", user: "", name: "", project: 0 }
+const empty: State = { server: "", token: "", user: "", name: "", project: 0, view: "list" }
 
 export const { use: useP1, provider: P1Provider } = createSimpleContext({
   name: "P1",
@@ -24,10 +25,15 @@ export const { use: useP1, provider: P1Provider } = createSimpleContext({
       server: () => store.server ?? "",
       token: () => store.token ?? "",
       name: () => store.name ?? "",
+      user: () => store.user ?? "",
+      view: () => store.view ?? "list",
       project: () => store.project ?? 0,
       signed: () => !!(store.token ?? "").trim(),
-      save(next: Omit<State, "project">) {
-        setStore({ ...next, project: store.project ?? 0 })
+      save(next: Omit<State, "project" | "view">) {
+        setStore({ ...next, project: store.project ?? 0, view: store.view ?? "list" })
+      },
+      show(view: State["view"]) {
+        setStore("view", view)
       },
       choose(id: number) {
         setStore("project", id)

@@ -1,17 +1,34 @@
-import { For, Show, createEffect, on } from "solid-js"
+import { For, Show, createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
-import { denied, folders, item, login, origin, projects, requirements, type Folder, type Project, type Row } from "@/p1/api"
+import {
+  denied,
+  folders,
+  item,
+  login,
+  origin,
+  pin,
+  pins,
+  projects,
+  requirements,
+  type Folder,
+  type Pins,
+  type Project,
+  type Row,
+} from "@/p1/api"
 import { doc, file, prose } from "@/p1/doc"
 import { useP1 } from "@/p1/settings"
 import { setDesign } from "./design-state"
 
 const field =
   "h-9 w-full px-3 rounded-lg bg-surface-base border border-border-weaker-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:border-border-interactive-base"
+
+const tabs = ["requirements", "development", "test", "defects"] as const
 
 export function P1Work() {
   const p1 = useP1()
@@ -32,9 +49,13 @@ export function P1Work() {
     project: 0,
     folder: 0,
     root: 0,
-    find: "",
     query: "",
     opening: 0,
+    // The project picker: open, which base family it shows, its search, and each family's pinned spaces.
+    picker: false,
+    family: 0,
+    find: "",
+    pins: {} as Record<number, Pins>,
   })
   let stamp = 0
   let wave = 0
@@ -46,11 +67,24 @@ export function P1Work() {
     setState({ err: message(err), loading: false, busy: false, opening: 0 })
   }
   const chosen = () => state.projects.find((item) => item.id === state.project)
-  const shown = () => {
+  const families = createMemo(() => {
+    const seen = new Map<number, string>()
+    for (const item of state.projects) if (!seen.has(item.base)) seen.set(item.base, item.group ?? "")
+    return [...seen].map(([id, name]) => ({ id, name }))
+  })
+  const pinned = (item: Project) => !!state.pins[item.base]?.ids.includes(item.id)
+  // Search looks through every family, so a project is found without knowing its family first.
+  const listed = createMemo(() => {
     const query = state.find.trim().toLowerCase()
-    if (!query) return state.projects
+    if (!query) return state.projects.filter((item) => item.base === state.family)
     return state.projects.filter((item) => item.name.toLowerCase().includes(query))
-  }
+  })
+  const folder = () => state.folders.find((item) => item.id === state.folder)
+  const columns = createMemo(() => {
+    const groups = new Map<string, Row[]>()
+    for (const row of state.rows) groups.set(row.status, [...(groups.get(row.status) ?? []), row])
+    return [...groups].map(([status, rows]) => ({ status, rows }))
+  })
 
   const sign = async () => {
     const user = state.user.trim()
@@ -94,7 +128,7 @@ export function P1Work() {
     const project = state.projects.find((item) => item.id === id)
     if (!host || !token || !project) return
     p1.choose(id)
-    setState({ project: id, loading: true, err: "", query: "", find: state.find })
+    setState({ project: id, loading: true, err: "", query: "", picker: false })
     const first = await folders(host, token, project.id, project.id, language.locale()).catch((err: unknown) => {
       if (mark === stamp) fail(err)
     })
@@ -133,6 +167,35 @@ export function P1Work() {
     timer = window.setTimeout(() => void fill(state.root, folder, value.trim()), 250)
   }
 
+  // Pins are kept per family; all are read so search results across families show theirs too.
+  const browse = (family: number) => {
+    setState({ family, find: "" })
+    const host = p1.server()
+    if (!host) return
+    for (const item of families()) {
+      if (state.pins[item.id]) continue
+      setState("pins", item.id, { ids: [], value: 0, text: 1 })
+      void pins(host, p1.token(), p1.user(), item.id, language.locale())
+        .then((found) => setState("pins", item.id, found))
+        .catch(() => undefined)
+    }
+  }
+
+  const toggle = async (item: Project) => {
+    const host = p1.server()
+    const prev = state.pins[item.base] ?? { ids: [], value: 0, text: 1 }
+    const next = {
+      ...prev,
+      ids: prev.ids.includes(item.id) ? prev.ids.filter((id) => id !== item.id) : [...prev.ids, item.id],
+    }
+    if (!host) return
+    setState("pins", item.base, next)
+    await pin(host, p1.token(), p1.user(), item.base, next, language.locale()).catch((err: unknown) => {
+      setState("pins", item.base, prev)
+      fail(err)
+    })
+  }
+
   const open = async (row: Row) => {
     const host = p1.server()
     const root = state.root
@@ -166,12 +229,57 @@ export function P1Work() {
       (token) => {
         if (!token) {
           stamp++
-          setState({ projects: [], folders: [], rows: [], project: 0, folder: 0, loading: false })
+          setState({ projects: [], folders: [], rows: [], project: 0, folder: 0, loading: false, pins: {} })
           return
         }
         void load()
       },
     ),
+  )
+
+  const close = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && state.picker) setState("picker", false)
+  }
+  window.addEventListener("keydown", close)
+  onCleanup(() => window.removeEventListener("keydown", close))
+
+  const entry = (item: Project) => (
+    <div
+      class="group flex items-center gap-2.5 px-2.5 py-2 rounded-lg"
+      classList={{
+        "bg-surface-base-active": item.id === state.project,
+        "hover:bg-surface-base-hover": item.id !== state.project,
+      }}
+    >
+      <button
+        type="button"
+        data-action="p1-project"
+        class="flex-1 min-w-0 flex items-center gap-2.5 text-left"
+        onClick={() => void pick(item.id)}
+      >
+        <span class="size-7 shrink-0 rounded-md bg-surface-base flex items-center justify-center text-text-weak">
+          <Icon name="grid" size="small" />
+        </span>
+        <span class="min-w-0 flex flex-col">
+          <span class="truncate text-13-regular text-text-strong">{item.name}</span>
+          <Show when={state.find.trim() && item.group}>
+            <span class="truncate text-11-regular text-text-weak">{item.group}</span>
+          </Show>
+        </span>
+      </button>
+      <button
+        type="button"
+        data-action="p1-pin"
+        class="shrink-0 size-7 rounded-md flex items-center justify-center hover:bg-surface-base-hover"
+        classList={{ "text-text-interactive-base": pinned(item), "text-text-weaker": !pinned(item) }}
+        aria-pressed={pinned(item)}
+        aria-label={language.t(pinned(item) ? "p1.unpin" : "p1.pin", { name: item.name })}
+        title={language.t(pinned(item) ? "p1.unpin" : "p1.pin", { name: item.name })}
+        onClick={() => void toggle(item)}
+      >
+        <Icon name="pin" size="small" />
+      </button>
+    </div>
   )
 
   return (
@@ -258,14 +366,100 @@ export function P1Work() {
           </div>
         }
       >
-        <header class="shrink-0 h-12 px-4 flex items-center gap-3 border-b border-border-weaker-base">
-          <span class="text-14-medium text-text-strong">{language.t("rail.work")}</span>
+        <header class="shrink-0 h-16 px-4 flex items-center gap-6 border-b border-border-weaker-base">
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              data-action="p1-pick-project"
+              class="flex items-center gap-3 pl-1 pr-2 py-1 rounded-lg hover:bg-surface-base-hover max-w-80"
+              aria-expanded={state.picker}
+              aria-label={language.t("p1.project.pick")}
+              onClick={() => {
+                if (state.picker) return setState("picker", false)
+                setState("picker", true)
+                browse(chosen()?.base ?? families()[0]?.id ?? 0)
+              }}
+            >
+              <span class="size-9 shrink-0 rounded-lg bg-surface-interactive-base text-text-on-interactive-base flex items-center justify-center text-13-medium">
+                P1
+              </span>
+              <span class="min-w-0 flex flex-col items-start">
+                <span class="text-11-regular text-text-weak">{language.t("p1.project.label")}</span>
+                <span class="max-w-60 truncate text-14-medium text-text-strong">
+                  {chosen()?.name ?? language.t("p1.project.pick")}
+                </span>
+              </span>
+              <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
+            </button>
+            <Show when={state.picker}>
+              <div class="fixed inset-0 z-40" onClick={() => setState("picker", false)} />
+              <div
+                data-component="p1-project-picker"
+                class="absolute left-0 top-full mt-2 z-50 w-[440px] max-h-[70vh] flex flex-col rounded-xl border border-border-weaker-base bg-background-base shadow-lg"
+              >
+                <div class="shrink-0 p-3 flex flex-col gap-2 border-b border-border-weaker-base">
+                  <Show when={families().length > 1}>
+                    <label class="flex items-center gap-2 min-w-0">
+                      <span class="shrink-0 text-12-medium text-text-weak">{language.t("p1.family")}</span>
+                      <select
+                        class="min-w-0 flex-1 h-8 px-2 rounded-lg bg-surface-base border border-border-weaker-base text-13-regular text-text-strong outline-none"
+                        value={state.family}
+                        onChange={(event) => setState({ family: Number(event.currentTarget.value), find: "" })}
+                      >
+                        <For each={families()}>{(item) => <option value={item.id}>{item.name || item.id}</option>}</For>
+                      </select>
+                    </label>
+                  </Show>
+                  <input
+                    ref={(el) => setTimeout(() => el.focus())}
+                    class={field}
+                    value={state.find}
+                    placeholder={language.t("p1.search.project")}
+                    onInput={(event) => setState("find", event.currentTarget.value)}
+                  />
+                </div>
+                <div class="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-0.5">
+                  <Show when={listed().length} fallback={<Hint text={language.t("p1.empty.projects")} />}>
+                    <Show when={listed().some(pinned)}>
+                      <div class="rounded-lg bg-surface-base/50 pb-1">
+                        <div class="px-2.5 pt-2 pb-1 text-12-medium text-text-weak">{language.t("p1.pinned")}</div>
+                        <For each={listed().filter(pinned)}>{entry}</For>
+                      </div>
+                    </Show>
+                    <Show when={listed().some((item) => !pinned(item))}>
+                      <div class="px-2.5 pt-3 pb-1 text-12-medium text-text-weak">{language.t("p1.others")}</div>
+                      <For each={listed().filter((item) => !pinned(item))}>{entry}</For>
+                    </Show>
+                  </Show>
+                </div>
+              </div>
+            </Show>
+          </div>
+          <nav class="flex items-center gap-1 min-w-0">
+            <For each={tabs}>
+              {(tab) => (
+                <button
+                  type="button"
+                  data-action={`p1-tab-${tab}`}
+                  class="h-9 px-3 rounded-lg text-14-medium"
+                  classList={{
+                    "bg-surface-base-active text-text-strong": tab === "requirements",
+                    "text-text-weaker cursor-default": tab !== "requirements",
+                  }}
+                  disabled={tab !== "requirements"}
+                  title={tab === "requirements" ? undefined : language.t("p1.tab.soon")}
+                >
+                  {language.t(`p1.tab.${tab}`)}
+                </button>
+              )}
+            </For>
+          </nav>
+          <div class="flex-1" />
           <span class="min-w-0 truncate text-12-regular text-text-weak">
             {p1.name()}
             <span class="px-1.5">·</span>
             {p1.server().replace(/^https?:\/\//, "")}
           </span>
-          <div class="flex-1" />
           <button
             type="button"
             class="shrink-0 text-12-regular text-text-base hover:text-text-strong"
@@ -281,111 +475,167 @@ export function P1Work() {
           </p>
         </Show>
         <div class="flex-1 min-h-0 flex">
-          <aside class="w-72 shrink-0 border-r border-border-weaker-base flex flex-col min-h-0">
-            <div class="shrink-0 px-3 pt-3 pb-2 flex flex-col gap-2">
-              <div class="text-12-medium text-text-weak">{language.t("p1.projects")}</div>
-              <input
-                class={field}
-                value={state.find}
-                placeholder={language.t("p1.search.project")}
-                onInput={(event) => setState("find", event.currentTarget.value)}
-              />
+          <aside class="w-64 shrink-0 border-r border-border-weaker-base flex flex-col min-h-0">
+            <div class="shrink-0 px-4 pt-4 pb-2 text-12-medium text-text-weak uppercase tracking-wide">
+              {language.t("p1.folders")}
             </div>
             <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
-              <Show when={!state.loading || state.projects.length} fallback={<Hint text={language.t("p1.loading")} />}>
-                <Show when={shown().length} fallback={<Hint text={language.t("p1.empty.projects")} />}>
-                  <For each={shown()}>
-                    {(item, index) => (
-                      <div>
-                        <Show when={item.group && item.group !== shown()[index() - 1]?.group}>
-                          <div class="px-2.5 pt-3 pb-1 text-12-regular text-text-weak truncate">{item.group}</div>
-                        </Show>
-                        <button
-                          type="button"
-                          data-action="p1-project"
-                          class="w-full text-left px-2.5 py-2 rounded-lg text-13-regular truncate"
-                          classList={{
-                            "bg-surface-base-active text-text-strong": item.id === state.project,
-                            "text-text-base hover:bg-surface-base-hover": item.id !== state.project,
-                          }}
-                          onClick={() => void pick(item.id)}
-                        >
-                          {item.name}
-                        </button>
-                      </div>
-                    )}
-                  </For>
-                </Show>
+              <Show when={state.folders.length} fallback={<Hint text={language.t(state.loading ? "p1.loading" : "p1.empty.folders")} />}>
+                <For each={state.folders}>
+                  {(item) => (
+                    <button
+                      type="button"
+                      data-action="p1-folder"
+                      class="w-full flex items-center gap-2 pr-2.5 py-2 rounded-lg text-left text-13-regular"
+                      style={{ "padding-left": `${10 + item.depth * 16}px` }}
+                      classList={{
+                        "bg-surface-base-active text-text-strong": item.id === state.folder,
+                        "text-text-base hover:bg-surface-base-hover": item.id !== state.folder,
+                      }}
+                      onClick={() => {
+                        if (!state.root) return
+                        void fill(state.root, item.id, state.query.trim())
+                      }}
+                    >
+                      <Icon name="folder" size="small" class="shrink-0 text-text-weak" />
+                      <span class="truncate">{item.name}</span>
+                    </button>
+                  )}
+                </For>
               </Show>
             </div>
           </aside>
           <section class="flex-1 min-w-0 flex flex-col min-h-0">
-            <div class="shrink-0 px-4 py-3 flex items-center gap-3 border-b border-border-weaker-base">
-              <Show when={state.folders.length > 1}>
-                <label class="shrink-0 flex items-center gap-2 min-w-0">
-                  <span class="text-12-regular text-text-weak">{language.t("p1.folders")}</span>
-                  <select
-                    class="h-9 max-w-56 px-2 rounded-lg bg-surface-base border border-border-weaker-base text-13-regular text-text-strong outline-none"
-                    value={state.folder}
-                    onChange={(event) => {
-                      const folder = Number(event.currentTarget.value)
-                      if (!state.root || !folder) return
-                      void fill(state.root, folder, state.query.trim())
-                    }}
-                  >
-                    <For each={state.folders}>
-                      {(item) => (
-                        <option value={item.id}>
-                          {"\u2003".repeat(item.depth)}
-                          {item.name}
-                        </option>
-                      )}
-                    </For>
-                  </select>
-                </label>
-              </Show>
-              <Show when={state.folders.length === 1}>
-                <span class="shrink-0 truncate max-w-48 text-13-regular text-text-base">{state.folders[0]?.name}</span>
-              </Show>
+            <div class="shrink-0 px-5 py-4 flex items-center gap-4 border-b border-border-weaker-base">
+              <div class="min-w-0">
+                <div class="truncate text-16-medium text-text-strong">{folder()?.name ?? language.t("p1.requirements")}</div>
+                <div class="text-12-regular text-text-weak">{language.t("p1.count", { count: state.rows.length })}</div>
+              </div>
+              <div class="flex-1" />
               <input
                 class={`${field} max-w-xs`}
                 value={state.query}
                 placeholder={language.t("p1.search.requirement")}
                 onInput={(event) => search(event.currentTarget.value)}
               />
+              <div class="shrink-0 flex items-center p-0.5 rounded-lg bg-surface-base">
+                <For each={["list", "board"] as const}>
+                  {(view) => (
+                    <button
+                      type="button"
+                      data-action={`p1-view-${view}`}
+                      class="h-8 px-3 rounded-md text-13-medium"
+                      classList={{
+                        "bg-background-base text-text-strong shadow-xs": p1.view() === view,
+                        "text-text-weak hover:text-text-base": p1.view() !== view,
+                      }}
+                      aria-pressed={p1.view() === view}
+                      onClick={() => p1.show(view)}
+                    >
+                      {language.t(`p1.view.${view}`)}
+                    </button>
+                  )}
+                </For>
+              </div>
             </div>
-            <div class="flex-1 min-h-0 overflow-y-auto">
+            <div class="flex-1 min-h-0 overflow-auto">
               <Show when={!state.loading} fallback={<Hint text={language.t("p1.loading")} />}>
                 <Show when={state.folder} fallback={<Hint text={language.t("p1.empty.folders")} />}>
                   <Show when={state.rows.length} fallback={<Hint text={language.t("p1.empty.requirements")} />}>
-                    <For each={state.rows}>
-                      {(row) => (
-                        <button
-                          type="button"
-                          data-action="p1-requirement"
-                          class="w-full text-left px-4 py-3 flex items-center gap-3 border-b border-border-weaker-base hover:bg-surface-base-hover disabled:opacity-60"
-                          disabled={state.opening === row.id}
-                          onClick={() => void open(row)}
-                        >
-                          <div class="flex-1 min-w-0">
-                            <div class="truncate text-14-medium text-text-strong">{row.title}</div>
-                            <div class="mt-0.5 truncate text-12-regular text-text-weak">
-                              #{row.id}
-                              <Show when={row.owner}>
-                                <span class="px-1.5">·</span>
-                                {row.owner}
-                              </Show>
+                    <Show
+                      when={p1.view() === "board"}
+                      fallback={
+                        <table class="w-full text-left border-collapse">
+                          <thead class="sticky top-0 bg-background-base">
+                            <tr class="text-12-medium text-text-weak border-b border-border-weaker-base">
+                              <th class="w-28 px-5 py-2.5 font-medium">{language.t("p1.col.id")}</th>
+                              <th class="px-3 py-2.5 font-medium">{language.t("p1.col.title")}</th>
+                              <th class="w-36 px-3 py-2.5 font-medium">{language.t("p1.col.type")}</th>
+                              <th class="w-40 px-3 py-2.5 font-medium">{language.t("p1.col.status")}</th>
+                              <th class="w-40 px-3 py-2.5 font-medium">{language.t("p1.col.owner")}</th>
+                              <th class="w-20 px-5 py-2.5 font-medium text-right">{language.t("p1.col.points")}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <For each={state.rows}>
+                              {(row) => (
+                                <tr
+                                  data-action="p1-requirement"
+                                  class="border-b border-border-weaker-base cursor-pointer hover:bg-surface-base-hover"
+                                  classList={{ "opacity-60": state.opening === row.id }}
+                                  onClick={() => {
+                                    if (state.opening) return
+                                    void open(row)
+                                  }}
+                                >
+                                  <td class="px-5 py-3 text-13-regular text-text-weak font-mono">#{row.id}</td>
+                                  <td class="px-3 py-3 max-w-0">
+                                    <div class="truncate text-14-medium text-text-strong">{row.title}</div>
+                                  </td>
+                                  <td class="px-3 py-3 truncate text-13-regular text-text-base">{row.type}</td>
+                                  <td class="px-3 py-3">
+                                    <Show when={state.opening === row.id} fallback={<Status text={row.status} />}>
+                                      <span class="flex items-center gap-1.5 text-12-regular text-text-weak">
+                                        <Spinner class="size-4" />
+                                        {language.t("p1.opening")}
+                                      </span>
+                                    </Show>
+                                  </td>
+                                  <td class="px-3 py-3 truncate text-13-regular text-text-base">{row.owner}</td>
+                                  <td class="px-5 py-3 text-13-regular text-text-base text-right">{row.points}</td>
+                                </tr>
+                              )}
+                            </For>
+                          </tbody>
+                        </table>
+                      }
+                    >
+                      <div class="h-full p-4 flex gap-3 items-start">
+                        <For each={columns()}>
+                          {(column) => (
+                            <div class="w-72 shrink-0 max-h-full flex flex-col rounded-xl bg-surface-base/60">
+                              <div class="shrink-0 px-3 py-2.5 flex items-center gap-2">
+                                <span class="truncate text-13-medium text-text-strong">
+                                  {column.status || language.t("p1.status.none")}
+                                </span>
+                                <span class="text-12-regular text-text-weak">{column.rows.length}</span>
+                              </div>
+                              <div class="min-h-0 overflow-y-auto px-2 pb-2 flex flex-col gap-2">
+                                <For each={column.rows}>
+                                  {(row) => (
+                                    <button
+                                      type="button"
+                                      data-action="p1-requirement"
+                                      class="w-full text-left p-3 rounded-lg bg-background-base border border-border-weaker-base hover:border-border-base disabled:opacity-60 flex flex-col gap-1.5"
+                                      disabled={state.opening === row.id}
+                                      onClick={() => void open(row)}
+                                    >
+                                      <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
+                                        <span class="font-mono">#{row.id}</span>
+                                        <Show when={state.opening === row.id} fallback={<span class="truncate">{row.type}</span>}>
+                                          <Spinner class="size-4" />
+                                        </Show>
+                                      </div>
+                                      <div class="text-13-medium text-text-strong line-clamp-3">{row.title}</div>
+                                      <Show when={row.owner || row.points}>
+                                        <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
+                                          <span class="truncate">{row.owner}</span>
+                                          <Show when={row.points}>
+                                            <span class="shrink-0">
+                                              {row.points} {language.t("p1.col.points").toLowerCase()}
+                                            </span>
+                                          </Show>
+                                        </div>
+                                      </Show>
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
                             </div>
-                          </div>
-                          <Show when={state.opening === row.id} fallback={<Status text={row.status} />}>
-                            <span class="shrink-0 flex items-center gap-1.5 text-12-regular text-text-weak">
-                              <Spinner class="size-4" />
-                              {language.t("p1.opening")}
-                            </span>
-                          </Show>
-                        </button>
-                      )}
-                    </For>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                   </Show>
                 </Show>
               </Show>
@@ -406,7 +656,7 @@ function Hint(props: { text: string }) {
 function Status(props: { text: string }) {
   return (
     <Show when={props.text}>
-      <span class="shrink-0 max-w-28 truncate px-2 py-0.5 rounded-full bg-surface-base text-12-regular text-text-base">
+      <span class="inline-block max-w-36 truncate px-2 py-0.5 rounded-full bg-surface-base text-12-regular text-text-base">
         {props.text}
       </span>
     </Show>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { collect, detail, lang, login, num, origin, readBases, readFolders, readProjects, readRows, session } from "./api"
+import { collect, detail, lang, login, num, origin, readBases, readFolders, readPins, readProjects, readRows, session } from "./api"
 import { decode64, doc, file, htmlOf, markdown, prose } from "./doc"
 
 const html = "<p>需求 <strong>说明</strong></p>"
@@ -118,12 +118,31 @@ describe("p1 api", () => {
     ])
     expect(
       readRows({
-        ListItems: [{ 1112: 7, 1101: "登录", 1114: "Open", 1113: "Ada", children: [{ ID: 8, Title: "子项" }] }],
+        ListItems: [
+          {
+            1112: 7,
+            1101: "登录",
+            1114: "Open",
+            1113: "Ada",
+            1121: { Value: 2, Name: "Feature" },
+            1131: 5,
+            children: [{ ID: 8, Title: "子项" }],
+          },
+        ],
       }),
     ).toEqual([
-      { id: 7, title: "登录", status: "Open", owner: "Ada" },
-      { id: 8, title: "子项", status: "", owner: "" },
+      { id: 7, title: "登录", status: "Open", owner: "Ada", type: "Feature", points: "5" },
+      { id: 8, title: "子项", status: "", owner: "", type: "", points: "" },
     ])
+  })
+
+  test("reads pinned spaces and keeps the web header's other settings", () => {
+    expect(readPins({ Data: [{ PreferenceMemo: "[105469, 12]", PreferenceValue: 1, PreferenceText: 0 }] })).toEqual({
+      ids: [105469, 12],
+      value: 1,
+      text: 0,
+    })
+    expect(readPins({ Data: [] })).toEqual({ ids: [], value: 0, text: 1 })
   })
 
   test("posts the password grant", async () => {

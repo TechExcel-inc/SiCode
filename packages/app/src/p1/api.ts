@@ -98,7 +98,7 @@ function token(base: string, user: string, pass: string, http: Http) {
 
 export type Project = { id: number; base: number; name: string; group?: string }
 export type Folder = { id: number; name: string; depth: number }
-export type Row = { id: number; title: string; status: string; owner: string }
+export type Row = { id: number; title: string; status: string; owner: string; type: string; points: string }
 
 export function readProjects(data: unknown): Project[] {
   const seen = new Set<number>()
@@ -175,6 +175,49 @@ export async function projects(base: string, token: string, locale: string, http
   return collect(bases, spaces)
 }
 
+/** P1's per-user preference that holds the pinned spaces of a project base family, as the web header uses. */
+const PIN = 3000210
+
+export type Pins = { ids: number[]; value: unknown; text: unknown }
+
+export function readPins(data: unknown): Pins {
+  const row = nest(data, "Data")[0]
+  if (!record(row)) return { ids: [], value: 0, text: 1 }
+  const memo = typeof row.PreferenceMemo === "string" ? row.PreferenceMemo : ""
+  const list: unknown = memo.trim().startsWith("[") ? JSON.parse(memo) : []
+  const ids = Array.isArray(list) ? list.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0) : []
+  return { ids, value: row.PreferenceValue ?? 0, text: row.PreferenceText ?? 1 }
+}
+
+export async function pins(base: string, token: string, user: string, family: number, locale: string, http: Http = client()) {
+  const data = await post(base, token, "/DevTrackApi/api/UserPreference/Preferences", locale, http, {
+    userId: Number(user) || user,
+    ProjectId: family,
+    PrefIds: [PIN],
+  })
+  return readPins(data)
+}
+
+/** Saves the whole pinned list, keeping the web header's other two settings as they were. */
+export async function pin(
+  base: string,
+  token: string,
+  user: string,
+  family: number,
+  next: Pins,
+  locale: string,
+  http: Http = client(),
+) {
+  await post(base, token, "/DevTrackApi/api/UserPreference/Save", locale, http, {
+    UserId: Number(user) || user,
+    ProjectId: family,
+    PrefId: PIN,
+    PreferenceMemo: JSON.stringify(next.ids),
+    PreferenceValue: next.value,
+    PreferenceText: next.text,
+  })
+}
+
 export async function folders(base: string, token: string, project: number, space: number, locale: string, http: Http = client()) {
   const url = new URL(`${base}/DevSpecAPI/ReqFolderTree`)
   url.searchParams.set("languageid", String(lang(locale)))
@@ -194,18 +237,26 @@ export async function requirements(
   locale: string,
   http: Http = client(),
 ) {
-  const data = await post(base, token, "/DevSpecAPI/ReqItemList", locale, http, {
+  const body = (fields: string[]) => ({
     ProjectID: project,
     FolderID: folder,
     ShowAll: 1,
     PageIndex: 1,
     PageSize: 200,
-    Fields: ["ProjectID", "ID", "Title", "Status", "Spec Owner"],
+    Fields: fields,
     KeyWord: query,
     SupportFieldID: 1,
     SortFields: [1112],
     SortOrder: [1],
   })
+  const basic = ["ProjectID", "ID", "Title", "Status", "Spec Owner"]
+  // Type and points are extra columns; a server that doesn't know them still lists the rest.
+  const data = await post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body([...basic, "Spec Type", "Points"])).catch(
+    (err: unknown) => {
+      if (denied(err)) throw err
+      return post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body(basic))
+    },
+  )
   return readRows(data)
 }
 
@@ -317,6 +368,10 @@ function cellText(row: Record<string, unknown>, keys: string[]) {
     const value = row[key]
     if (typeof value === "string" && value.trim()) return value.trim()
     if (typeof value === "number") return String(value)
+    if (record(value)) {
+      const name: string = cellText(value, ["Name", "ChoiceName", "Value"])
+      if (name) return name
+    }
   }
   return ""
 }
@@ -359,6 +414,8 @@ function walkRows(list: Record<string, unknown>[], out: Row[]) {
         title: cellText(row, ["1101", "Title"]) || `#${id}`,
         status: cellText(row, ["1114", "Status"]),
         owner: cellText(row, ["1113", "Spec Owner"]),
+        type: cellText(row, ["1121", "Spec Type"]),
+        points: cellText(row, ["1131", "Points"]),
       })
     }
     if ("children" in row && Array.isArray(row.children)) walkRows(row.children.filter(record), out)
