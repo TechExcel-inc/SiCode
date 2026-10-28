@@ -267,6 +267,59 @@ export async function pin(
   })
 }
 
+/** P1's per-user memory of a requirement tree: the selected folder first, then the open folders. */
+const TREE = 50013
+
+export type Memory = { folder: number; open: number[] }
+
+export function readMemory(data: unknown): Memory {
+  const row = nest(data, "Data")[0]
+  const text = record(row) && typeof row.PreferenceText === "string" ? row.PreferenceText : ""
+  const ids = text
+    .split(",")
+    .map(Number)
+    .filter((id) => Number.isSafeInteger(id) && id > 0)
+  return { folder: ids[0] ?? 0, open: [...new Set(ids.slice(1))] }
+}
+
+export async function memory(
+  base: string,
+  token: string,
+  user: string,
+  found: Space,
+  locale: string,
+  http: Http = client(),
+) {
+  const data = await post(base, token, "/DevTrackApi/api/P1UserPreference/preferences", locale, http, {
+    ProjectId: found.project,
+    SubProjectId: found.folder,
+    PrefIds: [TREE],
+    UserId: Number(user) || user,
+  })
+  return readMemory(data)
+}
+
+/** Saves the tree the way the web tree does, so P1 and SiCode open it the same. */
+export async function remember(
+  base: string,
+  token: string,
+  user: string,
+  found: Space,
+  next: Memory,
+  locale: string,
+  http: Http = client(),
+) {
+  await post(base, token, "/DevTrackApi/api/P1UserPreference/save", locale, http, [
+    {
+      ProjectId: found.project,
+      SubProjectId: found.folder,
+      PrefId: TREE,
+      PreferenceText: [next.folder, ...next.open].join(","),
+      UserId: Number(user) || user,
+    },
+  ])
+}
+
 /** The folder a project's tree starts at, with its subfolder count. */
 export async function root(base: string, token: string, found: Space, locale: string, http: Http = client()) {
   const url = new URL(`${base}/DevSpecAPI/ReqFolderTree`)
@@ -392,9 +445,24 @@ async function post(base: string, token: string, path: string, locale: string, h
   return send(url.toString(), token, body, http)
 }
 
-async function send(url: string, token: string, body: unknown, http: Http) {
+/** One P1 request: `path` is under the server, the app language is added, and the response is JSON (or text). */
+export async function call(
+  base: string,
+  token: string,
+  path: string,
+  locale: string,
+  body?: unknown,
+  method?: string,
+  http: Http = client(),
+) {
+  const url = new URL(`${base}${path}`)
+  url.searchParams.set("languageid", String(lang(locale)))
+  return send(url.toString(), token, body, http, method)
+}
+
+async function send(url: string, token: string, body: unknown, http: Http, method?: string) {
   const res = await http(url, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -405,9 +473,18 @@ async function send(url: string, token: string, body: unknown, http: Http) {
   }).catch((err: unknown) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
-  const data = await res.json().catch(() => undefined)
-  if (!res.ok) throw new HttpError(res.status, reason(data, `Request failed (HTTP ${res.status})`))
+  const text = await res.text().catch(() => "")
+  const data = parse(text)
+  // P1 answers some failures with 203 and the message as the body.
+  if (!res.ok || res.status === 203)
+    throw new HttpError(res.status, reason(data, typeof data === "string" && data ? data : `Request failed (HTTP ${res.status})`))
   return data
+}
+
+function parse(text: string): unknown {
+  if (!text) return undefined
+  if (!/^[[{"]/.test(text.trim())) return text
+  return JSON.parse(text)
 }
 
 function rowsOf(data: unknown, key: string) {

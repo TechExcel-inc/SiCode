@@ -13,6 +13,8 @@ import {
   denied,
   item,
   login,
+  memory,
+  remember,
   origin,
   pin,
   pins,
@@ -24,10 +26,12 @@ import {
   type Pins,
   type Project,
   type Row,
+  type Space,
 } from "@/p1/api"
 import { doc, file, prose } from "@/p1/doc"
 import { useP1 } from "@/p1/settings"
 import { setDesign } from "./design-state"
+import { P1Item } from "./p1-item"
 
 const field =
   "h-9 w-full px-3 rounded-lg bg-surface-base border border-border-weaker-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:border-border-interactive-base"
@@ -55,7 +59,10 @@ export function P1Work() {
     top: [] as number[],
     rows: [] as Row[],
     total: 0,
+    space: undefined as Space | undefined,
     about: false,
+    // The requirement dialog: an id to edit, 0 for a new one in the selected folder.
+    item: undefined as number | undefined,
     project: 0,
     folder: 0,
     root: 0,
@@ -70,6 +77,7 @@ export function P1Work() {
   let stamp = 0
   let wave = 0
   let timer: number | undefined
+  let saving: number | undefined
 
   const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
   const fail = (err: unknown) => {
@@ -147,13 +155,15 @@ export function P1Work() {
     const project = state.projects.find((item) => item.id === id)
     if (!host || !token || !project) return
     p1.choose(id)
+    // A save still waiting belongs to the project being left.
+    if (saving !== undefined) window.clearTimeout(saving)
     setState({ project: id, loading: true, err: "", query: "", picker: false })
     const found = await space(host, token, project, language.locale()).catch((err: unknown) => {
       if (mark === stamp) fail(err)
     })
     if (mark !== stamp) return
     if (!found) {
-      setState({ loading: false, folders: {}, kids: {}, open: {}, top: [], rows: [], total: 0, folder: 0, root: 0 })
+      setState({ loading: false, folders: {}, kids: {}, open: {}, top: [], rows: [], total: 0, folder: 0, root: 0, space: undefined })
       return
     }
     const tree = await root(host, token, found, language.locale()).catch((err: unknown) => {
@@ -167,21 +177,61 @@ export function P1Work() {
       open: {},
       top: tree.map((item) => item.id),
       root: found.project,
+      space: found,
     })
     if (!first) {
       setState({ loading: false, rows: [], total: 0, folder: 0 })
       return
     }
-    void expand(first.id)
-    await fill(found.project, first.id, "", mark)
+    // Reopen the tree as P1 last left it: the open folders, parents before children, then the selected one.
+    const saved = await memory(host, token, p1.user(), found, language.locale()).catch(() => ({
+      folder: 0,
+      open: [first.id],
+    }))
+    if (mark !== stamp) return
+    const wanted = saved.open.length ? saved.open : [first.id]
+    const pending = new Set(wanted)
+    while (pending.size) {
+      const ready = [...pending].filter((id) => state.folders[id])
+      if (!ready.length) break
+      for (const id of ready) {
+        pending.delete(id)
+        setState("open", id, true)
+        await branch(id)
+        if (mark !== stamp) return
+      }
+    }
+    const folder = state.folders[saved.folder] ? saved.folder : first.id
+    await fill(found.project, folder, "", mark)
+  }
+
+  // Saves the selected and open folders to P1 a moment after they change.
+  const save = () => {
+    if (saving !== undefined) window.clearTimeout(saving)
+    saving = window.setTimeout(() => {
+      const host = p1.server()
+      const found = state.space
+      if (!host || !found || !state.folder) return
+      const open = Object.entries(state.open)
+        .filter(([, value]) => value)
+        .map(([id]) => Number(id))
+      void remember(host, p1.token(), p1.user(), found, { folder: state.folder, open }, language.locale()).catch(
+        () => undefined,
+      )
+    }, 400)
   }
 
   // Opens or closes a folder, loading its subfolders the first time.
   const expand = async (id: number) => {
     const open = !state.open[id]
     setState("open", id, open)
+    save()
+    if (open) await branch(id)
+  }
+
+  const branch = async (id: number) => {
     const host = p1.server()
-    if (!open || state.kids[id] || !state.folders[id]?.count || !host) return
+    if (state.kids[id] || !state.folders[id]?.count || !host) return
     const mark = stamp
     const list = await children(host, p1.token(), state.root, id, language.locale()).catch((err: unknown) => {
       if (mark === stamp) fail(err)
@@ -370,6 +420,7 @@ export function P1Work() {
               onClick={() => {
                 if (!state.root) return
                 void fill(state.root, id, state.query.trim())
+                save()
               }}
             >
               <Icon name="folder" size="small" class="shrink-0 text-text-weak" />
@@ -609,6 +660,16 @@ export function P1Work() {
                 placeholder={language.t("p1.search.requirement")}
                 onInput={(event) => search(event.currentTarget.value)}
               />
+              <Button
+                variant="primary"
+                size="large"
+                icon="plus-small"
+                disabled={!state.folder || !state.root}
+                onClick={() => setState("item", 0)}
+                data-action="p1-new"
+              >
+                {language.t("p1.new")}
+              </Button>
               <div class="shrink-0 flex items-center p-0.5 rounded-lg bg-surface-base">
                 <For each={["list", "board"] as const}>
                   {(view) => (
@@ -654,10 +715,7 @@ export function P1Work() {
                                   data-action="p1-requirement"
                                   class="border-b border-border-weaker-base cursor-pointer hover:bg-surface-base-hover"
                                   classList={{ "opacity-60": state.opening === row.id }}
-                                  onClick={() => {
-                                    if (state.opening) return
-                                    void open(row)
-                                  }}
+                                  onClick={() => setState("item", row.id)}
                                 >
                                   <td class="px-5 py-3 text-13-regular text-text-weak font-mono">#{row.id}</td>
                                   <td class="px-3 py-3 max-w-0">
@@ -699,7 +757,7 @@ export function P1Work() {
                                       data-action="p1-requirement"
                                       class="w-full text-left p-3 rounded-lg bg-background-base border border-border-weaker-base hover:border-border-base disabled:opacity-60 flex flex-col gap-1.5"
                                       disabled={state.opening === row.id}
-                                      onClick={() => void open(row)}
+                                      onClick={() => setState("item", row.id)}
                                     >
                                       <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
                                         <span class="font-mono">#{row.id}</span>
@@ -733,6 +791,24 @@ export function P1Work() {
             </div>
           </section>
         </div>
+      </Show>
+      <Show when={state.item !== undefined && state.root}>
+        <P1Item
+          project={state.root}
+          folder={state.folder}
+          id={state.item || undefined}
+          onClose={() => setState("item", undefined)}
+          onSaved={() => void fill(state.root, state.folder, state.query.trim())}
+          onDesign={
+            state.item
+              ? () => {
+                  const row = state.rows.find((item) => item.id === state.item)
+                  setState("item", undefined)
+                  if (row) void open(row)
+                }
+              : undefined
+          }
+        />
       </Show>
     </div>
   )
