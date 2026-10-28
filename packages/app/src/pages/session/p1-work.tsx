@@ -33,6 +33,9 @@ import { useP1 } from "@/p1/settings"
 import { setDesign } from "./design-state"
 import { P1Item } from "./p1-item"
 import { P1Folder } from "./p1-folder"
+import { P1Columns } from "./p1-columns"
+import { P1Points } from "./p1-points"
+import { columns, fallback, type Column } from "@/p1/columns"
 import { access, type Place } from "@/p1/folder"
 import { warm } from "@/p1/form"
 
@@ -40,6 +43,25 @@ const field =
   "h-9 w-full px-3 rounded-lg bg-surface-base border border-border-weaker-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:border-border-interactive-base"
 
 const tabs = ["requirements", "development", "test", "defects"] as const
+
+/** P1's requirement right-click menu, in its order; the rest come one by one. */
+const actions = [
+  { key: "new", icon: "plus-small", ready: true },
+  { key: "ai", icon: "brain", ready: false },
+  { key: "shortcut", icon: "link", ready: false },
+  { key: "livedoc", icon: "open-file", ready: false },
+  { key: "present", icon: "window-cursor", ready: false },
+  { key: "edit", icon: "edit", ready: true },
+  { key: "copy", icon: "copy", ready: false },
+  { key: "delete", icon: "trash", ready: false },
+  { key: "move", icon: "arrow-right", ready: false },
+  { key: "development", icon: "code", ready: false },
+  { key: "management", icon: "task", ready: false },
+  { key: "export", icon: "download", ready: false },
+  { key: "share", icon: "share", ready: false },
+  { key: "workflow", icon: "branch", ready: false },
+  { key: "customize", icon: "sliders", ready: true },
+] as const
 
 export function P1Work() {
   const p1 = useP1()
@@ -71,6 +93,14 @@ export function P1Work() {
     // The folder dialog (a place means a new folder there) and the folder menu with your access level.
     dir: undefined as { id: number; place?: Place } | undefined,
     menu: undefined as { id: number; x: number; y: number; level: number } | undefined,
+    // The requirement menu, opened with a right click on a row or card.
+    act: undefined as { id: number; x: number; y: number } | undefined,
+    columns: false,
+    // The list's columns as P1 keeps them for you, and every column there is to choose from.
+    cols: fallback as Column[],
+    pool: [] as Column[],
+    points: undefined as { id: number; x: number; y: number } | undefined,
+    level: 0,
     project: 0,
     folder: 0,
     root: 0,
@@ -115,7 +145,7 @@ export function P1Work() {
       .slice(0, 2)
       .join("")
       .toUpperCase()
-  const columns = createMemo(() => {
+  const lanes = createMemo(() => {
     const groups = new Map<string, Row[]>()
     for (const row of state.rows) groups.set(row.status, [...(groups.get(row.status) ?? []), row])
     return [...groups].map(([status, rows]) => ({ status, rows }))
@@ -170,6 +200,11 @@ export function P1Work() {
       if (mark === stamp) fail(err)
     })
     if (mark !== stamp) return
+    if (found) {
+      const got = await columns(host, token, found.project, language.locale()).catch(() => undefined)
+      if (mark !== stamp) return
+      setState({ cols: got?.chosen ?? fallback, pool: got?.pool ?? [] })
+    }
     if (!found) {
       setState({ loading: false, folders: {}, kids: {}, open: {}, top: [], rows: [], total: 0, folder: 0, root: 0, space: undefined })
       return
@@ -302,7 +337,18 @@ export function P1Work() {
     if (!host || !token) return
     const mine = ++wave
     setState({ loading: true, folder, query, root })
-    const list = await requirements(host, token, root, folder, query, language.locale()).catch((err: unknown) => {
+    void access(host, token, root, folder, language.locale())
+      .then((level) => setState("level", level))
+      .catch(() => setState("level", 0))
+    const list = await requirements(
+      host,
+      token,
+      root,
+      folder,
+      query,
+      language.locale(),
+      state.cols.map((col) => col.id),
+    ).catch((err: unknown) => {
       if (mark === stamp && mine === wave) fail(err)
     })
     if (mark !== stamp || mine !== wave || !list) return
@@ -768,15 +814,20 @@ export function P1Work() {
                     <Show
                       when={p1.view() === "board"}
                       fallback={
-                        <table class="w-full text-left border-collapse">
-                          <thead class="sticky top-0 bg-background-base">
+                        <table class="min-w-full w-max text-left border-collapse" data-component="p1-list">
+                          <thead class="sticky top-0 z-10 bg-background-base">
                             <tr class="text-12-medium text-text-weak border-b border-border-weaker-base">
-                              <th class="w-28 px-5 py-2.5 font-medium">{language.t("p1.col.id")}</th>
-                              <th class="px-3 py-2.5 font-medium">{language.t("p1.col.title")}</th>
-                              <th class="w-36 px-3 py-2.5 font-medium">{language.t("p1.col.type")}</th>
-                              <th class="w-40 px-3 py-2.5 font-medium">{language.t("p1.col.status")}</th>
-                              <th class="w-40 px-3 py-2.5 font-medium">{language.t("p1.col.owner")}</th>
-                              <th class="w-20 px-5 py-2.5 font-medium text-right">{language.t("p1.col.points")}</th>
+                              <For each={state.cols}>
+                                {(col) => (
+                                  <th
+                                    class="px-4 py-2.5 font-medium whitespace-nowrap"
+                                    classList={{ "text-right": numeric(col.id) }}
+                                    style={{ "min-width": `${wide(col.id)}px`, "max-width": `${wide(col.id) * 2}px` }}
+                                  >
+                                    {col.name}
+                                  </th>
+                                )}
+                              </For>
                             </tr>
                           </thead>
                           <tbody>
@@ -787,22 +838,29 @@ export function P1Work() {
                                   class="border-b border-border-weaker-base cursor-pointer hover:bg-surface-base-hover"
                                   classList={{ "opacity-60": state.opening === row.id }}
                                   onClick={() => setState("item", row.id)}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault()
+                                    setState("act", { id: row.id, x: event.clientX, y: event.clientY })
+                                  }}
                                 >
-                                  <td class="px-5 py-3 text-13-regular text-text-weak font-mono">#{row.id}</td>
-                                  <td class="px-3 py-3 max-w-0">
-                                    <div class="truncate text-14-medium text-text-strong">{row.title}</div>
-                                  </td>
-                                  <td class="px-3 py-3 truncate text-13-regular text-text-base">{row.type}</td>
-                                  <td class="px-3 py-3">
-                                    <Show when={state.opening === row.id} fallback={<Status text={row.status} />}>
-                                      <span class="flex items-center gap-1.5 text-12-regular text-text-weak">
-                                        <Spinner class="size-4" />
-                                        {language.t("p1.opening")}
-                                      </span>
-                                    </Show>
-                                  </td>
-                                  <td class="px-3 py-3 truncate text-13-regular text-text-base">{row.owner}</td>
-                                  <td class="px-5 py-3 text-13-regular text-text-base text-right">{row.points}</td>
+                                  <For each={state.cols}>
+                                    {(col) => (
+                                      <td
+                                        class="px-4 py-3 text-13-regular text-text-base align-middle"
+                                        classList={{ "text-right": numeric(col.id) }}
+                                        style={{ "min-width": `${wide(col.id)}px`, "max-width": `${wide(col.id) * 2}px` }}
+                                      >
+                                        <Cell
+                                          col={col.id}
+                                          row={row}
+                                          onPoints={(event) => {
+                                            event.stopPropagation()
+                                            setState("points", { id: row.id, x: event.clientX, y: event.clientY })
+                                          }}
+                                        />
+                                      </td>
+                                    )}
+                                  </For>
                                 </tr>
                               )}
                             </For>
@@ -811,7 +869,7 @@ export function P1Work() {
                       }
                     >
                       <div class="h-full p-4 flex gap-3 items-start">
-                        <For each={columns()}>
+                        <For each={lanes()}>
                           {(column) => (
                             <div class="w-72 shrink-0 max-h-full flex flex-col rounded-xl bg-surface-base/60">
                               <div class="shrink-0 px-3 py-2.5 flex items-center gap-2">
@@ -829,6 +887,10 @@ export function P1Work() {
                                       class="w-full text-left p-3 rounded-lg bg-background-base border border-border-weaker-base hover:border-border-base disabled:opacity-60 flex flex-col gap-1.5"
                                       disabled={state.opening === row.id}
                                       onClick={() => setState("item", row.id)}
+                                      onContextMenu={(event) => {
+                                        event.preventDefault()
+                                        setState("act", { id: row.id, x: event.clientX, y: event.clientY })
+                                      }}
                                     >
                                       <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
                                         <span class="font-mono">#{row.id}</span>
@@ -862,6 +924,93 @@ export function P1Work() {
             </div>
           </section>
         </div>
+      </Show>
+      <Show when={state.columns && state.root}>
+        <P1Columns
+          project={state.root}
+          chosen={state.cols}
+          pool={state.pool.length ? state.pool : state.cols}
+          onClose={() => setState("columns", false)}
+          onSaved={(list) => {
+            setState("cols", list)
+            void fill(state.root, state.folder, state.query.trim())
+          }}
+        />
+      </Show>
+      <Show when={state.points}>
+        {(open) => {
+          const project = chosen()
+          const row = state.rows.find((item) => item.id === open().id)
+          return (
+            <P1Points
+              project={state.root}
+              spec={open().id}
+              title={row?.title ?? ""}
+              home={{ base: project?.base ?? 0, space: project?.id ?? 0, dev: state.space?.dev }}
+              readonly={state.level < 2}
+              x={open().x}
+              y={open().y}
+              onClose={(changed) => {
+                setState("points", undefined)
+                if (changed) void fill(state.root, state.folder, state.query.trim())
+              }}
+            />
+          )
+        }}
+      </Show>
+      <Show when={state.act}>
+        {(open) => (
+          <>
+            <div
+              class="fixed inset-0 z-40"
+              onClick={() => setState("act", undefined)}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setState("act", undefined)
+              }}
+            />
+            <div
+              data-component="p1-item-menu"
+              class="fixed z-50 w-64 p-1 rounded-xl max-h-[80vh] overflow-y-auto"
+              style={{
+                left: `${Math.min(open().x, window.innerWidth - 272)}px`,
+                top: `${Math.max(8, Math.min(open().y, window.innerHeight - 640))}px`,
+                border: "1px solid var(--border-strong-base)",
+                background: "var(--surface-raised-stronger-non-alpha)",
+                "box-shadow": "0 12px 32px rgb(0 0 0 / 0.4)",
+              }}
+            >
+              <For each={actions}>
+                {(entry) => {
+                  const run = () => {
+                    const id = open().id
+                    setState("act", undefined)
+                    if (entry.key === "new") setState("item", 0)
+                    if (entry.key === "edit") setState("item", id)
+                    if (entry.key === "customize") setState("columns", true)
+                  }
+                  return (
+                    <button
+                      type="button"
+                      data-action={`p1-act-${entry.key}`}
+                      class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-13-regular disabled:cursor-default"
+                      classList={{
+                        "text-text-strong hover:bg-surface-base-hover": entry.ready,
+                        "text-text-weaker": !entry.ready,
+                      }}
+                      disabled={!entry.ready}
+                      title={entry.ready ? undefined : language.t("p1.tab.soon")}
+                      onClick={run}
+                    >
+                      <Icon name={entry.icon} size="small" class="shrink-0" />
+                      {language.t(`p1.act.${entry.key}`)}
+                    </button>
+                  )
+                }}
+              </For>
+            </div>
+          </>
+        )}
       </Show>
       <Show when={state.menu}>
         {(open) => (
@@ -950,6 +1099,53 @@ export function P1Work() {
       </Show>
     </div>
   )
+}
+
+/** Numbers sit to the right, like P1's list. */
+function numeric(id: number) {
+  return [1131, 1132, 1130, 1143, 1144].includes(id)
+}
+
+/** How much room a column starts with; the title gets most. */
+function wide(id: number) {
+  if (id === 1101) return 360
+  if (id === 1112) return 90
+  if (numeric(id) || id === 1137 || id === 1139) return 96
+  return 150
+}
+
+/** One list cell, drawn the way P1 draws that field. */
+function Cell(props: { col: number; row: Row; onPoints: (event: MouseEvent) => void }) {
+  const value = () => props.row.cells[props.col] ?? ""
+  if (props.col === 1112) return <span class="font-mono text-text-weak">#{props.row.id}</span>
+  if (props.col === 1101) return <div class="line-clamp-2 text-14-medium text-text-strong">{props.row.title}</div>
+  if (props.col === 1114) return <Status text={value()} />
+  if (props.col === 1131)
+    return (
+      <button
+        type="button"
+        data-action="p1-points"
+        class="px-2 py-0.5 rounded-md text-text-interactive-base hover:bg-surface-base-hover underline-offset-2 hover:underline"
+        onClick={(event) => props.onPoints(event)}
+      >
+        {value() || "0"}({props.row.tasks})
+      </button>
+    )
+  if (props.col === 1137) return <span>{props.row.attachments || ""}</span>
+  if (props.col === 1139) return <span>{value().replace(",", "/")}</span>
+  if (props.col === 1601) return <span>{/^\d{6}$/.test(value()) ? `${value().slice(0, 4)}-${value().slice(4)}` : value()}</span>
+  if (props.col === 1503 || props.col === 1510) {
+    const pct = () => Math.max(0, Math.min(100, parseFloat(value()) || 0))
+    return (
+      <div class="flex items-center gap-2">
+        <div class="h-1.5 w-16 rounded-full bg-surface-base overflow-hidden">
+          <div class="h-full bg-surface-interactive-base" style={{ width: `${pct()}%` }} />
+        </div>
+        <span class="text-12-regular text-text-weak">{value() || "0%"}</span>
+      </div>
+    )
+  }
+  return <div class="truncate">{value() === "0" && props.col === 1608 ? "" : value()}</div>
 }
 
 function Hint(props: { text: string }) {

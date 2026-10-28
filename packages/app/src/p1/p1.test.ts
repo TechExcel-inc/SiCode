@@ -161,8 +161,18 @@ describe("p1 api", () => {
         ],
       }),
     ).toEqual([
-      { id: 7, title: "登录", status: "Open", owner: "Ada", type: "Feature", points: "5" },
-      { id: 8, title: "子项", status: "", owner: "", type: "", points: "" },
+      {
+        id: 7,
+        title: "登录",
+        status: "Open",
+        owner: "Ada",
+        type: "Feature",
+        points: "5",
+        cells: { 1101: "登录", 1112: "7", 1113: "Ada", 1114: "Open", 1121: "Feature", 1131: "5" },
+        tasks: 0,
+        attachments: 0,
+      },
+      { id: 8, title: "子项", status: "", owner: "", type: "", points: "", cells: {}, tasks: 0, attachments: 0 },
     ])
   })
 

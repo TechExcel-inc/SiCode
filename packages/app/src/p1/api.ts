@@ -100,8 +100,26 @@ export type Project = { id: number; base: number; name: string; group?: string }
 /** A requirement folder; `count` is how many subfolders P1 says it has, loaded when it opens. */
 export type Folder = { id: number; name: string; count: number }
 /** Where a P1 project keeps its requirements: a requirement project and the folder its tree starts at. */
-export type Space = { project: number; folder: number; name: string }
-export type Row = { id: number; title: string; status: string; owner: string; type: string; points: string }
+export type Space = {
+  project: number
+  folder: number
+  name: string
+  /** The linked development project and space, where spec points' modules live. */
+  dev?: { project: number; space: number }
+}
+export type Row = {
+  id: number
+  title: string
+  status: string
+  owner: string
+  type: string
+  points: string
+  /** Every field the list asked for, by field id, as P1 sent it. */
+  cells: Record<number, string>
+  /** Points already given to tasks, shown in brackets after the spec's points. */
+  tasks: number
+  attachments: number
+}
 
 export function readProjects(data: unknown): Project[] {
   return spacesOf(rowsOf(data, "P1Projects"))
@@ -156,10 +174,14 @@ export function readSpace(data: unknown): Space | undefined {
   if (!record(req) || req.Enabled === false || !record(req.PrimarySpace)) return
   const project = cellNum(req.PrimarySpace, ["projectId"])
   if (!project) return
+  const dev = record(body.P1ProjectDataValue.Development) ? body.P1ProjectDataValue.Development.PrimarySpace : undefined
   return {
     project,
     folder: cellNum(req.PrimarySpace, ["spaceId"]) || 1,
     name: cellText(req.PrimarySpace, ["spaceName", "ProjectBaseName"]),
+    ...(record(dev) && cellNum(dev, ["projectId"])
+      ? { dev: { project: cellNum(dev, ["projectId"]), space: cellNum(dev, ["spaceId"]) } }
+      : {}),
   }
 }
 
@@ -357,9 +379,10 @@ export async function requirements(
   folder: number,
   query: string,
   locale: string,
+  columns: number[] = [],
   http: Http = client(),
 ) {
-  const body = (fields: string[]) => ({
+  const body = (fields: (string | number)[]) => ({
     ProjectID: project,
     FolderID: folder,
     ShowAll: 1,
@@ -371,12 +394,13 @@ export async function requirements(
     SortFields: [1112],
     SortOrder: [1],
   })
-  const basic = ["ProjectID", "ID", "Title", "Status", "Spec Owner"]
-  // Type and points are extra columns; a server that doesn't know them still lists the rest.
-  const data = await post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body([...basic, "Spec Type", "Points"])).catch(
+  // The list's own fields by id, as P1 asks for them, plus the columns you chose.
+  const basic = [...new Set([1112, 1101, 1113, 1114, 1121, 1131, ...columns])]
+  // A server that refuses some column still lists the basic ones.
+  const data = await post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body(basic)).catch(
     (err: unknown) => {
       if (denied(err)) throw err
-      return post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body(basic))
+      return post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body(["ProjectID", "ID", "Title", "Status", "Spec Owner"]))
     },
   )
   const total = record(data) ? cellNum(data, ["TotalCount"]) : 0
@@ -554,6 +578,13 @@ function walkRows(list: Record<string, unknown>[], out: Row[]) {
         owner: cellText(row, ["1113", "Spec Owner"]),
         type: cellText(row, ["1121", "Spec Type"]),
         points: cellText(row, ["1131", "Points"]),
+        cells: Object.fromEntries(
+          Object.entries(row)
+            .filter(([key]) => /^\d+$/.test(key))
+            .map(([key]) => [Number(key), cellText(row, [key])]),
+        ),
+        tasks: Number(row.TotalTaskPoints) || 0,
+        attachments: Number(row.AttachmentCount) || 0,
       })
     }
     if ("children" in row && Array.isArray(row.children)) walkRows(row.children.filter(record), out)
