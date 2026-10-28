@@ -201,41 +201,61 @@ export function created(input: {
   return body
 }
 
-/** Everything the edit form needs for one requirement. */
+// What doesn't change while you work: a project's form layout, its new-item states, choice lists and owners.
+// Kept per server and project so the second dialog opens without asking again; a failure isn't kept.
+const kept = new Map<string, Promise<unknown>>()
+
+function once<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const found = kept.get(key)
+  if (found) return found as Promise<T>
+  const next = run()
+  kept.set(key, next)
+  next.catch(() => kept.delete(key))
+  return next
+}
+
+function layout(base: string, token: string, project: number, id: number, locale: string) {
+  return once(`${base}|layout|${project}`, () =>
+    call(base, token, "/DevSpecAPI/ActionApi/InitProject/GetInitDetailPageProjectData", locale, {
+      ProjectID: project,
+      ModTypeID: 402,
+      IssueId: id,
+    }),
+  )
+}
+
+/** Every field any spec type's pages show, so one read gets them whatever the requirement's type. */
+function every(data: unknown) {
+  const set = record(data) && record(data.GUIPageSet) ? data.GUIPageSet.GUIPages : undefined
+  const types = (Array.isArray(set) ? set : []).filter(record).map((item) => Number(item.TypeID))
+  return [...new Set(types.flatMap((type) => readPages(data, type).flatMap((page) => page.fields.map((f) => f.id))))]
+}
+
+/** Everything the edit form needs for one requirement, in two rounds of requests. */
 export async function load(base: string, token: string, project: number, id: number, user: string, locale: string) {
-  const init = await call(base, token, "/DevSpecAPI/ActionApi/InitProject/GetInitDetailPageProjectData", locale, {
-    ProjectID: project,
-    ModTypeID: 402,
-    IssueId: id,
-  })
-  const head = await call(base, token, "/DevSpecAPI/ReqItemEx", locale, {
-    ProjectID: project,
-    IssueID: id,
-    FieldIDs: [1112, 1101],
-    NeedFolderInfo: 0,
-    SupportFieldID: 1,
-  })
-  const type = record(head) ? Number(head.SpecTypeID ?? -1) : -1
-  const pages = readPages(init, type)
-  const ids = [...new Set([1112, 1101, 1102, 1113, 1114, 1131, 1103, ...pages.flatMap((page) => page.fields.map((f) => f.id))])]
+  const init = await layout(base, token, project, id, locale)
   const data = await call(base, token, "/DevSpecAPI/ReqItemEx", locale, {
     ProjectID: project,
     IssueID: id,
-    FieldIDs: ids,
+    FieldIDs: [...new Set([1112, 1101, 1102, 1113, 1114, 1131, 1103, ...every(init)])],
     NeedFolderInfo: 0,
     SupportFieldID: 1,
   })
+  const pages = readPages(init, record(data) ? Number(data.SpecTypeID ?? -1) : -1)
   const values = readValues(data)
   const state = Number(values[1114]?.choice) || 0
-  const transitions = record(init) ? init.EnableStateTransition : 0
-  const detail = await call(base, token, "/DevSpecAPI/ActionApi/InitProject/GetItemDetailValueData", locale, {
-    ProjectID: project,
-    ModTypeID: 402,
-    IssueID: id,
-    StateID: state,
-    EnableStateTransition: transitions,
-  })
   const folder = record(data) ? Number(data.FolderID) || Number(values[1103]?.choice) || 0 : 0
+  const [detail, found, more] = await Promise.all([
+    call(base, token, "/DevSpecAPI/ActionApi/InitProject/GetItemDetailValueData", locale, {
+      ProjectID: project,
+      ModTypeID: 402,
+      IssueID: id,
+      StateID: state,
+      EnableStateTransition: record(init) ? init.EnableStateTransition : 0,
+    }),
+    rules(base, token, project, id, state, 0, user, pages, locale),
+    lists(base, token, project, folder, pages.flatMap((page) => page.fields), locale),
+  ])
   return {
     pages,
     values,
@@ -244,38 +264,49 @@ export async function load(base: string, token: string, project: number, id: num
     folder,
     update: record(data) ? Number(data.LastUpdateNo ?? 0) : 0,
     state,
-    rules: await rules(base, token, project, id, state, 0, user, pages, locale),
+    rules: found,
+    ...more,
   }
 }
 
-/** The blank form for a new requirement in a folder. */
+/** The blank form for a new requirement in a folder, in two rounds of requests (one once they're kept). */
 export async function blank(base: string, token: string, project: number, folder: number, user: string, locale: string) {
-  const init = await call(base, token, "/DevSpecAPI/ReqAndKWInitData", locale, {
-    ReqProjectID: project,
-    ReqOperationType: 3,
-    ReqFieldIDs: "",
-  })
+  const [init, moves] = await Promise.all([
+    once(`${base}|new|${project}`, () =>
+      call(base, token, "/DevSpecAPI/ReqAndKWInitData", locale, { ReqProjectID: project, ReqOperationType: 3, ReqFieldIDs: "" }),
+    ),
+    once(`${base}|moves|${project}|${folder}`, () =>
+      call(base, token, `/DevSpecAPI/ReqTransitionList?ProjectID=${project}&StateID=-10&IssueID=0&FolderID=${folder}`, locale).catch(
+        () => undefined,
+      ),
+    ),
+  ])
   const pages = readPages(record(init) ? init.ReqProjectSettingData : undefined, -1)
-  const moves = await call(
-    base,
-    token,
-    `/DevSpecAPI/ReqTransitionList?ProjectID=${project}&StateID=-10&IssueID=0&FolderID=${folder}`,
-    locale,
-  ).catch(() => undefined)
   const found = readStates(moves)
   const states = found.length
     ? found
-    : readStates(await call(base, token, `/DevSpecAPI/ReqStatusList?ProjectID=${project}&SpecialID=-10`, locale))
+    : readStates(
+        await once(`${base}|states|${project}`, () =>
+          call(base, token, `/DevSpecAPI/ReqStatusList?ProjectID=${project}&SpecialID=-10`, locale),
+        ),
+      )
   // The transition P1 starts a default-type requirement with, else the first.
   const raw = record(moves) && Array.isArray(moves.Transition) ? moves.Transition.filter(record) : []
   const start = raw.find((item) => Number(item.InitSpecType) === -1)
   const first = states.find((item) => item.transition === Number(start?.TransitionID)) ?? states[0]
-  return {
-    pages,
-    states,
-    first,
-    rules: await rules(base, token, project, 0, first?.id ?? -10, first?.transition ?? 0, user, pages, locale),
-  }
+  const [ruled, more] = await Promise.all([
+    once(`${base}|rules|${project}|${first?.id}|${first?.transition}`, () =>
+      rules(base, token, project, 0, first?.id ?? -10, first?.transition ?? 0, user, pages, locale),
+    ),
+    lists(base, token, project, folder, pages.flatMap((page) => page.fields), locale),
+  ])
+  return { pages, states, first, rules: ruled, ...more }
+}
+
+/** Fetches what the dialogs need for a project ahead of time, so the first one opens quickly. */
+export function warm(base: string, token: string, project: number, folder: number, id: number, user: string, locale: string) {
+  void layout(base, token, project, id, locale).catch(() => undefined)
+  void blank(base, token, project, folder, user, locale).catch(() => undefined)
 }
 
 export async function rules(
@@ -308,13 +339,15 @@ export async function lists(base: string, token: string, project: number, folder
   const ids = fields.filter((field) => (select(field) || field.type === 8) && field.id !== 1113 && field.id !== 1114).map((f) => f.id)
   const [choices, owners] = await Promise.all([
     ids.length
-      ? call(base, token, `/DevSpecAPI/ReqField?ProjectID=${project}&FieldIDs=${ids.join(",")}`, locale)
-          .then(readChoices)
-          .catch(() => ({}) as Record<number, Choice[]>)
+      ? once(`${base}|choices|${project}|${ids.join(",")}`, () =>
+          call(base, token, `/DevSpecAPI/ReqField?ProjectID=${project}&FieldIDs=${ids.join(",")}`, locale).then(readChoices),
+        ).catch(() => ({}) as Record<number, Choice[]>)
       : Promise.resolve({} as Record<number, Choice[]>),
-    call(base, token, `/DevSpecAPI/ReqApplicableOwnerList?ProjectID=${project}&SubProjectId=${folder}`, locale)
-      .then(readOwners)
-      .catch(() => [] as Choice[]),
+    once(`${base}|owners|${project}|${folder}`, () =>
+      call(base, token, `/DevSpecAPI/ReqApplicableOwnerList?ProjectID=${project}&SubProjectId=${folder}`, locale).then(
+        readOwners,
+      ),
+    ).catch(() => [] as Choice[]),
   ])
   return { choices, owners }
 }

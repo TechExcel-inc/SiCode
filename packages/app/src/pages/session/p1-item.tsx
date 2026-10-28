@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify"
-import { For, Show, createMemo, onCleanup, onMount } from "solid-js"
+import { For, Show, createMemo, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -11,7 +11,6 @@ import {
   created,
   entry,
   fixedField,
-  lists,
   load,
   rich,
   rules,
@@ -85,7 +84,6 @@ export function P1Item(props: {
         },
       )
       if (!found) return
-      const more = await lists(host, token, props.project, found.folder, found.pages.flatMap((p) => p.fields), language.locale())
       setState({
         pages: found.pages,
         values: found.values,
@@ -96,8 +94,8 @@ export function P1Item(props: {
         folder: found.folder || props.folder,
         update: found.update,
         access: found.access,
-        choices: more.choices,
-        owners: more.owners,
+        choices: found.choices,
+        owners: found.owners,
         loading: false,
       })
       return
@@ -108,8 +106,7 @@ export function P1Item(props: {
       },
     )
     if (!found) return
-    const more = await lists(host, token, props.project, props.folder, found.pages.flatMap((p) => p.fields), language.locale())
-    const me = more.owners.find((item) => String(item.id) === p1.user())
+    const me = found.owners.find((item) => String(item.id) === p1.user())
     setState({
       pages: found.pages,
       values: me ? { 1113: { value: me.name, choice: String(me.id), html: "" } } : {},
@@ -117,8 +114,8 @@ export function P1Item(props: {
       states: found.states,
       next: found.first,
       rules: found.rules,
-      choices: more.choices,
-      owners: more.owners,
+      choices: found.choices,
+      owners: found.owners,
       page: 0,
       loading: false,
     })
@@ -216,8 +213,7 @@ export function P1Item(props: {
   onCleanup(() => window.removeEventListener("keydown", key))
 
   return (
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" data-component="p1-item">
-      <div class="w-full max-w-5xl h-full max-h-[90vh] flex flex-col rounded-xl border border-border-weaker-base bg-background-base shadow-lg">
+    <Frame name="p1-item" class="max-w-5xl h-full max-h-[90vh]">
         <header class="shrink-0 px-6 py-4 flex items-center gap-3 border-b border-border-weaker-base">
           <div class="min-w-0 flex-1 truncate text-18-medium text-text-strong">
             {fresh() ? language.t("p1.form.new") : language.t("p1.form.edit", { id: String(props.id) })}
@@ -347,6 +343,27 @@ export function P1Item(props: {
             </div>
           </div>
         </Show>
+    </Frame>
+  )
+}
+
+/** A dialog frame that clearly sits above the page: a dimmed window, a raised panel with a strong edge and a deep shadow. */
+export function Frame(props: { name: string; class: string; children: JSX.Element }) {
+  return (
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center p-6"
+      style={{ "background-color": "rgb(0 0 0 / 0.55)" }}
+      data-component={props.name}
+    >
+      <div
+        class={`w-full flex flex-col rounded-xl overflow-hidden ${props.class}`}
+        style={{
+          border: "1px solid var(--border-strong-base)",
+          background: "var(--surface-raised-stronger-non-alpha)",
+          "box-shadow": "var(--shadow-lg-border-base), 0 24px 64px rgb(0 0 0 / 0.5), 0 4px 16px rgb(0 0 0 / 0.3)",
+        }}
+      >
+        {props.children}
       </div>
     </div>
   )
@@ -434,7 +451,7 @@ function Control(props: {
 }
 
 /** A small rich-text editor for P1's HTML fields. What comes from P1 is sanitized before it's shown. */
-function Rich(props: { html: string; readonly: boolean; onChange: (html: string) => void }) {
+export function Rich(props: { html: string; readonly: boolean; onChange: (html: string) => void }) {
   let box: HTMLDivElement | undefined
   const run = (command: string, arg?: string) => {
     box?.focus()

@@ -32,6 +32,9 @@ import { doc, file, prose } from "@/p1/doc"
 import { useP1 } from "@/p1/settings"
 import { setDesign } from "./design-state"
 import { P1Item } from "./p1-item"
+import { P1Folder } from "./p1-folder"
+import { access, type Place } from "@/p1/folder"
+import { warm } from "@/p1/form"
 
 const field =
   "h-9 w-full px-3 rounded-lg bg-surface-base border border-border-weaker-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:border-border-interactive-base"
@@ -63,6 +66,11 @@ export function P1Work() {
     about: false,
     // The requirement dialog: an id to edit, 0 for a new one in the selected folder.
     item: undefined as number | undefined,
+    // Each loaded folder's parent, for refreshing the right branch after a folder changes.
+    parents: {} as Record<number, number>,
+    // The folder dialog (a place means a new folder there) and the folder menu with your access level.
+    dir: undefined as { id: number; place?: Place } | undefined,
+    menu: undefined as { id: number; x: number; y: number; level: number } | undefined,
     project: 0,
     folder: 0,
     root: 0,
@@ -221,6 +229,42 @@ export function P1Work() {
     }, 400)
   }
 
+  // Reads a folder's subfolders again after one was added or renamed in it.
+  const refresh = async (id: number) => {
+    setState("kids", id, undefined!)
+    setState("folders", id, "count", (count) => Math.max(count, 1))
+    setState("open", id, true)
+    await branch(id)
+  }
+
+  const changed = async (id: number, name: string) => {
+    const dir = state.dir
+    if (!dir) return
+    if (dir.place === undefined) {
+      setState("folders", id, "name", name)
+      return
+    }
+    const parent = dir.place === 0 ? dir.id : state.parents[dir.id]
+    if (parent) await refresh(parent)
+    if (!state.folders[id] || !state.root) return
+    await fill(state.root, id, "")
+    save()
+  }
+
+  const menu = (event: MouseEvent, id: number) => {
+    event.preventDefault()
+    const host = p1.server()
+    if (!host || !state.root) return
+    setState("menu", { id, x: event.clientX, y: event.clientY, level: -1 })
+    void access(host, p1.token(), state.root, id, language.locale())
+      .then((level) => {
+        if (state.menu?.id === id) setState("menu", "level", level)
+      })
+      .catch(() => {
+        if (state.menu?.id === id) setState("menu", "level", 0)
+      })
+  }
+
   // Opens or closes a folder, loading its subfolders the first time.
   const expand = async (id: number) => {
     const open = !state.open[id]
@@ -239,6 +283,7 @@ export function P1Work() {
     if (mark !== stamp || !list) return
     setState("folders", (prev) => ({ ...prev, ...Object.fromEntries(list.map((item) => [item.id, item])) }))
     setState("kids", id, list.map((item) => item.id))
+    setState("parents", (prev) => ({ ...prev, ...Object.fromEntries(list.map((item) => [item.id, id])) }))
     // P1's count includes closed folders, which aren't listed; use what came back, as the web tree does.
     setState("folders", id, "count", list.length)
   }
@@ -254,6 +299,8 @@ export function P1Work() {
     })
     if (mark !== stamp || mine !== wave || !list) return
     setState({ rows: list.rows, total: list.total, loading: false, err: "" })
+    // Get the requirement dialogs ready for this project and folder while the list is read.
+    warm(host, token, root, folder, list.rows[0]?.id ?? 0, p1.user(), language.locale())
   }
 
   const search = (value: string) => {
@@ -397,6 +444,7 @@ export function P1Work() {
           <div
             class="w-full flex items-center gap-1 pr-2.5 rounded-lg text-13-regular"
             style={{ "padding-left": `${4 + depth * 16}px` }}
+            onContextMenu={(event) => menu(event, id)}
             classList={{
               "bg-surface-base-active text-text-strong": id === state.folder,
               "text-text-base hover:bg-surface-base-hover": id !== state.folder,
@@ -650,7 +698,21 @@ export function P1Work() {
           <section class="flex-1 min-w-0 flex flex-col min-h-0">
             <div class="shrink-0 px-5 py-4 flex items-center gap-4 border-b border-border-weaker-base">
               <div class="min-w-0">
-                <div class="truncate text-16-medium text-text-strong">{folder()?.name ?? language.t("p1.requirements")}</div>
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <div class="truncate text-16-medium text-text-strong">{folder()?.name ?? language.t("p1.requirements")}</div>
+                  <Show when={state.folder}>
+                    <button
+                      type="button"
+                      data-action="p1-folder-edit"
+                      class="shrink-0 size-7 rounded-md flex items-center justify-center text-text-weak hover:text-text-strong hover:bg-surface-base-hover"
+                      aria-label={language.t("p1.folder.actions")}
+                      title={language.t("p1.folder.actions")}
+                      onClick={(event) => menu(event, state.folder)}
+                    >
+                      <Icon name="dot-grid" size="small" />
+                    </button>
+                  </Show>
+                </div>
                 <div class="text-12-regular text-text-weak">{language.t("p1.count", { count: state.total })}</div>
               </div>
               <div class="flex-1" />
@@ -791,6 +853,73 @@ export function P1Work() {
             </div>
           </section>
         </div>
+      </Show>
+      <Show when={state.menu}>
+        {(open) => (
+          <>
+            <div class="fixed inset-0 z-40" onClick={() => setState("menu", undefined)} onContextMenu={(event) => {
+              event.preventDefault()
+              setState("menu", undefined)
+            }} />
+            <div
+              data-component="p1-folder-menu"
+              class="fixed z-50 w-56 p-1 rounded-xl"
+              style={{
+                left: `${Math.min(open().x, window.innerWidth - 240)}px`,
+                top: `${Math.min(open().y, window.innerHeight - 200)}px`,
+                border: "1px solid var(--border-strong-base)",
+                background: "var(--surface-raised-stronger-non-alpha)",
+                "box-shadow": "0 12px 32px rgb(0 0 0 / 0.4)",
+              }}
+            >
+              <Show
+                when={open().level >= 0}
+                fallback={
+                  <div class="px-2.5 py-2 flex items-center gap-2 text-13-regular text-text-weak">
+                    <Spinner class="size-4" />
+                    {language.t("p1.loading")}
+                  </div>
+                }
+              >
+                <For
+                  each={
+                    [
+                      { place: 0, label: "p1.folder.child", need: 3 },
+                      { place: -1, label: "p1.folder.above", need: 3 },
+                      { place: 1, label: "p1.folder.below", need: 3 },
+                      { place: undefined, label: "p1.folder.edit", need: 2 },
+                    ] as const
+                  }
+                >
+                  {(entry) => (
+                    <Show when={entry.place === undefined || entry.place === 0 || state.parents[open().id]}>
+                      <button
+                        type="button"
+                        data-action="p1-folder-menu-item"
+                        class="w-full px-2.5 py-2 rounded-lg text-left text-13-regular text-text-strong hover:bg-surface-base-hover disabled:text-text-weaker disabled:hover:bg-transparent"
+                        disabled={open().level < entry.need}
+                        onClick={() => setState({ menu: undefined, dir: { id: open().id, place: entry.place } })}
+                      >
+                        {language.t(entry.label)}
+                      </button>
+                    </Show>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </>
+        )}
+      </Show>
+      <Show when={state.dir && state.root ? state.dir : undefined} keyed>
+        {(dir) => (
+          <P1Folder
+            project={state.root}
+            id={dir.id}
+            place={dir.place}
+            onClose={() => setState("dir", undefined)}
+            onSaved={(id, name) => void changed(id, name)}
+          />
+        )}
       </Show>
       <Show when={state.item !== undefined && state.root}>
         <P1Item
