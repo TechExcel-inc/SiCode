@@ -210,8 +210,15 @@ export function P1Work() {
       }
     }
     const folder = state.folders[saved.folder] ? saved.folder : first.id
+    reveal(folder)
     await fill(found.project, folder, "", mark)
   }
+
+  // Scrolls the tree so a folder shows, once it's drawn: the one P1 last had selected may be far down.
+  const reveal = (id: number) =>
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-folder="${id}"]`)?.scrollIntoView({ block: "center" }),
+    )
 
   // Saves the selected and open folders to P1 a moment after they change.
   const save = () => {
@@ -247,6 +254,7 @@ export function P1Work() {
     const parent = dir.place === 0 ? dir.id : state.parents[dir.id]
     if (parent) await refresh(parent)
     if (!state.folders[id] || !state.root) return
+    reveal(id)
     await fill(state.root, id, "")
     save()
   }
@@ -445,6 +453,7 @@ export function P1Work() {
             class="w-full flex items-center gap-1 pr-2.5 rounded-lg text-13-regular"
             style={{ "padding-left": `${4 + depth * 16}px` }}
             onContextMenu={(event) => menu(event, id)}
+            data-folder={id}
             classList={{
               "bg-surface-base-active text-text-strong": id === state.folder,
               "text-text-base hover:bg-surface-base-hover": id !== state.folder,
