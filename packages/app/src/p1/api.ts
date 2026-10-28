@@ -97,12 +97,31 @@ function token(base: string, user: string, pass: string, http: Http) {
 }
 
 export type Project = { id: number; base: number; name: string; group?: string }
-export type Folder = { id: number; name: string; depth: number }
+/** A requirement folder; `count` is how many subfolders P1 says it has, loaded when it opens. */
+export type Folder = { id: number; name: string; count: number }
+/** Where a P1 project keeps its requirements: a requirement project and the folder its tree starts at. */
+export type Space = { project: number; folder: number; name: string }
 export type Row = { id: number; title: string; status: string; owner: string; type: string; points: string }
 
 export function readProjects(data: unknown): Project[] {
+  return spacesOf(rowsOf(data, "P1Projects"))
+}
+
+/** The project list in P1's hierarchy order (its groups, then projects outside any group), as the web header shows it. */
+export function readHierarchy(data: unknown): Project[] {
+  const body = bag(data)
+  if (!body || Array.isArray(body)) return []
+  const walk = (nodes: unknown): Record<string, unknown>[] =>
+    (Array.isArray(nodes) ? nodes : []).filter(record).flatMap((node) => [
+      ...(Array.isArray(node.P1Projects) ? node.P1Projects.filter(record) : []),
+      ...walk(node.ChildNodes),
+    ])
+  return spacesOf([...walk(body.Nodes), ...(Array.isArray(body.P1Projects) ? body.P1Projects.filter(record) : [])])
+}
+
+function spacesOf(list: Record<string, unknown>[]): Project[] {
   const seen = new Set<number>()
-  return rowsOf(data, "P1Projects").flatMap((row) => {
+  return list.flatMap((row) => {
     const id = cellNum(row, ["SpaceId", "ProjectId"])
     const name = cellText(row, ["SpaceName", "ProjectName", "Name"])
     const base = cellNum(row, ["ProjectId"]) || id
@@ -112,13 +131,36 @@ export function readProjects(data: unknown): Project[] {
   })
 }
 
-/** Folders under the selected space. A matching space node keeps its own subtree. */
-export function readFolders(data: unknown, space = 0): Folder[] {
-  const nodes = nest(data, "FolderNodes")
-  const root = space ? findNode(nodes, space) : undefined
-  const out: Folder[] = []
-  walkNodes(root ? [root] : nodes, 0, out)
-  return out
+/** The folders listed under `FolderNodes`, one level. */
+export function readFolders(data: unknown): Folder[] {
+  return nest(data, "FolderNodes").flatMap((node) => {
+    if (!record(node)) return []
+    const id = cellNum(node, ["FolderID"])
+    const name = cellText(node, ["FolderName"])
+    if (!id || !name) return []
+    return [{ id, name, count: cellNum(node, ["ChildNumber"]) }]
+  })
+}
+
+/** The folder a project's tree starts at, found anywhere in the tree; the top level when it isn't there. */
+export function readRoot(data: unknown, id: number): Folder[] {
+  const node = findNode(nest(data, "FolderNodes"), id)
+  return node ? readFolders({ FolderNodes: [node] }) : readFolders(data)
+}
+
+/** `initProject`'s requirement space for a project: the requirement project and its root folder. */
+export function readSpace(data: unknown): Space | undefined {
+  const body = bag(data)
+  if (!body || Array.isArray(body) || !record(body.P1ProjectDataValue)) return
+  const req = body.P1ProjectDataValue.Requirement
+  if (!record(req) || req.Enabled === false || !record(req.PrimarySpace)) return
+  const project = cellNum(req.PrimarySpace, ["projectId"])
+  if (!project) return
+  return {
+    project,
+    folder: cellNum(req.PrimarySpace, ["spaceId"]) || 1,
+    name: cellText(req.PrimarySpace, ["spaceName", "ProjectBaseName"]),
+  }
 }
 
 export function readRows(data: unknown): Row[] {
@@ -133,7 +175,8 @@ export function readBases(data: unknown): Project[] {
     const id = cellNum(row.ProjectBase, ["ProjectID"])
     const name = cellText(row.ProjectBase, ["ProjectName"])
     const active = row.ProjectBase.IsActive
-    if (!id || !name || active === false || active === 0) return []
+    // Type 32 is a common requirement base, which P1's header leaves out.
+    if (!id || !name || active === false || active === 0 || row.ProjectBase.ProjectType === 32) return []
     return [{ id, base: id, name }]
   })
 }
@@ -142,10 +185,10 @@ export function readBases(data: unknown): Project[] {
 export function collect(bases: Project[], spaces: Project[][]) {
   const list = bases.flatMap((base, index) => {
     const rows = spaces[index] ?? []
-    if (!rows.length) return [base]
+    if (!rows.length) return [{ ...base, group: base.name }]
     return rows.map((space) => ({ ...space, group: base.name, base: space.base || base.id }))
   })
-  return list.toSorted((a, b) => (a.group ?? "").localeCompare(b.group ?? "") || a.name.localeCompare(b.name))
+  return list
 }
 
 export async function projects(base: string, token: string, locale: string, http: Http = client()) {
@@ -153,26 +196,32 @@ export async function projects(base: string, token: string, locale: string, http
     () => undefined,
   )
   const bases = families ? readBases(families) : []
+  const body = (id: number) => ({ ProjectBaseId: id, IsClosed: null, IsArchived: 0, ProjectCategory: 0 })
   if (!bases.length) {
-    const data = await post(base, token, "/DevTrackApi/api/projectone/P1Projects", locale, http, {
-      ProjectBaseId: 0,
-      IsClosed: null,
-      IsArchived: 0,
-    })
+    const data = await post(base, token, "/DevTrackApi/api/projectone/P1Projects", locale, http, body(0))
     return readProjects(data).toSorted((a, b) => a.name.localeCompare(b.name))
   }
   const spaces = await Promise.all(
     bases.map((item) =>
-      post(base, token, "/DevTrackApi/api/projectone/P1Projects", locale, http, {
-        IncludeClosed: false,
-        ProjectBaseId: item.id,
-        ProjectCategory: 0,
-      })
-        .then(readProjects)
+      post(base, token, "/DevTrackApi/api/projectone/GroupedP1ProjectsByHierarchy", locale, http, body(item.id))
+        .then(readHierarchy)
         .catch(() => [] as Project[]),
     ),
   )
   return collect(bases, spaces)
+}
+
+/** Asks P1 which requirement project and folder a project uses, the way the web app does when you switch to it. */
+export async function space(base: string, token: string, project: Project, locale: string, http: Http = client()) {
+  const data = await post(base, token, "/DevTrackApi/api/projectone/initProject", locale, http, {
+    ProjectId: project.base,
+    SpaceId: project.id,
+    SystemSettingIds: [],
+    ProjectSettingIds: [],
+    UserSettingIds: [],
+    KWFieldIds: [],
+  })
+  return readSpace(data)
 }
 
 /** P1's per-user preference that holds the pinned spaces of a project base family, as the web header uses. */
@@ -218,14 +267,34 @@ export async function pin(
   })
 }
 
-export async function folders(base: string, token: string, project: number, space: number, locale: string, http: Http = client()) {
+/** The folder a project's tree starts at, with its subfolder count. */
+export async function root(base: string, token: string, found: Space, locale: string, http: Http = client()) {
   const url = new URL(`${base}/DevSpecAPI/ReqFolderTree`)
   url.searchParams.set("languageid", String(lang(locale)))
-  url.searchParams.set("ProjectID", String(project))
+  url.searchParams.set("ProjectID", String(found.project))
   url.searchParams.set("ShowCloseFolder", "0")
   url.searchParams.set("SettingID", "50013")
+  url.searchParams.set("SpaceIds", String(found.folder))
   const data = await send(url.toString(), token, undefined, http)
-  return readFolders(data, space)
+  return readRoot(data, found.folder)
+}
+
+/** One level of subfolders, which P1 loads when a folder opens. */
+export async function children(
+  base: string,
+  token: string,
+  project: number,
+  folder: number,
+  locale: string,
+  http: Http = client(),
+) {
+  const data = await post(base, token, "/DevSpecAPI/ReqFolderChild", locale, http, {
+    ProjectID: project,
+    FolderID: folder,
+    ShowAll: 0,
+    KeyWord: "",
+  })
+  return readFolders(data)
 }
 
 export async function requirements(
@@ -257,7 +326,9 @@ export async function requirements(
       return post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body(basic))
     },
   )
-  return readRows(data)
+  const total = record(data) ? cellNum(data, ["TotalCount"]) : 0
+  const rows = readRows(data)
+  return { rows, total: Math.max(total, rows.length) }
 }
 
 export async function item(
@@ -392,16 +463,6 @@ function findNode(nodes: unknown[], id: number): unknown | undefined {
     const kids = nest(node, "FolderNodes")
     const found = findNode(kids, id)
     if (found) return found
-  }
-}
-
-function walkNodes(nodes: unknown[], depth: number, out: Folder[]) {
-  for (const node of nodes) {
-    if (!record(node)) continue
-    const id = cellNum(node, ["FolderID"])
-    const name = cellText(node, ["FolderName"])
-    if (id && name) out.push({ id, name, depth })
-    walkNodes(nest(node, "FolderNodes"), id && name ? depth + 1 : depth, out)
   }
 }
 

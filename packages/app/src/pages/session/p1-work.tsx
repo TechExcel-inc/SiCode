@@ -1,14 +1,16 @@
-import { For, Show, createEffect, createMemo, on, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, on, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { HELP_URL } from "@/components/about-popover"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import {
+  children,
   denied,
-  folders,
   item,
   login,
   origin,
@@ -16,6 +18,8 @@ import {
   pins,
   projects,
   requirements,
+  root,
+  space,
   type Folder,
   type Pins,
   type Project,
@@ -44,8 +48,14 @@ export function P1Work() {
     edit: false,
     loading: false,
     projects: [] as Project[],
-    folders: [] as Folder[],
+    // The folder tree: each folder by id, its loaded subfolders, which are open, and the top of the tree.
+    folders: {} as Record<number, Folder>,
+    kids: {} as Record<number, number[]>,
+    open: {} as Record<number, boolean>,
+    top: [] as number[],
     rows: [] as Row[],
+    total: 0,
+    about: false,
     project: 0,
     folder: 0,
     root: 0,
@@ -79,7 +89,16 @@ export function P1Work() {
     if (!query) return state.projects.filter((item) => item.base === state.family)
     return state.projects.filter((item) => item.name.toLowerCase().includes(query))
   })
-  const folder = () => state.folders.find((item) => item.id === state.folder)
+  const folder = () => state.folders[state.folder]
+  const initials = () =>
+    p1
+      .name()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => [...part][0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase()
   const columns = createMemo(() => {
     const groups = new Map<string, Row[]>()
     for (const row of state.rows) groups.set(row.status, [...(groups.get(row.status) ?? []), row])
@@ -116,7 +135,7 @@ export function P1Work() {
     setState("projects", list)
     const next = list.find((item) => item.id === p1.project()) ?? list[0]
     if (!next) {
-      setState({ loading: false, folders: [], rows: [], project: 0, folder: 0 })
+      setState({ loading: false, folders: {}, kids: {}, top: [], rows: [], project: 0, folder: 0 })
       return
     }
     await pick(next.id, mark)
@@ -129,21 +148,49 @@ export function P1Work() {
     if (!host || !token || !project) return
     p1.choose(id)
     setState({ project: id, loading: true, err: "", query: "", picker: false })
-    const first = await folders(host, token, project.id, project.id, language.locale()).catch((err: unknown) => {
+    const found = await space(host, token, project, language.locale()).catch((err: unknown) => {
       if (mark === stamp) fail(err)
     })
-    if (mark !== stamp || !first) return
-    const tree =
-      first.length || project.base === project.id
-        ? first
-        : await folders(host, token, project.base, project.id, language.locale()).catch((err: unknown) => {
-            if (mark === stamp) fail(err)
-          })
+    if (mark !== stamp) return
+    if (!found) {
+      setState({ loading: false, folders: {}, kids: {}, open: {}, top: [], rows: [], total: 0, folder: 0, root: 0 })
+      return
+    }
+    const tree = await root(host, token, found, language.locale()).catch((err: unknown) => {
+      if (mark === stamp) fail(err)
+    })
     if (mark !== stamp || !tree) return
-    const root = first.length || project.base === project.id ? project.id : project.base
-    const folder = tree[0]?.id ?? 0
-    setState({ folders: tree, folder, root })
-    await fill(root, folder, "", mark)
+    const first = tree[0]
+    setState({
+      folders: Object.fromEntries(tree.map((item) => [item.id, item])),
+      kids: {},
+      open: {},
+      top: tree.map((item) => item.id),
+      root: found.project,
+    })
+    if (!first) {
+      setState({ loading: false, rows: [], total: 0, folder: 0 })
+      return
+    }
+    void expand(first.id)
+    await fill(found.project, first.id, "", mark)
+  }
+
+  // Opens or closes a folder, loading its subfolders the first time.
+  const expand = async (id: number) => {
+    const open = !state.open[id]
+    setState("open", id, open)
+    const host = p1.server()
+    if (!open || state.kids[id] || !state.folders[id]?.count || !host) return
+    const mark = stamp
+    const list = await children(host, p1.token(), state.root, id, language.locale()).catch((err: unknown) => {
+      if (mark === stamp) fail(err)
+    })
+    if (mark !== stamp || !list) return
+    setState("folders", (prev) => ({ ...prev, ...Object.fromEntries(list.map((item) => [item.id, item])) }))
+    setState("kids", id, list.map((item) => item.id))
+    // P1's count includes closed folders, which aren't listed; use what came back, as the web tree does.
+    setState("folders", id, "count", list.length)
   }
 
   const fill = async (root: number, folder: number, query: string, mark = stamp) => {
@@ -156,7 +203,7 @@ export function P1Work() {
       if (mark === stamp && mine === wave) fail(err)
     })
     if (mark !== stamp || mine !== wave || !list) return
-    setState({ rows: list, loading: false, err: "" })
+    setState({ rows: list.rows, total: list.total, loading: false, err: "" })
   }
 
   const search = (value: string) => {
@@ -229,7 +276,18 @@ export function P1Work() {
       (token) => {
         if (!token) {
           stamp++
-          setState({ projects: [], folders: [], rows: [], project: 0, folder: 0, loading: false, pins: {} })
+          setState({
+            projects: [],
+            folders: {},
+            kids: {},
+            open: {},
+            top: [],
+            rows: [],
+            project: 0,
+            folder: 0,
+            loading: false,
+            pins: {},
+          })
           return
         }
         void load()
@@ -238,7 +296,7 @@ export function P1Work() {
   )
 
   const close = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && state.picker) setState("picker", false)
+    if (event.key === "Escape") setState({ picker: false, about: false })
   }
   window.addEventListener("keydown", close)
   onCleanup(() => window.removeEventListener("keydown", close))
@@ -280,6 +338,50 @@ export function P1Work() {
         <Icon name="pin" size="small" />
       </button>
     </div>
+  )
+
+  const node = (id: number, depth: number): JSX.Element => (
+    <Show when={state.folders[id]}>
+      {(item) => (
+        <>
+          <div
+            class="w-full flex items-center gap-1 pr-2.5 rounded-lg text-13-regular"
+            style={{ "padding-left": `${4 + depth * 16}px` }}
+            classList={{
+              "bg-surface-base-active text-text-strong": id === state.folder,
+              "text-text-base hover:bg-surface-base-hover": id !== state.folder,
+            }}
+          >
+            <button
+              type="button"
+              data-action="p1-folder-toggle"
+              class="size-6 shrink-0 flex items-center justify-center rounded text-text-weak"
+              classList={{ invisible: !item().count }}
+              aria-expanded={!!state.open[id]}
+              aria-label={item().name}
+              onClick={() => void expand(id)}
+            >
+              <Icon name={state.open[id] ? "chevron-down" : "chevron-right"} size="small" />
+            </button>
+            <button
+              type="button"
+              data-action="p1-folder"
+              class="flex-1 min-w-0 flex items-center gap-2 py-2 text-left"
+              onClick={() => {
+                if (!state.root) return
+                void fill(state.root, id, state.query.trim())
+              }}
+            >
+              <Icon name="folder" size="small" class="shrink-0 text-text-weak" />
+              <span class="truncate">{item().name}</span>
+            </button>
+          </div>
+          <Show when={state.open[id]}>
+            <For each={state.kids[id] ?? []}>{(kid) => node(kid, depth + 1)}</For>
+          </Show>
+        </>
+      )}
+    </Show>
   )
 
   return (
@@ -455,19 +557,25 @@ export function P1Work() {
             </For>
           </nav>
           <div class="flex-1" />
-          <span class="min-w-0 truncate text-12-regular text-text-weak">
-            {p1.name()}
-            <span class="px-1.5">·</span>
-            {p1.server().replace(/^https?:\/\//, "")}
-          </span>
-          <button
-            type="button"
-            class="shrink-0 text-12-regular text-text-base hover:text-text-strong"
-            data-action="p1-sign-out"
-            onClick={() => p1.clear()}
-          >
-            {language.t("p1.signOut")}
-          </button>
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              data-action="p1-account"
+              class="size-9 rounded-full bg-surface-interactive-base text-text-on-interactive-base flex items-center justify-center text-13-medium"
+              aria-expanded={state.about}
+              aria-label={p1.name()}
+              title={p1.name()}
+              onClick={() => setState("about", !state.about)}
+            >
+              {initials() || "P1"}
+            </button>
+            <Show when={state.about}>
+              <div class="fixed inset-0 z-40" onClick={() => setState("about", false)} />
+              <div class="absolute right-0 top-full mt-2 z-50 w-56 p-1 rounded-xl border border-border-weaker-base bg-background-base shadow-lg">
+                <AboutItem onDone={() => setState("about", false)} />
+              </div>
+            </Show>
+          </div>
         </header>
         <Show when={state.err}>
           <p class="shrink-0 px-4 py-2 text-12-regular text-text-diff-delete-base border-b border-border-weaker-base">
@@ -480,28 +588,11 @@ export function P1Work() {
               {language.t("p1.folders")}
             </div>
             <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
-              <Show when={state.folders.length} fallback={<Hint text={language.t(state.loading ? "p1.loading" : "p1.empty.folders")} />}>
-                <For each={state.folders}>
-                  {(item) => (
-                    <button
-                      type="button"
-                      data-action="p1-folder"
-                      class="w-full flex items-center gap-2 pr-2.5 py-2 rounded-lg text-left text-13-regular"
-                      style={{ "padding-left": `${10 + item.depth * 16}px` }}
-                      classList={{
-                        "bg-surface-base-active text-text-strong": item.id === state.folder,
-                        "text-text-base hover:bg-surface-base-hover": item.id !== state.folder,
-                      }}
-                      onClick={() => {
-                        if (!state.root) return
-                        void fill(state.root, item.id, state.query.trim())
-                      }}
-                    >
-                      <Icon name="folder" size="small" class="shrink-0 text-text-weak" />
-                      <span class="truncate">{item.name}</span>
-                    </button>
-                  )}
-                </For>
+              <Show
+                when={state.top.length}
+                fallback={<Hint text={language.t(state.loading ? "p1.loading" : "p1.empty.folders")} />}
+              >
+                <For each={state.top}>{(id) => node(id, 0)}</For>
               </Show>
             </div>
           </aside>
@@ -509,7 +600,7 @@ export function P1Work() {
             <div class="shrink-0 px-5 py-4 flex items-center gap-4 border-b border-border-weaker-base">
               <div class="min-w-0">
                 <div class="truncate text-16-medium text-text-strong">{folder()?.name ?? language.t("p1.requirements")}</div>
-                <div class="text-12-regular text-text-weak">{language.t("p1.count", { count: state.rows.length })}</div>
+                <div class="text-12-regular text-text-weak">{language.t("p1.count", { count: state.total })}</div>
               </div>
               <div class="flex-1" />
               <input
@@ -659,6 +750,50 @@ function Status(props: { text: string }) {
       <span class="inline-block max-w-36 truncate px-2 py-0.5 rounded-full bg-surface-base text-12-regular text-text-base">
         {props.text}
       </span>
+    </Show>
+  )
+}
+
+/** The account menu's one entry: About, which shows the product, version and build in place. */
+function AboutItem(props: { onDone: () => void }) {
+  const language = useLanguage()
+  const platform = usePlatform()
+  const [state, setState] = createStore({ open: false })
+  return (
+    <Show
+      when={state.open}
+      fallback={
+        <button
+          type="button"
+          data-action="p1-about"
+          class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-13-regular text-text-strong hover:bg-surface-base-hover"
+          onClick={() => setState("open", true)}
+        >
+          <Icon name="help" size="small" class="text-text-weak" />
+          {language.t("about.label")}
+        </button>
+      }
+    >
+      <div class="flex flex-col gap-2 p-3 select-text">
+        <span class="text-14-medium text-text-strong">{language.t("about.title")}</span>
+        <span class="text-12-regular text-text-weak">{language.t("about.tagline")}</span>
+        <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-12-regular">
+          <dt class="text-text-weak">{language.t("about.version")}</dt>
+          <dd class="text-text-strong tabular-nums">{platform.version ?? "dev"}</dd>
+          <dt class="text-text-weak">{language.t("about.build")}</dt>
+          <dd class="text-text-strong font-mono">{import.meta.env.VITE_KLOUD_BUILD || "dev"}</dd>
+        </dl>
+        <button
+          type="button"
+          class="self-start text-12-medium text-text-interactive-base hover:underline"
+          onClick={() => {
+            props.onDone()
+            platform.openLink(HELP_URL)
+          }}
+        >
+          {language.t("about.help")}
+        </button>
+      </div>
     </Show>
   )
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { collect, detail, lang, login, num, origin, readBases, readFolders, readPins, readProjects, readRows, session } from "./api"
+import { collect, detail, lang, login, num, origin, readBases, readFolders, readHierarchy, readPins, readProjects, readRoot, readRows, readSpace, session } from "./api"
 import { decode64, doc, file, htmlOf, markdown, prose } from "./doc"
 
 const html = "<p>需求 <strong>说明</strong></p>"
@@ -85,6 +85,7 @@ describe("p1 api", () => {
         Data: [
           { ProjectBase: { ProjectID: 4, ProjectName: "Jiaxing", IsActive: 1 } },
           { ProjectBase: { ProjectID: 5, ProjectName: "Closed", IsActive: 0 } },
+          { ProjectBase: { ProjectID: 6, ProjectName: "Common", IsActive: 1, ProjectType: 32 } },
         ],
       }),
     ).toEqual([{ id: 4, base: 4, name: "Jiaxing" }])
@@ -93,7 +94,7 @@ describe("p1 api", () => {
         [{ id: 4, base: 4, name: "Jiaxing" }],
         [[{ id: 20, base: 4, name: "Spec" }, { id: 21, base: 4, name: "Plan" }]],
       ).map((item) => item.name),
-    ).toEqual(["Plan", "Spec"])
+    ).toEqual(["Spec", "Plan"])
     expect(
       readProjects({
         Data: [
@@ -102,19 +103,48 @@ describe("p1 api", () => {
         ],
       }).map((item) => item.name),
     ).toEqual(["Beta", "Alpha"])
+    expect(
+      readHierarchy({
+        Data: {
+          Nodes: [
+            {
+              Name: "Development",
+              P1Projects: [{ ProjectId: 314, SpaceId: 60529, SpaceName: "CW/SW - 11.0" }],
+              ChildNodes: [{ P1Projects: [{ ProjectId: 314, SpaceId: 56569, SpaceName: "ServiceWise 11" }] }],
+            },
+          ],
+          P1Projects: [{ ProjectId: 314, SpaceId: 65710, SpaceName: "common" }],
+        },
+      }).map((item) => item.name),
+    ).toEqual(["CW/SW - 11.0", "ServiceWise 11", "common"])
+    expect(
+      readSpace({
+        Data: {
+          P1ProjectDataValue: {
+            Requirement: {
+              Enabled: true,
+              PrimarySpace: { projectId: 190, spaceId: 9128, spaceName: "DevSuite 11" },
+            },
+          },
+        },
+      }),
+    ).toEqual({ project: 190, folder: 9128, name: "DevSuite 11" })
+    expect(readSpace({ Data: { P1ProjectDataValue: { Requirement: { Enabled: false } } } })).toBeUndefined()
     const tree = {
       FolderNodes: [
         {
-          FolderID: 20,
-          FolderName: "Space",
-          FolderNodes: [{ FolderID: 3, FolderName: "Specs", FolderNodes: [] }],
+          FolderID: 1,
+          FolderName: "All Requirement Spaces",
+          ChildNumber: 74,
+          FolderNodes: [{ FolderID: 9128, FolderName: "DevSuite 11", ChildNumber: 11, FolderNodes: [] }],
         },
-        { FolderID: 99, FolderName: "Other", FolderNodes: [] },
+        { FolderID: 32, FolderName: "Requirement Templates", FolderNodes: [] },
       ],
     }
-    expect(readFolders(tree, 20)).toEqual([
-      { id: 20, name: "Space", depth: 0 },
-      { id: 3, name: "Specs", depth: 1 },
+    expect(readRoot(tree, 9128)).toEqual([{ id: 9128, name: "DevSuite 11", count: 11 }])
+    expect(readRoot(tree, 7).map((item) => item.id)).toEqual([1, 32])
+    expect(readFolders({ FolderNodes: [{ FolderID: 16331, FolderName: "Component 1", ChildNumber: 0 }] })).toEqual([
+      { id: 16331, name: "Component 1", count: 0 },
     ])
     expect(
       readRows({
