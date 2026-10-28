@@ -61,8 +61,23 @@ export function detail(data: unknown) {
   return { title, html }
 }
 
+/** Signs in at `base`, or at its server root when `base` has a path the API isn't under (e.g. the web page's `/p1`). */
 export async function login(base: string, user: string, pass: string, http: Http = client()) {
-  const res = await http(`${base}/DevTrackApi/token`, {
+  const root = new URL(base).origin
+  const first = await token(base, user, pass, http)
+  if (first.status !== 404 || root === base) return done(first, base, user)
+  return done(await token(root, user, pass, http), root, user)
+}
+
+async function done(res: Response, server: string, user: string) {
+  const data = await res.json().catch(() => undefined)
+  const found = session(data, user)
+  if (!res.ok || !found) throw new HttpError(res.status, reason(data, `Login failed (HTTP ${res.status})`))
+  return { ...found, server }
+}
+
+function token(base: string, user: string, pass: string, http: Http) {
+  return http(`${base}/DevTrackApi/token`, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -79,10 +94,6 @@ export async function login(base: string, user: string, pass: string, http: Http
   }).catch((err: unknown) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
-  const data = await res.json().catch(() => undefined)
-  const found = session(data, user)
-  if (!res.ok || !found) throw new HttpError(res.status, reason(data, `Login failed (HTTP ${res.status})`))
-  return found
 }
 
 export type Project = { id: number; base: number; name: string; group?: string }

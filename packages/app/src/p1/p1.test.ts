@@ -142,4 +142,16 @@ describe("p1 api", () => {
     expect(url).toBe("https://p1.example/DevTrackApi/token")
     expect(JSON.parse(body)).toMatchObject({ Grant_type: "password", UserName: "ada", Password: "secret" })
   })
+
+  test("signs in at the server root when the typed address has the web page's path", async () => {
+    const urls: string[] = []
+    const http = (async (input: string | URL) => {
+      urls.push(String(input))
+      if (String(input).includes("/p1/")) return new Response("", { status: 404 })
+      return new Response(JSON.stringify({ access_token: "tok", userId: 3 }), { status: 200 })
+    }) as typeof fetch
+    const found = await login("https://p1.example/p1", "ada", "secret", http)
+    expect(found.server).toBe("https://p1.example")
+    expect(urls).toEqual(["https://p1.example/p1/DevTrackApi/token", "https://p1.example/DevTrackApi/token"])
+  })
 })

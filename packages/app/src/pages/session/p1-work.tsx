@@ -65,7 +65,7 @@ export function P1Work() {
     })
     setState("pass", "")
     if (!session) return
-    p1.save({ server: host, token: session.token, user: session.user, name: session.name })
+    p1.save({ server: session.server, token: session.token, user: session.user, name: session.name })
     setState({ busy: false, edit: false, server: "" })
   }
 
