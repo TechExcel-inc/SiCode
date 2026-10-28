@@ -2,6 +2,7 @@ import { createMemo, Show } from "solid-js"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { P1Work } from "./p1-work"
 
 const soon = {
   work: { icon: "checklist", label: "rail.work", body: "rail.soon.work" },
@@ -20,18 +21,22 @@ export function RailPlaceholder() {
   return (
     <Show when={item()}>
       {(entry) => (
-        <div
-          data-component="rail-placeholder"
-          class="absolute inset-0 z-40 bg-background-base flex flex-col items-center justify-center gap-3 px-6 text-center"
-        >
-          <div class="size-12 rounded-xl bg-surface-base flex items-center justify-center text-text-weak">
-            <Icon name={entry().icon} size="large" />
+        <Show when={layout.nav.current() === "work"} fallback={
+          <div
+            data-component="rail-placeholder"
+            class="absolute inset-0 z-40 bg-background-base flex flex-col items-center justify-center gap-3 px-6 text-center"
+          >
+            <div class="size-12 rounded-xl bg-surface-base flex items-center justify-center text-text-weak">
+              <Icon name={entry().icon} size="large" />
+            </div>
+            <div class="text-16-medium text-text-strong">
+              {language.t("rail.soon.title", { name: language.t(entry().label) })}
+            </div>
+            <div class="text-14-regular text-text-weak max-w-md">{language.t(entry().body)}</div>
           </div>
-          <div class="text-16-medium text-text-strong">
-            {language.t("rail.soon.title", { name: language.t(entry().label) })}
-          </div>
-          <div class="text-14-regular text-text-weak max-w-md">{language.t(entry().body)}</div>
-        </div>
+        }>
+          <P1Work />
+        </Show>
       )}
     </Show>
   )

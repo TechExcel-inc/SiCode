@@ -39,6 +39,7 @@ import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { PluginRegistryProvider } from "@/context/plugin-registry"
 import { EadProvider } from "@/ead/settings"
+import { P1Provider } from "@/p1/settings"
 import { CoworkProvider } from "@/context/cowork"
 import { NotificationProvider } from "@/context/notification"
 import { FollowupProvider } from "@/context/followup"
@@ -133,6 +134,7 @@ function AppShellProviders(props: ParentProps) {
         <LayoutProvider>
           <PluginRegistryProvider>
             <EadProvider>
+            <P1Provider>
             <CoworkProvider>
             <NotificationProvider>
             <FollowupProvider>
@@ -148,6 +150,7 @@ function AppShellProviders(props: ParentProps) {
             </FollowupProvider>
           </NotificationProvider>
             </CoworkProvider>
+            </P1Provider>
             </EadProvider>
           </PluginRegistryProvider>
         </LayoutProvider>

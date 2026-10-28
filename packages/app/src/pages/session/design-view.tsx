@@ -466,6 +466,17 @@ function Design() {
     editor?.focus()
   }
 
+  createEffect(
+    on(
+      () => design.pending,
+      (path) => {
+        if (!path) return
+        setDesign("pending", "")
+        void open(path)
+      },
+    ),
+  )
+
   // Back to the gallery; the doc's typing is saved and it is no longer attached to the chat.
   const close = async () => {
     await flush()

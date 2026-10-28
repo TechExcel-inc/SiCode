@@ -13,4 +13,6 @@ export const [design, setDesign] = createStore({
   blank: false,
   // Saves what the user typed but has not saved yet, so the agent reads the latest doc.
   flush: undefined as (() => Promise<void>) | undefined,
+  // A doc P1 Work just wrote; Design opens it once the tab is showing.
+  pending: "",
 })
