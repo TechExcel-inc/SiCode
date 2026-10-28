@@ -42,6 +42,7 @@ import { LLM } from "./llm"
 import { Shell } from "@/shell/shell"
 import { AppFileSystem } from "@/filesystem"
 import { Truncate } from "@/tool/truncate"
+import { EadTools } from "./ead-tools"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, Context } from "effect"
@@ -481,9 +482,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           })
         }
 
+        // EAD Pilot tools go only with sessions working on EAD; the others get the small loader instead.
+        const ead = EadTools.wanted(input.messages)
+        let deferred = false
         for (const [key, item] of Object.entries(yield* mcp.tools())) {
           const execute = item.execute
           if (!execute) continue
+          if (!ead && EadTools.owns(key)) {
+            deferred = true
+            continue
+          }
 
           const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
           const transformed = ProviderTransform.schema(input.model, schema)
@@ -557,6 +565,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               }),
             )
           tools[key] = item
+        }
+
+        if (deferred) {
+          tools[EadTools.LOADER] = tool({
+            id: EadTools.LOADER as any,
+            description: EadTools.DESCRIPTION,
+            inputSchema: jsonSchema({ type: "object", properties: {} }),
+            // The call itself is the record: from the next step EadTools.wanted sees it and adds the tools.
+            execute: async () => ({ title: "EAD Pilot tools loaded", metadata: {}, output: EadTools.LOADED }),
+          })
         }
 
         return tools
@@ -1391,8 +1409,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             yield* status.set(sessionID, { type: "busy" })
             yield* slog.info("loop", { step })
 
-            // A long task trims its own old tool output as it goes (see SessionCompaction.prune).
-            if (step > 0) yield* compaction.prune({ sessionID, current: true }).pipe(Effect.ignore)
+            // A long task trims its own old tool output as it goes (see SessionCompaction.prune). Helper
+            // sessions are short: rebuilding the provider's cache after a trim would cost more than it saves.
+            if (step > 0 && !session.parentID) yield* compaction.prune({ sessionID, current: true }).pipe(Effect.ignore)
 
             let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
 

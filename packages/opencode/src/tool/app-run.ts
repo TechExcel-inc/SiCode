@@ -61,9 +61,9 @@ export namespace AppRun {
 
 const parameters = z.object({
   action: z
-    .enum(["dev", "build", "install", "stop"])
+    .enum(["dev", "build", "install", "deploy", "stop"])
     .describe(
-      "dev: start the dev server (or reuse the running one) and get its address; build: build the app; install: put the new build in place and open it; stop: stop the dev server",
+      "dev: start the dev server (or reuse the running one) and get its address; build: build the app; install: put the new build in place and open it; deploy: deploy the app to its server; stop: stop the dev server",
     ),
 })
 
@@ -123,9 +123,9 @@ export const AppRunTool = Tool.define(
           return { title: state === "ready" ? `Dev server at ${url}` : "Dev server not ready", output, metadata: { job: job.id } }
         }
 
-        const command = params.action === "build" ? saved.build : saved.install
-        if (!command) return missing(params.action === "build" ? "build" : "install")
-        const what = params.action === "build" ? "Build the app" : "Install and reopen the app"
+        const command = { build: saved.build, install: saved.install, deploy: saved.deploy }[params.action]
+        if (!command) return missing(params.action)
+        const what = { build: "Build the app", install: "Install and reopen the app", deploy: "Deploy the app" }[params.action]
         const job = AppRun.start({ sessionID: ctx.sessionID, agent: ctx.agent, command, description: what })
         return {
           title: what,

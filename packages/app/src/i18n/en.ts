@@ -378,6 +378,8 @@ export const dict = {
   "dialog.project.edit.run.build": "Build app",
   "dialog.project.edit.run.install": "Install and reopen",
   "dialog.project.edit.run.install.description": "Puts the new build in place and opens it.",
+  "dialog.project.edit.run.deploy": "Deploy",
+  "dialog.project.edit.run.deploy.description": "Deploys the app to its server. The AI uses it whenever you ask to deploy, instead of working it out over SSH.",
   "dialog.project.edit.worktree.startup": "Workspace startup script",
   "dialog.project.edit.worktree.startup.description": "Runs after creating a new workspace (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "e.g. bun install",

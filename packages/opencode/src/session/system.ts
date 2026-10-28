@@ -121,10 +121,11 @@ export function runCommands() {
     saved.dev ? `dev server${saved.port ? ` (port ${saved.port})` : ""}` : "",
     saved.build ? "build" : "",
     saved.install ? "install and reopen" : "",
+    saved.deploy ? "deploy" : "",
   ].filter(Boolean)
   if (list.length === 0) return []
   return [
-    `This project has saved run commands: ${list.join(", ")}. Use the app_run tool to run them instead of guessing commands: dev before you look at a change in the browser, build and install when the user wants the app rebuilt.`,
+    `This project has saved run commands: ${list.join(", ")}. Use the app_run tool to run them instead of guessing commands: dev before you look at a change in the browser, build and install when the user wants the app rebuilt, deploy when the user wants it deployed (never deploy by hand over SSH).`,
   ]
 }
 

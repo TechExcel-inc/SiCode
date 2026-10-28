@@ -50,6 +50,10 @@ export type Project = {
      * Puts the new build in place and opens it
      */
     install?: string
+    /**
+     * Deploys the app to its server
+     */
+    deploy?: string
   }
   time: {
     created: number
@@ -2691,6 +2695,10 @@ export type ProjectUpdateData = {
        * Puts the new build in place and opens it
        */
       install?: string
+      /**
+       * Deploys the app to its server
+       */
+      deploy?: string
     }
     /**
      * Folders of related projects: the agent reads and changes them as part of this project

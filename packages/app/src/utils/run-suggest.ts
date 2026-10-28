@@ -1,5 +1,5 @@
 /** Run commands a project's own files point to, for Edit project → Run → Suggest commands. */
-export type RunCommands = { dev?: string; port?: number; build?: string; install?: string }
+export type RunCommands = { dev?: string; port?: number; build?: string; install?: string; deploy?: string }
 
 type Launch = { configurations?: { runtimeExecutable?: string; runtimeArgs?: string[]; port?: number }[] }
 type Package = { scripts?: Record<string, string> }
@@ -55,6 +55,7 @@ export function suggestRun(input: {
         ? `${run} start`
         : undefined
   const install = ["install:app", "reinstall", "deploy:local"].find((name) => scripts[name])
+  const deploy = ["deploy", "deploy:prod", "deploy:production"].find((name) => scripts[name])
   const product = read<{ productName?: string }>(input.tauri?.config)?.productName
   const bundle = product && input.tauri ? `${input.tauri.dir}/target/release/bundle/macos/${product}.app` : undefined
   return {
@@ -62,5 +63,6 @@ export function suggestRun(input: {
     port: launch?.port ?? (scripts.dev ? portOf(scripts.dev) : scripts.start ? portOf(scripts.start) : undefined),
     build: scripts.build ? `${run} build` : undefined,
     install: install ? `${run} ${install}` : bundle ? `"$SICODE_REINSTALL" ${quote(bundle)}` : undefined,
+    deploy: deploy ? `${run} ${deploy}` : undefined,
   }
 }

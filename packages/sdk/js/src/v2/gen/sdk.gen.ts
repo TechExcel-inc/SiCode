@@ -748,6 +748,10 @@ export class Project extends HeyApiClient {
          * Puts the new build in place and opens it
          */
         install?: string
+        /**
+         * Deploys the app to its server
+         */
+        deploy?: string
       }
       related?: Array<string>
     },

@@ -357,6 +357,8 @@ export const dict = {
   "dialog.project.edit.run.build": "建置應用程式",
   "dialog.project.edit.run.install": "安裝並重新開啟",
   "dialog.project.edit.run.install.description": "把新建置放到位並開啟它。",
+  "dialog.project.edit.run.deploy": "部署",
+  "dialog.project.edit.run.deploy.description": "把應用程式部署到伺服器。你要求部署時，AI 會使用它，而不是透過 SSH 自行摸索。",
   "dialog.project.edit.worktree.startup": "工作區啟動腳本",
   "dialog.project.edit.worktree.startup.description": "在建立新的工作區 (worktree) 後執行。",
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",

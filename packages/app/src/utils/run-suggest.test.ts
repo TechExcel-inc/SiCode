@@ -33,6 +33,12 @@ describe("suggestRun", () => {
     })
   })
 
+  test("a deploy script becomes the Deploy command", () => {
+    const pkg = JSON.stringify({ scripts: { build: "next build", deploy: "bash scripts/deploy-meet.sh" } })
+    expect(suggestRun({ pkg, locks: ["package-lock.json"] }).deploy).toBe("npm run deploy")
+    expect(suggestRun({ pkg: JSON.stringify({ scripts: { build: "next build" } }), locks: [] }).deploy).toBeUndefined()
+  })
+
   test("suggests nothing for a folder without these files or with broken ones", () => {
     expect(suggestRun({ locks: [] })).toEqual({ dev: undefined, port: undefined, build: undefined, install: undefined })
     expect(suggestRun({ pkg: "{ not json", locks: [] }).dev).toBeUndefined()

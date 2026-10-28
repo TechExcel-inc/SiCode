@@ -38,6 +38,7 @@ export namespace Project {
           port: z.number().optional().describe("Port the dev server serves on"),
           build: z.string().optional().describe("Builds the app (for example the desktop app)"),
           install: z.string().optional().describe("Puts the new build in place and opens it"),
+          deploy: z.string().optional().describe("Deploys the app to its server"),
         })
         .optional(),
       time: z.object({

@@ -34,6 +34,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
     port: props.project.commands?.port ? String(props.project.commands.port) : "",
     build: props.project.commands?.build ?? "",
     install: props.project.commands?.install ?? "",
+    deploy: props.project.commands?.deploy ?? "",
     suggesting: false,
     dragOver: false,
     iconHover: false,
@@ -111,6 +112,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
       port: store.port || (found.port ? String(found.port) : ""),
       build: store.build || found.build || "",
       install: store.install || found.install || "",
+      deploy: store.deploy || found.deploy || "",
     })
   }
 
@@ -121,6 +123,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
     port: Number(store.port.trim()) || 0,
     build: store.build.trim(),
     install: store.install.trim(),
+    deploy: store.deploy.trim(),
   })
 
   const saveMutation = useMutation(() => ({
@@ -344,6 +347,16 @@ export function DialogEditProject(props: { project: LocalProject }) {
               placeholder="bash scripts/install-and-open.sh"
               value={store.install}
               onChange={(v) => setStore("install", v)}
+              spellcheck={false}
+              class="w-full font-mono text-xs"
+            />
+            <TextField
+              type="text"
+              label={language.t("dialog.project.edit.run.deploy")}
+              description={language.t("dialog.project.edit.run.deploy.description")}
+              placeholder="npm run deploy"
+              value={store.deploy}
+              onChange={(v) => setStore("deploy", v)}
               spellcheck={false}
               class="w-full font-mono text-xs"
             />
