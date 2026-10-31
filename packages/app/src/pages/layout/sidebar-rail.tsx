@@ -1,7 +1,5 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js"
+import { createMemo, Show, type JSX } from "solid-js"
 import { useParams } from "@solidjs/router"
-import { Avatar } from "@opencode-ai/ui/avatar"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -11,8 +9,6 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
-import { useEad } from "@/ead/settings"
-import { me } from "@/ead/api"
 
 export const RailItem = (props: {
   icon: IconProps["name"]
@@ -101,82 +97,5 @@ export const RailUsage = (props: { mobile?: boolean }): JSX.Element => {
         </span>
       </button>
     </Tooltip>
-  )
-}
-
-export const RailAccount = (props: { mobile?: boolean; onSignIn: () => void }): JSX.Element => {
-  const ead = useEad()
-  const language = useLanguage()
-  // Read in the background with a plain signal, never a resource: a resource read before its first
-  // answer holds the window on "Loading" until EAD Pilot replies. Tried again a few times, since
-  // right after the app starts EAD Pilot may not answer yet and the avatar would stay "?".
-  const [profile, setProfile] = createSignal<Awaited<ReturnType<typeof me>>>()
-  createEffect(
-    on(
-      () => ead.token(),
-      (token) => {
-        setProfile(undefined)
-        if (!token) return
-        const state = { live: true }
-        onCleanup(() => (state.live = false))
-        void (async () => {
-          for (const wait of [0, 2_000, 5_000, 10_000]) {
-            if (wait) await new Promise((done) => setTimeout(done, wait))
-            if (!state.live) return
-            const user = await me(token).catch(() => undefined)
-            if (!state.live) return
-            if (user) return void setProfile(user)
-          }
-        })()
-      },
-    ),
-  )
-  const name = createMemo(() => profile()?.name || profile()?.email || "")
-
-  return (
-    <Show
-      when={ead.token()}
-      fallback={
-        <Tooltip placement={props.mobile ? "bottom" : "right"} value={language.t("rail.account.signIn")}>
-          <button
-            type="button"
-            data-action="rail-sign-in"
-            aria-label={language.t("rail.account.signIn")}
-            class="size-9 rounded-full border border-dashed border-border-base flex items-center justify-center text-text-weak hover:bg-surface-base-hover"
-            onClick={props.onSignIn}
-          >
-            <Icon name="enter" size="small" />
-          </button>
-        </Tooltip>
-      }
-    >
-      <DropdownMenu placement={props.mobile ? "bottom" : "right-end"}>
-        <DropdownMenu.Trigger
-          as="button"
-          type="button"
-          data-action="rail-account"
-          aria-label={name() || language.t("rail.account")}
-          class="size-9 rounded-full overflow-hidden"
-        >
-          <Avatar fallback={name() || "?"} class="size-full rounded-full" />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content class="ml-1">
-            <Show when={name()}>
-              <div class="px-2 py-1.5 flex flex-col">
-                <span class="text-13-medium text-text-strong">{profile()?.name || profile()?.email}</span>
-                <Show when={profile()?.name && profile()?.email}>
-                  <span class="text-12-regular text-text-weak">{profile()?.email}</span>
-                </Show>
-              </div>
-              <DropdownMenu.Separator />
-            </Show>
-            <DropdownMenu.Item data-action="rail-sign-out" onSelect={() => ead.signOut()}>
-              <DropdownMenu.ItemLabel>{language.t("rail.account.signOut")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
-    </Show>
   )
 }

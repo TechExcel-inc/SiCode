@@ -16,7 +16,6 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
 import { useCowork } from "@/context/cowork"
-import { AboutPopover } from "@/components/about-popover"
 import { useGlobalSync } from "@/context/global-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/util/encode"
@@ -92,12 +91,12 @@ import {
 } from "./layout/sidebar-workspace"
 import { type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
-import { RailAccount, RailItem, RailUsage } from "./layout/sidebar-rail"
+import { RailItem, RailUsage } from "./layout/sidebar-rail"
+import { AccountMenu } from "@/components/account-menu"
 import { useEadSignIn } from "@/components/ead-sign-in"
 import { setProjectActions } from "./layout/project-actions"
 import { AllSessions } from "./layout/sidebar-sessions"
 import { type Nav } from "@/context/layout"
-import { HELP_URL } from "@/components/about-popover"
 import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
 export default function Layout(props: ParentProps) {
@@ -2436,28 +2435,6 @@ export default function Layout(props: ParentProps) {
         onClick={() => sessionView.terminal.toggle()}
       />
       <RailUsage mobile={mobile} />
-      <AboutPopover mobile={mobile} />
-      <DropdownMenu placement={mobile ? "bottom" : "right-end"}>
-        <DropdownMenu.Trigger
-          as={IconButton}
-          icon="settings-gear"
-          variant="ghost"
-          size="large"
-          data-action="rail-settings"
-          aria-label={language.t("sidebar.settings")}
-        />
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content class="ml-1">
-            <DropdownMenu.Item onSelect={openSettings}>
-              <DropdownMenu.ItemLabel>{language.t("sidebar.settings")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => platform.openLink(HELP_URL)}>
-              <DropdownMenu.ItemLabel>{language.t("about.help")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
-      <RailAccount mobile={mobile} onSignIn={() => openEadSignIn()} />
     </>
   )
 
@@ -2476,7 +2453,10 @@ export default function Layout(props: ParentProps) {
 
   return (
     <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-      <Titlebar />
+      {/* Accounts, Settings, Help and About live in the top bar's account menu, in every view. */}
+      <Titlebar
+        account={<AccountMenu onSignIn={() => openEadSignIn()} onP1={() => go("work")} onSettings={openSettings} />}
+      />
       <div class="flex-1 min-h-0 min-w-0 flex">
         <div class="flex-1 min-h-0 relative">
           <div class="size-full relative overflow-x-hidden">

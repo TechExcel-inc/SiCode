@@ -16,7 +16,7 @@ export function P1Folder(props: {
   id: number
   place?: Place
   onClose: () => void
-  onSaved: (id: number, name: string) => void
+  onSaved: (id: number, shape: Shape) => void
 }) {
   const p1 = useP1()
   const language = useLanguage()
@@ -73,15 +73,16 @@ export function P1Folder(props: {
     setState({ busy: true, err: "" })
     const host = p1.server()
     const token = p1.token()
-    const id = await (fresh()
-      ? add(host, token, made(props.project, props.id, props.place ?? 0, shape), language.locale())
-      : save(host, token, edited(props.project, props.id, state.raw, shape), language.locale()).then(() => props.id)
+    const id = await (
+      fresh()
+        ? add(host, token, made(props.project, props.id, props.place ?? 0, shape), language.locale())
+        : save(host, token, edited(props.project, props.id, state.raw, shape), language.locale()).then(() => props.id)
     ).catch((err: unknown) => {
       setState({ err: message(err), busy: false })
     })
     if (id === undefined) return
     setState("busy", false)
-    props.onSaved(id, shape.name.trim())
+    props.onSaved(id, { ...shape, name: shape.name.trim() })
     props.onClose()
   }
 
@@ -150,9 +151,9 @@ export function P1Folder(props: {
           </Show>
           <div class="flex flex-col gap-1.5">
             <span class="text-12-medium text-text-weak">{language.t("p1.folder.type")}</span>
-            {/* P1 changes an existing folder's type with its own tool, so editing only shows it. */}
+            {/* Regular, release and roadmap month folders can change between those types; others only show theirs. */}
             <Show
-              when={fresh()}
+              when={types[state.shape.type] !== undefined}
               fallback={<input class={input} value={names[state.shape.type] ?? String(state.shape.type)} disabled />}
             >
               <select
@@ -160,7 +161,9 @@ export function P1Folder(props: {
                 value={String(state.shape.type)}
                 onChange={(event) => setState("shape", "type", Number(event.currentTarget.value))}
               >
-                <For each={Object.entries(types)}>{([id, name]) => <option value={id}>{name}</option>}</For>
+                <For each={Object.entries(types)}>
+                  {([id]) => <option value={id}>{language.t(`p1.folder.kind.${id}`)}</option>}
+                </For>
               </select>
             </Show>
           </div>

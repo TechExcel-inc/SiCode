@@ -87,7 +87,7 @@ export function members(base: string, token: string, home: Home, locale: string)
 }
 
 /** Where a module's new story goes: the development project's running sprint, else its space. */
-async function sprint(base: string, token: string, home: Home, locale: string) {
+export async function sprint(base: string, token: string, home: Home, locale: string) {
   const dev = home.dev
   if (!dev) return
   const data = await call(

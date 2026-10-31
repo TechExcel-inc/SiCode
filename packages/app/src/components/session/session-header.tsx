@@ -24,6 +24,8 @@ import { StatusPopover } from "../status-popover"
 import { displayName, workspaceKey } from "@/pages/layout/helpers"
 import { projectActions } from "@/pages/layout/project-actions"
 import { RecentProjectPicker } from "@/components/recent-project-picker"
+import { useEad } from "@/ead/settings"
+import { design } from "@/pages/session/design-state"
 
 const OPEN_APPS = [
   "vscode",
@@ -267,8 +269,21 @@ export function SessionHeader() {
       .catch((err: unknown) => showRequestError(language, err))
   }
 
-  const centerMount = createMemo(() => document.getElementById("opencode-titlebar-center"))
+  // The code workspace, its file search and Open in belong to the code views; EAD, Design and P1 Work fill the bar
+  // with their own.
+  const code = createMemo(() => ["agent", "code"].includes(layout.nav.current()))
+  const centerMount = createMemo(() => (code() ? document.getElementById("opencode-titlebar-center") : undefined))
   const rightMount = createMemo(() => document.getElementById("opencode-titlebar-right"))
+  // Design and EAD name what they work in, the open design or the EAD product; P1 Work fills the bar itself.
+  const ead = useEad()
+  const viewMount = createMemo(() =>
+    ["design", "ead"].includes(layout.nav.current()) ? document.getElementById("opencode-titlebar-center") : undefined,
+  )
+  const view = createMemo(() =>
+    layout.nav.current() === "design"
+      ? { icon: "design" as const, name: design.title, none: language.t("bar.design.none") }
+      : { icon: "ead" as const, name: ead.productName(), none: language.t("bar.ead.none") },
+  )
 
   return (
     <>
@@ -368,11 +383,30 @@ export function SessionHeader() {
           </Portal>
         )}
       </Show>
+      <Show when={viewMount()}>
+        {(mount) => (
+          <Portal mount={mount()}>
+            <div
+              data-component="header-view-context"
+              class="hidden md:flex max-w-[320px] min-w-0 h-7 px-2 items-center gap-1.5 rounded-md"
+              title={view().name || view().none}
+            >
+              <Icon name={view().icon} size="small" class="shrink-0 text-icon-weak" />
+              <span
+                class="min-w-0 truncate text-12-medium"
+                classList={{ "text-text-strong": !!view().name, "text-text-weak": !view().name }}
+              >
+                {view().name || view().none}
+              </span>
+            </div>
+          </Portal>
+        )}
+      </Show>
       <Show when={rightMount()}>
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-2">
-              <Show when={projectDirectory()}>
+              <Show when={code() && projectDirectory()}>
                 <div class="hidden xl:flex items-center">
                   <Show
                     when={canOpen()}

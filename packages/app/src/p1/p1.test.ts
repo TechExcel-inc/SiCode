@@ -141,10 +141,18 @@ describe("p1 api", () => {
         { FolderID: 32, FolderName: "Requirement Templates", FolderNodes: [] },
       ],
     }
-    expect(readRoot(tree, 9128)).toEqual([{ id: 9128, name: "DevSuite 11", count: 11 }])
+    expect(readRoot(tree, 9128)).toEqual([{ id: 9128, name: "DevSuite 11", count: 11, type: 0, closed: false }])
     expect(readRoot(tree, 7).map((item) => item.id)).toEqual([1, 32])
-    expect(readFolders({ FolderNodes: [{ FolderID: 16331, FolderName: "Component 1", ChildNumber: 0 }] })).toEqual([
-      { id: 16331, name: "Component 1", count: 0 },
+    expect(
+      readFolders({
+        FolderNodes: [
+          { FolderID: 16331, FolderName: "Component 1", ChildNumber: 0 },
+          { FolderID: 16900, FolderName: "1.5", TypeID: 36, FolderStatus: "Close" },
+        ],
+      }),
+    ).toEqual([
+      { id: 16331, name: "Component 1", count: 0, type: 0, closed: false },
+      { id: 16900, name: "1.5", count: 0, type: 36, closed: true },
     ])
     expect(
       readRows({
@@ -156,6 +164,10 @@ describe("p1 api", () => {
             1113: "Ada",
             1121: { Value: 2, Name: "Feature" },
             1131: 5,
+            // P1 tells a LiveDoc Report from the description's text, which the row doesn't keep.
+            1102: "<p>Live Image ID: 2462508</p>",
+            SystemTypeID: 0,
+            IsClosed: true,
             children: [{ ID: 8, Title: "子项" }],
           },
         ],
@@ -171,8 +183,26 @@ describe("p1 api", () => {
         cells: { 1101: "登录", 1112: "7", 1113: "Ada", 1114: "Open", 1121: "Feature", 1131: "5" },
         tasks: 0,
         attachments: 0,
+        kind: 0,
+        closed: true,
+        shortcut: false,
+        attached: true,
       },
-      { id: 8, title: "子项", status: "", owner: "", type: "", points: "", cells: {}, tasks: 0, attachments: 0 },
+      {
+        id: 8,
+        title: "子项",
+        status: "",
+        owner: "",
+        type: "",
+        points: "",
+        cells: {},
+        tasks: 0,
+        attachments: 0,
+        kind: 1,
+        closed: false,
+        shortcut: false,
+        attached: false,
+      },
     ])
   })
 

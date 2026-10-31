@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="66px" height="66px" viewBox="0 0 66 66" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>spec-change</title>
+    <g id="spec-change" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="spec-close备份" transform="translate(10.000000, 9.000000)">
+            <rect id="Rectangle" fill="#3D78FB" x="0" y="0" width="48" height="48" rx="6"></rect>
+            <rect id="Rectangle-6" fill="#FFFFFF" transform="translate(24.000000, 24.000000) rotate(-315.000000) translate(-24.000000, -24.000000) " x="14" y="14" width="20" height="20" rx="4"></rect>
+            <g id="Group" transform="translate(26.000000, 27.000000)">
+                <circle id="Oval" fill="#FBB447" cx="13" cy="13" r="13"></circle>
+                <g id="编组" transform="translate(13.000000, 13.000000) rotate(-270.000000) translate(-13.000000, -13.000000) translate(3.500000, 3.500000)" fill="#FFFFFF" fill-rule="nonzero">
+                    <path d="M5.36224741,6.13658275 L1.80187284,9.51119443 L0,7.65291912 L7.98422868,0 L7.9862001,2.71719336 L8,2.71719336 L8,19 L5.36224741,19 L5.36224741,6.13658275 Z M13.7009841,12.8837708 L17.3305577,9.5498661 L19,11.5648634 L11.0161494,19 L11,15.8675951 L11,0 L13.7009841,0 L13.7009841,12.8837708 L13.7009841,12.8837708 Z" id="形状"></path>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

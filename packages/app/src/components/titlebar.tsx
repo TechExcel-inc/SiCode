@@ -1,4 +1,4 @@
-import { createEffect, createMemo, onCleanup, Show, untrack } from "solid-js"
+import { createEffect, createMemo, onCleanup, Show, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -35,7 +35,8 @@ const tauriApi = () => (window as unknown as { __TAURI__?: TauriApi }).__TAURI__
 const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
 const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
 
-export function Titlebar() {
+/** The window's top bar. `account` is the account menu, kept at the far right in every view. */
+export function Titlebar(props: { account?: JSX.Element }) {
   const layout = useLayout()
   const platform = usePlatform()
   const command = useCommand()
@@ -131,7 +132,7 @@ export function Titlebar() {
     if (!(target instanceof Element)) return false
 
     const selector =
-      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
+      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable=''], [data-no-drag]"
 
     return !!target.closest(selector)
   }
@@ -221,7 +222,7 @@ export function Titlebar() {
             </Show>
           </div>
           <div class="hidden xl:flex items-center shrink-0">
-            <Show when={params.dir}>
+            <Show when={params.dir && ["agent", "code"].includes(layout.nav.current())}>
               <div
                 class="flex items-center shrink-0 w-8 mr-1"
                 aria-hidden={layout.sidebar.opened() ? "true" : undefined}
@@ -306,6 +307,9 @@ export function Titlebar() {
         onMouseDown={drag}
       >
         <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
+        <Show when={props.account}>
+          <div class="ml-2 flex items-center shrink-0">{props.account}</div>
+        </Show>
         <Show when={windows()}>
           {!tauriApi() && <div class="w-36 shrink-0" />}
           <div data-tauri-decorum-tb class="flex flex-row" />

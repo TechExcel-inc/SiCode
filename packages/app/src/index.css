@@ -67,3 +67,48 @@
     }
   }
 }
+
+/* P1's CKEditor, in SiCode's colors: its toolbar, dropdowns and balloons follow the app's theme. */
+.p1-ck,
+.ck-body-wrapper {
+  --ck-color-base-background: var(--surface-base);
+  --ck-color-base-foreground: var(--surface-raised-base);
+  --ck-color-base-border: var(--border-weaker-base);
+  --ck-color-base-text: var(--text-strong);
+  --ck-color-text: var(--text-strong);
+  --ck-color-toolbar-background: var(--surface-raised-stronger-non-alpha);
+  --ck-color-toolbar-border: var(--border-weaker-base);
+  --ck-color-panel-background: var(--surface-raised-stronger-non-alpha);
+  --ck-color-panel-border: var(--border-strong-base);
+  --ck-color-dropdown-panel-background: var(--surface-raised-stronger-non-alpha);
+  --ck-color-dropdown-panel-border: var(--border-strong-base);
+  --ck-color-button-default-hover-background: var(--surface-base-hover);
+  --ck-color-button-default-active-background: var(--surface-base-hover);
+  --ck-color-button-on-background: var(--surface-base-hover);
+  --ck-color-button-on-hover-background: var(--surface-base-hover);
+  --ck-color-button-on-color: var(--text-interactive-base);
+  --ck-color-list-background: var(--surface-raised-stronger-non-alpha);
+  --ck-color-list-button-hover-background: var(--surface-base-hover);
+  --ck-color-list-button-on-background: var(--surface-interactive-base);
+  --ck-color-list-button-on-text: var(--text-on-interactive-base);
+  --ck-color-input-background: var(--background-base);
+  --ck-color-input-border: var(--border-weaker-base);
+  --ck-color-input-text: var(--text-strong);
+  --ck-color-labeled-field-label-background: var(--surface-raised-stronger-non-alpha);
+  --ck-color-focus-border: var(--border-interactive-base);
+  --ck-color-shadow-drop: rgb(0 0 0 / 0.35);
+  --ck-color-tooltip-background: var(--surface-raised-stronger-non-alpha);
+  --ck-color-tooltip-text: var(--text-strong);
+}
+.p1-ck .ck.ck-toolbar {
+  border: 0;
+}
+.p1-ck .ck-editor__editable {
+  min-height: 16rem;
+  background: transparent;
+  color: var(--text-strong);
+}
+.p1-ck .ck-editor__editable.ck-focused:not(.ck-editor__nested-editable) {
+  border-color: transparent;
+  box-shadow: none;
+}

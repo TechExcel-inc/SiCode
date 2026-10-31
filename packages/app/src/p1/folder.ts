@@ -18,18 +18,18 @@ export type Shape = {
   parent: string
 }
 
-/** Folder types P1 lets you pick, by id. */
+/** Folder types SiCode lets you pick, by id: P1's regular, release and roadmap month folders. */
 export const types: Record<number, string> = {
   0: "Regular",
   36: "Release",
   30: "Roadmap Month",
-  31: "Customer Service",
-  37: "Product Service Project",
 }
 
 /** Every folder type's name, for showing one P1 set elsewhere. */
 export const names: Record<number, string> = {
   ...types,
+  31: "Customer Service",
+  37: "Product Service Project",
   32: "Customer Requirement",
   33: "Review And Change Management",
   34: "Requirement Management",
