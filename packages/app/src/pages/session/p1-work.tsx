@@ -230,6 +230,8 @@ export function P1Work() {
     top: [] as number[],
     rows: [] as Row[],
     total: 0,
+    // The page of the list shown.
+    page: 1,
     space: undefined as Space | undefined,
     // Each requirement's stories, read for the board's cards when it is grouped by spec and story owner.
     tales: {} as Record<number, Story[]>,
@@ -830,12 +832,12 @@ export function P1Work() {
     setState("folders", id, "count", list.length)
   }
 
-  const fill = async (root: number, folder: number, query: string, mark = stamp) => {
+  const fill = async (root: number, folder: number, query: string, mark = stamp, page = 1) => {
     const host = p1.server()
     const token = p1.token()
     if (!host || !token) return
     const mine = ++wave
-    setState({ loading: true, folder, query, root })
+    setState({ loading: true, folder, query, root, page })
     void access(host, token, root, folder, language.locale())
       .then((level) => setState("level", level))
       .catch(() => setState("level", 0))
@@ -863,6 +865,7 @@ export function P1Work() {
         group: state.filter.group === 1132 && !state.folders[folder]?.months ? 0 : state.filter.group,
       },
       scope,
+      { index: page, size: state.filter.size ?? 100 },
     ).catch((err: unknown) => {
       if (mark === stamp && mine === wave) fail(err)
     })
@@ -947,6 +950,7 @@ export function P1Work() {
   // The top bar's slots, which P1 Work fills while it shows.
   const bar = (slot: "center" | "right") => document.getElementById(`opencode-titlebar-${slot}`) ?? undefined
   let finder: HTMLInputElement | undefined
+  const pages = () => Math.max(1, Math.ceil(state.total / (state.filter.size ?? 100)))
   window.addEventListener("keydown", close)
   onCleanup(() => window.removeEventListener("keydown", close))
 
@@ -1380,18 +1384,6 @@ export function P1Work() {
               )}
             </For>
           </nav>
-          <label class="hidden md:flex w-[150px] xl:w-[220px] min-w-0 h-7 px-2 items-center gap-2 rounded-md border border-border-weak-base bg-surface-panel focus-within:border-border-interactive-base">
-            <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-weak" />
-            <input
-              ref={(el) => (finder = el)}
-              data-action="p1-search"
-              class="min-w-0 flex-1 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
-              value={state.query}
-              placeholder={language.t("p1.search.requirement")}
-              onInput={(event) => search(event.currentTarget.value)}
-            />
-            <span class="shrink-0 text-12-regular text-text-weaker">⌘K</span>
-          </label>
           {/* Reads the projects again when none loaded, else the folder's requirements. */}
           <Tooltip placement="bottom" value={language.t("p1.refresh")}>
             <button
@@ -1485,13 +1477,6 @@ export function P1Work() {
               >
                 <Icon name="sliders" size="small" class="[&_path]:[stroke-width:1.75]" />
               </button>
-              <P1Group
-                value={groupings().some((item) => item.id === state.filter.group) ? state.filter.group : 0}
-                items={groupings()}
-                disabled={!state.root}
-                // Grouping by spec and story owner is about stories, so it turns them on.
-                onPick={(group) => refine({ ...state.filter, group, stories: group === 1604 || state.filter.stories })}
-              />
               <Button
                 variant="primary"
                 size="large"
@@ -1569,6 +1554,67 @@ export function P1Work() {
                 <Icon name="settings-gear" size="small" />
               </button>
             </div>
+            {/* The list's own bar, as in P1: how it is grouped, its search, and its pages. */}
+            <div class="shrink-0 h-12 pl-3 pr-4 flex items-center gap-3 border-b border-border-weaker-base">
+              <P1Group
+                value={groupings().some((item) => item.id === state.filter.group) ? state.filter.group : 0}
+                items={groupings()}
+                disabled={!state.root}
+                // Grouping by spec and story owner is about stories, so it turns them on.
+                onPick={(group) => refine({ ...state.filter, group, stories: group === 1604 || state.filter.stories })}
+              />
+              <label class="w-[220px] xl:w-[280px] min-w-0 h-8 px-2.5 flex items-center gap-2 rounded-lg border border-border-weaker-base bg-surface-base focus-within:border-border-interactive-base">
+                <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-weak" />
+                <input
+                  ref={(el) => (finder = el)}
+                  data-action="p1-search"
+                  class="min-w-0 flex-1 bg-transparent text-13-regular text-text-strong placeholder:text-text-weak outline-none"
+                  value={state.query}
+                  placeholder={language.t("p1.search.requirement")}
+                  onInput={(event) => search(event.currentTarget.value)}
+                />
+                <span class="shrink-0 text-12-regular text-text-weaker">⌘K</span>
+              </label>
+              <div class="flex-1" />
+              <Show when={state.root && state.folder}>
+                <div data-component="p1-pager" class="shrink-0 flex items-center gap-2 text-13-regular text-text-weak">
+                  <span class="tabular-nums">{language.t("p1.page.total", { count: state.total })}</span>
+                  <button
+                    type="button"
+                    data-action="p1-page-prev"
+                    class="size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover disabled:opacity-40 disabled:hover:bg-surface-base"
+                    aria-label={language.t("p1.page.prev")}
+                    disabled={state.loading || state.page <= 1}
+                    onClick={() => void fill(state.root, state.folder, state.query.trim(), stamp, state.page - 1)}
+                  >
+                    <Icon name="chevron-left" size="small" />
+                  </button>
+                  <span class="min-w-8 h-8 px-2 rounded-lg flex items-center justify-center border border-border-interactive-base text-13-medium text-text-strong tabular-nums">
+                    {state.page}
+                  </span>
+                  <button
+                    type="button"
+                    data-action="p1-page-next"
+                    class="size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover disabled:opacity-40 disabled:hover:bg-surface-base"
+                    aria-label={language.t("p1.page.next")}
+                    disabled={state.loading || state.page >= pages()}
+                    onClick={() => void fill(state.root, state.folder, state.query.trim(), stamp, state.page + 1)}
+                  >
+                    <Icon name="chevron-right" size="small" />
+                  </button>
+                  <select
+                    data-action="p1-page-size"
+                    class="h-8 pl-2 pr-1 rounded-lg border border-border-weaker-base bg-surface-base text-13-regular text-text-strong outline-none"
+                    value={state.filter.size ?? 100}
+                    onChange={(event) => refine({ ...state.filter, size: Number(event.currentTarget.value) })}
+                  >
+                    <For each={[50, 100, 200]}>
+                      {(size) => <option value={size}>{language.t("p1.page.size", { size })}</option>}
+                    </For>
+                  </select>
+                </div>
+              </Show>
+            </div>
             <div
               data-scroll
               class="flex-1 min-h-0 overflow-auto"
@@ -1584,7 +1630,7 @@ export function P1Work() {
                       when={p1.view() === "board"}
                       fallback={
                         <table class="table-fixed text-left border-collapse" style={{ width: `${shown().reduce((sum, col) => sum + size(col), lead)}px`, "min-width": "100%" }} data-component="p1-list">
-                          <thead class="sticky top-0 z-10 bg-background-base">
+                          <thead class="sticky top-0 z-10 bg-[color-mix(in_srgb,var(--text-interactive-base)_13%,var(--background-base))]">
                             <tr class="group/head text-12-medium text-text-weak border-b border-border-weaker-base">
                               {/* P1's two leading columns: a check to pick requirements, and each one's icon. */}
                               <th class="pl-4 pr-1 py-2.5" style={{ width: `${check}px` }}>

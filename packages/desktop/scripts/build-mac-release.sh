@@ -121,7 +121,7 @@ if [[ ! -f "$sidecar" ]]; then
   echo "error: sidecar not found at $sidecar" >&2
   exit 1
 fi
-if ! rg -q 'sicode' "$sidecar"; then
+if ! LC_ALL=C grep -aq 'sicode' "$sidecar"; then
   echo "error: sidecar missing sicode brand (stale opencode binary?)" >&2
   exit 1
 fi

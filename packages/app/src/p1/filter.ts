@@ -22,6 +22,8 @@ export type Filter = {
   sort?: Sort[]
   // The direction each column was last sorted in, by field id, which it takes again when sorted by.
   ways?: Record<string, boolean>
+  // How many requirements a page of the list holds.
+  size?: number
 }
 
 export type Sort = { id: number; down: boolean }

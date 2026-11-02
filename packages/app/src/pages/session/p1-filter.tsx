@@ -185,7 +185,7 @@ export function P1Filter(props: {
             type="button"
             data-action="p1-filter-clear"
             class="h-8 px-2.5 rounded-md text-13-regular text-text-weak hover:bg-surface-raised-base-hover"
-            onClick={() => setState({ ...blank, submitter: state.submitter, group: state.group, sort: state.sort })}
+            onClick={() => setState({ ...blank, submitter: state.submitter, group: state.group, sort: state.sort, size: state.size })}
           >
             {language.t("p1.inline.clear")}
           </button>

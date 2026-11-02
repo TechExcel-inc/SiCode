@@ -490,7 +490,8 @@ export async function bare(
   kind: "links" | "tests",
 ) {
   const next = { ...filter, group: 0, unlinked: kind === "links", untested: kind === "tests" }
-  const list = await requirements(base, token, project, folder, query, locale, [], next, scope)
+  // Asked across the folder rather than by page, so a flag shows on any page's rows.
+  const list = await requirements(base, token, project, folder, query, locale, [], next, scope, { index: 1, size: 1000 })
   return list.rows.map((row) => row.id)
 }
 
@@ -505,6 +506,8 @@ export async function requirements(
   filter: Filter = blank,
   // Whether the list takes in subfolders' requirements and closed folders, as P1's preference settings say.
   scope = { all: true, closed: true },
+  // Which page of the list, and how many requirements a page holds.
+  page = { index: 1, size: 200 },
   http: Http = client(),
 ) {
   const body = (fields: (string | number)[], grouped = true) => ({
@@ -512,8 +515,8 @@ export async function requirements(
     FolderID: folder,
     ShowAll: scope.all ? 1 : 0,
     ShowCloseFolder: scope.closed ? 1 : 0,
-    PageIndex: 1,
-    PageSize: 200,
+    PageIndex: page.index,
+    PageSize: page.size,
     Fields: fields,
     KeyWord: query,
     SupportFieldID: 1,
@@ -534,7 +537,7 @@ export async function requirements(
       body(["ProjectID", "ID", "Title", "Status", "Spec Owner"]),
     )
   })
-  const total = record(data) ? cellNum(data, ["TotalCount"]) : 0
+  const total = counted(data)
   const grouped = readGroups(data)
   // Some groupings have nothing to group by in a project; the list then comes ungrouped.
   // Some groupings P1 leaves to the page: the list then comes ungrouped, and rows with a field to group by
@@ -549,7 +552,7 @@ export async function requirements(
       body(local.includes(filter.group) ? [...new Set([...basic, filter.group])] : basic, false),
     )
     const rows = readRows(flat)
-    const total = Math.max(record(flat) ? cellNum(flat, ["TotalCount"]) : 0, rows.length)
+    const total = Math.max(counted(flat), rows.length)
     return { rows, total, groups: local.includes(filter.group) ? bunch(rows, filter.group) : [] }
   }
   // Some groupings (module owner) send each group's requirement ids but not its rows; those are asked for by id.
@@ -739,6 +742,12 @@ function cellText(row: Record<string, unknown>, keys: string[]) {
     }
   }
   return ""
+}
+
+/** How many requirements the whole list holds, across its pages: P1 sends it beside the rows, under Data or above it. */
+function counted(data: unknown): number {
+  if (!record(data)) return 0
+  return cellNum(data, ["TotalCount"]) || counted(data.Data)
 }
 
 function cellNum(row: Record<string, unknown>, keys: string[]) {
