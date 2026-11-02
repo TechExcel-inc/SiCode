@@ -9,7 +9,7 @@ describe("p1 stories", () => {
     expect(hours("")).toBe(0)
   })
 
-  test("reads a spec's stories with their tasks, and a story's modules from both", () => {
+  test("reads a spec's stories with their tasks, and a story's modules from its spec's module rows", () => {
     const [story] = readStories({
       Success: true,
       Data: [
@@ -59,7 +59,22 @@ describe("p1 stories", () => {
     ])
     expect(story.remain).toBe(1)
     expect(story.target).toBe(5)
-    expect(areas(story).map((item) => item.name)).toEqual(["Web", "API"])
+    // The story's own module until its spec keeps module rows; its tasks' modules stay theirs.
+    expect(areas(story).map((item) => item.name)).toEqual(["Web"])
+    const row = (module: number, name: string) => ({
+      module,
+      name,
+      owner: 0,
+      person: "",
+      points: 0,
+      tasks: 0,
+      time: "",
+      finish: "",
+    })
+    expect(areas(story, [row(11, "API"), row(12, "")], [{ id: 12, name: "Design" }]).map((item) => item.name)).toEqual([
+      "API",
+      "Design",
+    ])
   })
 
   test("starts a task's remaining time at its points, and names a story's module when P1 leaves it out", () => {
@@ -76,7 +91,7 @@ describe("p1 stories", () => {
     ])
     expect(story.tasks[0].remain).toBe(4)
     expect(story.remain).toBe(4)
-    expect(areas(story, [{ id: 10, name: "DevTest Web" }])).toEqual([{ id: 10, name: "DevTest Web" }])
+    expect(areas(story, [], [{ id: 10, name: "DevTest Web" }])).toEqual([{ id: 10, name: "DevTest Web" }])
     expect(areas(story)).toEqual([])
   })
 

@@ -5,7 +5,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
-import { defaults, keep, pinned, type Column } from "@/p1/columns"
+import { defaults, keep, named, pinned, type Column } from "@/p1/columns"
 import { useP1 } from "@/p1/settings"
 import { Frame } from "./p1-item"
 
@@ -195,7 +195,7 @@ export function P1Columns(props: {
       setState("err", message(err))
     })
     setState("busy", false)
-    if (found?.length) flip(() => setState("list", found))
+    if (found?.length) flip(() => setState("list", named(found, language.t("p1.col.priority"))))
   }
 
   const submit = async () => {

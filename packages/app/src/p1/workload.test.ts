@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import { achieved, period, readReviews, readScores, readSummary, reviewed, spans, standing, team } from "./workload"
+import type { Story, Task } from "./stories"
+import {
+  achieved,
+  period,
+  readReviews,
+  readScores,
+  readSummary,
+  reviewed,
+  spans,
+  standing,
+  mean,
+  team,
+  time,
+} from "./workload"
 
 describe("p1 workload", () => {
   test("reads the month's spec points and each member's points, workload and completion", () => {
@@ -34,12 +47,22 @@ describe("p1 workload", () => {
       ],
     })
     expect([got.finished, got.points, got.load]).toEqual([16.23, 440, 11])
-    expect(
-      got.members.map((item) => [item.name, item.spec, item.target, item.task, item.tasks, item.work, item.done]),
-    ).toEqual([
-      ["David He", 44, 20, 46, 20, 230, 35],
-      ["Hui Zhang", 3, 40, 40, 40, 100, 0],
+    expect(got.members.map((item) => [item.name, item.spec, item.target, item.load, item.done])).toEqual([
+      ["David He", 44, 20, 219, 35],
+      ["Hui Zhang", 3, 40, 7, 0],
     ])
+  })
+
+  test("adds up each person's time on the tasks of the stories planned in a tab", () => {
+    const task = (owner: number, spent: number, remain: number) => ({ owner, spent, remain }) as Task
+    const list = [
+      { sub: 41, tasks: [task(3, 2, 1.5), task(4, 1, 0)] },
+      { sub: 42, tasks: [task(3, 0.5, 2)] },
+      { sub: 7, tasks: [task(3, 1, 1)] },
+    ] as Story[]
+    expect(time(list, [41], false)).toEqual({ 3: { spent: 2, remain: 1.5 }, 4: { spent: 1, remain: 0 } })
+    expect(time(list, [41, 42], true)).toEqual({ 3: { spent: 3.5, remain: 4.5 }, 4: { spent: 1, remain: 0 } })
+    expect(time(list, [], false)).toEqual({})
   })
 
   test("reads monthly scores and averages the team's", () => {
@@ -65,6 +88,8 @@ describe("p1 workload", () => {
     expect(team(marks)).toBe(2.2)
     expect(team(marks, [1, 2, 9])).toBe(2.8)
     expect(team({})).toBeUndefined()
+    expect(mean([1, 2, 2])).toBe(1.7)
+    expect(mean([])).toBeUndefined()
     expect(standing(marks, [1, 2, 9])).toEqual({ score: 2.8, high: 3.6, low: 2 })
     expect(standing({})).toBeUndefined()
   })

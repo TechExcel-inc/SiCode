@@ -1,4 +1,5 @@
 import { call } from "./api"
+import type { Story } from "./stories"
 
 /**
  * A roadmap month's workload and performance, as P1's requirement page shows it: the spec points finished
@@ -18,14 +19,11 @@ export type Scope = {
 export type Member = {
   id: number
   name: string
-  // Spec points assigned to the member and their target, and the same for task points.
+  // Spec points assigned to the member and their target.
   spec: number
   target: number
-  task: number
-  tasks: number
-  // Workload against target (spec and task) and % complete, as P1 works them out.
+  // Workload against target and % complete, as P1 works them out.
   load: number
-  work: number
   done: number
 }
 
@@ -48,14 +46,30 @@ export function readSummary(data: unknown): Summary {
         name: String(row.UserName ?? ""),
         spec: num(row.AssignedSpecPoints),
         target: num(row.TargetSpecPoints),
-        task: num(row.TaskPoints),
-        tasks: num(row.TargetTaskPoints),
         load: num(row.Workload),
-        work: num(row.TaskWorkload),
         done: num(row.Complete),
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   }
+}
+
+/**
+ * Each person's time spent and left in a tab, by id: the tasks they own in the stories planned for it, the
+ * way P1 places work in a week, by the sprints that run in it. The whole month also counts stories kept
+ * outside any sprint. P1 keeps time on tasks, so a story's own time isn't counted twice.
+ */
+export function time(stories: Story[], sprints: number[], whole: boolean) {
+  return stories
+    .filter((story) => whole || sprints.includes(story.sub))
+    .flatMap((story) => story.tasks)
+    .reduce(
+      (out, task) => {
+        const prev = out[task.owner] ?? { spent: 0, remain: 0 }
+        out[task.owner] = { spent: round(prev.spent + task.spent), remain: round(prev.remain + task.remain) }
+        return out
+      },
+      {} as Record<number, { spent: number; remain: number }>,
+    )
 }
 
 /** Each member's monthly score out of 10, by member id, for a month like "202610". */
@@ -81,7 +95,11 @@ export function standing(scores: Record<number, number>, ids?: number[]) {
 
 /** The team's score: its members' average monthly score, to one decimal. */
 export function team(scores: Record<number, number>, ids?: number[]) {
-  const list = (ids ?? Object.keys(scores).map(Number)).filter((id) => id in scores).map((id) => scores[id])
+  return mean((ids ?? Object.keys(scores).map(Number)).filter((id) => id in scores).map((id) => scores[id]))
+}
+
+/** The average of a list to one decimal, or undefined when it is empty. */
+export function mean(list: number[]) {
   if (!list.length) return
   return Math.round((list.reduce((sum, value) => sum + value, 0) / list.length) * 10) / 10
 }
@@ -177,7 +195,7 @@ export function period(month: string) {
   return { week: 0, from: day(1 + [1, 0, 6, 5, 4, 3, 2][first]), to: day(last) }
 }
 
-/** The workload of `items` (requirement ids) over a span. */
+/** The workload of `items` (requirement ids) over a span, and the sprints that run in it. */
 export async function summary(base: string, token: string, place: Scope, items: number[], span: Span, locale: string) {
   const date = (value: number) => `${String(value).slice(0, 4)}-${String(value).slice(4, 6)}-${String(value).slice(6)}`
   const subs = await call(base, token, "/DevTrackApi/api/SubProject/QueryChildSubProjects", locale, {
@@ -185,20 +203,21 @@ export async function summary(base: string, token: string, place: Scope, items: 
     SubProjectId: place.dev.space,
     QueryCondition: { PlanDateRange: { From: date(span.from), To: date(span.to) } },
   }).catch(() => [])
+  const sprints = list(subs)
+    .map((row) => num(row.SubProjectId))
+    .filter(Boolean)
   const data = await call(base, token, "/DevSpecAPI/ReqWorkSummary", locale, {
     ProjectID: place.project,
     FolderID: place.folder,
     devTrackProjectID: place.dev.project,
     SpaceID: place.dev.space,
-    SubprojectIDs: list(subs)
-      .map((row) => num(row.SubProjectId))
-      .filter(Boolean),
+    SubprojectIDs: sprints,
     ItemIDs: items,
     startDate: span.from,
     endDate: span.to,
     UserWorkSummary: 0,
   })
-  return readSummary(data)
+  return { ...readSummary(data), sprints }
 }
 
 /** Members' monthly scores out of 10. */

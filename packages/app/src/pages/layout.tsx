@@ -93,6 +93,7 @@ import { type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
 import { RailItem, RailUsage } from "./layout/sidebar-rail"
 import { AccountMenu } from "@/components/account-menu"
+import { TitlebarTools } from "@/components/titlebar-tools"
 import { useEadSignIn } from "@/components/ead-sign-in"
 import { setProjectActions } from "./layout/project-actions"
 import { AllSessions } from "./layout/sidebar-sessions"
@@ -2453,9 +2454,14 @@ export default function Layout(props: ParentProps) {
 
   return (
     <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-      {/* Accounts, Settings, Help and About live in the top bar's account menu, in every view. */}
+      {/* Help, Language and the account menu (accounts, servers, Settings, Help and About) sit at the top bar's right, in every view. */}
       <Titlebar
-        account={<AccountMenu onSignIn={() => openEadSignIn()} onP1={() => go("work")} onSettings={openSettings} />}
+        account={
+          <div class="flex items-center gap-1.5">
+            <TitlebarTools />
+            <AccountMenu onSignIn={() => openEadSignIn()} onP1={() => go("work")} onSettings={openSettings} />
+          </div>
+        }
       />
       <div class="flex-1 min-h-0 min-w-0 flex">
         <div class="flex-1 min-h-0 relative">

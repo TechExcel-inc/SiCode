@@ -22,6 +22,10 @@ type State = {
   filters?: Record<string, Filter>
   // What clicking a field in the list does: edit it where it is, or open the edit panel beside the list.
   edit?: "inline" | "panel"
+  // Whether the workload report shows each person's active work time: AI agent time plus their time working with AI.
+  active?: boolean
+  // Where the list's link warning columns sit: how many of its columns come before each.
+  spots?: Record<string, number>
 }
 
 export type Box = { x: number; y: number; w: number; h?: number }
@@ -55,6 +59,10 @@ export const { use: useP1, provider: P1Provider } = createSimpleContext({
       mode(next: "inline" | "panel") {
         setStore("edit", next)
       },
+      active: () => !!store.active,
+      activate(on: boolean) {
+        setStore("active", on)
+      },
       folded: () => !!store.folded,
       fold(on: boolean) {
         setStore("folded", on)
@@ -65,6 +73,10 @@ export const { use: useP1, provider: P1Provider } = createSimpleContext({
       width: (id: number | string) => store.widths?.[id] as number | undefined,
       size(id: number | string, px?: number) {
         setStore("widths", (all) => ({ ...all, [id]: px }))
+      },
+      spot: (kind: string) => store.spots?.[kind] ?? 0,
+      settle(kind: string, at: number) {
+        setStore("spots", (all) => ({ ...all, [kind]: at }))
       },
       filter: (project: number) => store.filters?.[project] as Filter | undefined,
       refine(project: number, next: Filter) {

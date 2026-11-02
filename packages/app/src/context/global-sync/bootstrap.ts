@@ -71,10 +71,22 @@ export const expired = (error: unknown) => error instanceof Timeout
 
 export function withTimeout<T>(promise: Promise<T>, ms = BOOTSTRAP_TIMEOUT_MS) {
   let timer: ReturnType<typeof setTimeout> | undefined
+  const start = Date.now()
+  // A call still waiting when the window comes back to the front is asked again at once: it was most likely held
+  // up by a macOS access prompt the engine waited on, and answering it is what brought the window back.
+  const back = () => {
+    if (Date.now() - start > 2000) stop(new Timeout("Asked again once the window came back"))
+  }
+  let stop: (err: Error) => void = () => undefined
   const late = new Promise<never>((_, reject) => {
+    stop = reject
     timer = setTimeout(() => reject(new Timeout(`No answer from the engine after ${Math.round(ms / 1000)}s`)), ms)
   })
-  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
+  if (typeof window === "object") window.addEventListener("focus", back)
+  return Promise.race([promise, late]).finally(() => {
+    clearTimeout(timer)
+    if (typeof window === "object") window.removeEventListener("focus", back)
+  })
 }
 
 function runAll(list: Array<() => Promise<unknown>>) {

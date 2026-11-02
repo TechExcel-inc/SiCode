@@ -14,6 +14,14 @@ export const fallback: Column[] = [
   { id: 1131, name: "Points", type: 1 },
 ]
 
+/** Priority Order, which SiCode calls Priority # and shortens to P # in a narrow column. */
+export const priority = 1132
+
+/** Columns with SiCode's own name for P1's field: Priority Order shows as `name`. */
+export function named(list: Column[], name: string) {
+  return list.map((item) => (item.id === priority ? { ...item, name } : item))
+}
+
 /** ID always shows; P1 doesn't let it leave the list. */
 export const pinned = 1112
 

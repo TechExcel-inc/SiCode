@@ -1,18 +1,26 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
-import { Suspense, createMemo, createSignal, lazy, Show } from "solid-js"
+import { Suspense, createMemo, createSignal, lazy, onCleanup, onMount, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 
 const Body = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverBody })))
 
+// The servers, MCP, LSP and plugins popup opens from the account menu, so it is shared; `here` says whether a view
+// has placed it in the top bar to open from.
+const [shown, setShown] = createSignal(false)
+const [here, setHere] = createSignal(0)
+export const status = { open: () => setShown(true), ready: () => here() > 0 }
+
+/** The servers, MCP, LSP and plugins popup, opened from the account menu and shown under the top bar's right end. */
 export function StatusPopover() {
   const language = useLanguage()
   const server = useServer()
   const sync = useSync()
-  const [shown, setShown] = createSignal(false)
+  onMount(() => setHere((count) => count + 1))
+  onCleanup(() => setHere((count) => count - 1))
   const ready = createMemo(() => server.healthy() === false || sync.data.mcp_ready)
   const healthy = createMemo(() => {
     const serverHealthy = server.healthy() === true
@@ -28,7 +36,9 @@ export function StatusPopover() {
       triggerAs={Button}
       triggerProps={{
         variant: "ghost",
-        class: "titlebar-icon w-8 h-6 p-0 box-border",
+        // No button of its own: only where the popup hangs from.
+        class: "w-0 h-6 p-0 overflow-hidden opacity-0 pointer-events-none",
+        tabIndex: -1,
         "aria-label": language.t("status.popover.trigger"),
         style: { scale: 1 },
       }}

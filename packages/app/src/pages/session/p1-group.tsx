@@ -4,7 +4,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import type { Choice } from "@/p1/points"
 import { layer } from "./p1-pop"
-import { Tip } from "./p1-tip"
 
 /** An icon for each way the requirement list can be grouped, drawn on a 16px grid in the current color. */
 export function Grouping(props: { id: number }) {
@@ -63,32 +62,35 @@ export function Grouping(props: { id: number }) {
   )
 }
 
-/** The requirement list's Group By button: shows the grouping in use, and picks another from a short menu. */
+/**
+ * The requirement list's Group by field: reads "Group by" until a grouping is chosen, then that grouping's name,
+ * and picks another from a short menu.
+ */
 export function P1Group(props: { value: number; items: Choice[]; disabled?: boolean; onPick: (id: number) => void }) {
   const language = useLanguage()
   const [at, setAt] = createSignal<DOMRect>()
-  const name = () => props.items.find((item) => item.id === props.value)?.name ?? ""
+  const name = () => (props.value ? props.items.find((item) => item.id === props.value)?.name : undefined)
 
   return (
-    <div class="relative group/tip shrink-0">
+    <div class="shrink-0">
       <button
         type="button"
         data-action="p1-group"
-        class="size-8 rounded-lg flex items-center justify-center border bg-surface-base hover:text-text-strong"
+        class="h-8 min-w-36 pl-3 pr-2 rounded-lg flex items-center gap-2 border bg-surface-base text-13-regular hover:bg-surface-base-hover"
         classList={{
-          "text-text-interactive-base border-border-interactive-base": !!props.value,
-          "text-text-weak border-border-weaker-base": !props.value,
+          "text-text-strong border-border-interactive-base": !!name(),
+          "text-text-weak border-border-weaker-base": !name(),
+          "bg-surface-base-hover": !!at(),
         }}
         disabled={props.disabled}
         aria-label={language.t("p1.filter.group")}
-        aria-pressed={!!props.value}
+        aria-haspopup="menu"
+        aria-expanded={!!at()}
         onClick={(event) => setAt(event.currentTarget.getBoundingClientRect())}
       >
-        <Grouping id={props.value} />
+        <span class="flex-1 text-left whitespace-nowrap">{name() ?? language.t("p1.filter.group")}</span>
+        <Icon name="chevron-down" size="small" class="shrink-0 text-icon-base" />
       </button>
-      <Show when={!at()}>
-        <Tip side="left" rows={[[language.t("p1.filter.group"), name()]]} />
-      </Show>
       <Show when={at()}>
         {(rect) => (
           <Pick
@@ -116,7 +118,7 @@ function Pick(props: {
 }) {
   const language = useLanguage()
   const stack = layer()
-  const width = 264
+  const width = Math.max(220, props.at.width)
   const left = Math.max(16, Math.min(props.at.left, window.innerWidth - width - 16))
 
   onMount(() => {

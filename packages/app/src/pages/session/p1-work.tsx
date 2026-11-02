@@ -1,9 +1,10 @@
-import { For, Show, createEffect, createMemo, on, onCleanup, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, on, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
 import {
   children,
@@ -17,6 +18,7 @@ import {
   pins,
   projects,
   requirements,
+  bare,
   root,
   space,
   states,
@@ -32,21 +34,26 @@ import { P1Item } from "./p1-item"
 import { P1Folder } from "./p1-folder"
 import { P1Columns } from "./p1-columns"
 import { P1Stories } from "./p1-stories"
-import { P1Inline, prime } from "./p1-inline"
+import { change, edit as retitle, field as fields, listed as roster, type Story, type Task } from "@/p1/stories"
+import { Menu, P1Inline, prime } from "./p1-inline"
 import { P1Filter } from "./p1-filter"
 import { P1Group } from "./p1-group"
 import { P1Prefs, tint } from "./p1-prefs"
 import { keep as prefer, plain, prefs, type Prefs } from "@/p1/prefs"
-import { FolderType, Panel, SpecIcon, typed } from "./p1-icons"
+import { FolderType, Panel, SpecIcon, StoryIcon, TaskIcon, Unlinked, Untested, typed } from "./p1-icons"
+import { Tip } from "./p1-tip"
 import { P1Workload } from "./p1-workload"
 import { P1Attach } from "./p1-attach"
 import { useOpener } from "./p1-files"
 import { specIcon } from "@/p1/files"
-import { Tip } from "./p1-tip"
 import { period, scores, standing, summary, type Scope } from "@/p1/workload"
-import { active, blank, bucket, month, type Filter, type Status } from "@/p1/filter"
+import { active, blank, bucket, flip, month, resort, way, type Filter, type Sort, type Status } from "@/p1/filter"
 import { members, type Choice } from "@/p1/points"
-import { columns, fallback, keep, type Column } from "@/p1/columns"
+import { mine, range } from "@/p1/board"
+import { update } from "@/p1/form"
+import { showToast } from "@opencode-ai/ui/toast"
+import { P1Board, prio, type Lane } from "./p1-board"
+import { columns, fallback, keep, named, priority, type Column } from "@/p1/columns"
 import { access, roadmap, type Place, type Shape } from "@/p1/folder"
 import { fixedField, warm } from "@/p1/form"
 
@@ -103,11 +110,12 @@ export function P1Work() {
   const slot = (col: Column) => {
     const drag = state.move
     if (!drag) return
-    const from = state.cols.findIndex((item) => item.id === drag.id)
+    const list = shown()
+    const from = list.findIndex((item) => item.id === drag.id)
     if (drag.to === from || drag.to === from + 1) return
-    const at = state.cols.findIndex((item) => item.id === col.id)
+    const at = list.findIndex((item) => item.id === col.id)
     if (drag.to === at) return "left"
-    if (drag.to === state.cols.length && at === state.cols.length - 1) return "right"
+    if (drag.to === list.length && at === list.length - 1) return "right"
   }
   const move = (event: PointerEvent, col: Column) => {
     if (event.button !== 0) return
@@ -171,13 +179,24 @@ export function P1Work() {
       document.body.style.cursor = ""
       const drag = state.move
       setState("move", undefined)
+      // A click that never lifted the column sorts the list by it in the list's current direction, or reads
+      // the list again when it is already sorted by it.
+      if (!held.lifted && !flag(col.id)) return sort(resort(state.filter.sort, col.id))
       if (!drag) return
-      const from = state.cols.findIndex((item) => item.id === drag.id)
+      const all = shown()
+      const from = all.findIndex((item) => item.id === drag.id)
       if (drag.to === from || drag.to === from + 1) return
-      const prev = state.cols
-      const rest = prev.filter((item) => item.id !== drag.id)
+      const rest = all.filter((item) => item.id !== drag.id)
       const at = drag.to > from ? drag.to - 1 : drag.to
-      const list = [...rest.slice(0, at), prev[from], ...rest.slice(at)]
+      const order = [...rest.slice(0, at), all[from], ...rest.slice(at)]
+      // A warning column keeps its place here, as how many of P1's columns come before it; P1 keeps the rest.
+      for (const [index, item] of order.entries()) {
+        const kind = flag(item.id)
+        if (kind) p1.settle(kind, order.slice(0, index).filter((other) => !flag(other.id)).length)
+      }
+      const prev = state.cols
+      const list = order.filter((item) => !flag(item.id))
+      if (list.every((item, index) => item.id === prev[index]?.id)) return
       setState("cols", list)
       keep(p1.server(), p1.token(), state.root, p1.user(), list, language.locale()).catch(() => setState("cols", prev))
     }
@@ -188,7 +207,8 @@ export function P1Work() {
   const opener = useOpener()
   const every = () => state.rows.length > 0 && state.rows.every((row) => state.checked[row.id])
   const some = () => state.rows.some((row) => state.checked[row.id])
-  const size = (col: Column) => Math.max(least(col), state.sizes[col.id] ?? p1.width(col.id) ?? wide(col.id))
+  const size = (col: Column) =>
+    flag(col.id) ? warn : Math.max(least(col), state.sizes[col.id] ?? p1.width(col.id) ?? wide(col.id))
   const fit = (col: Column) => {
     const px = `${size(col)}px`
     return { width: px, "min-width": px, "max-width": px }
@@ -211,6 +231,14 @@ export function P1Work() {
     rows: [] as Row[],
     total: 0,
     space: undefined as Space | undefined,
+    // Each requirement's stories, read for the board's cards when it is grouped by spec and story owner.
+    tales: {} as Record<number, Story[]>,
+    // The people a story's owner is picked from on the board.
+    crew: [] as Choice[],
+    // The requirements P1 finds with no linked requirements, and with no linked test cases, flagged when asked.
+    warn: { links: [] as number[], tests: [] as number[] },
+    // The list's story or task whose owner is being picked, under its owner's name.
+    swap: undefined as { spec: number; story: Story; task?: Task; at: DOMRect } | undefined,
     // The closed folder tree shown over the list while you hover its icon.
     peek: false,
     // The folder tree's width while its edge is being dragged.
@@ -253,6 +281,8 @@ export function P1Work() {
     move: undefined as { id: number; to: number } | undefined,
     // The list cell being edited in place.
     typing: undefined as { id: number; col: number } | undefined,
+    // Board cards whose new priority # P1 is still saving.
+    saving: {} as Record<number, boolean>,
     points: undefined as { id: number; x: number; y: number } | undefined,
     // The requirements checked in the list, and the one whose icon menu is open, by the icon it opened from.
     checked: {} as Record<number, boolean>,
@@ -331,11 +361,280 @@ export function P1Work() {
         .catch(() => undefined)
     }),
   )
-  const lanes = createMemo(() => {
+  // The board's columns: the list's groups that hold cards when it is grouped, otherwise one column for each status. Grouped by
+  // priority #, each column's cards run in priority # order.
+  // P1 sends only the priority # groups that hold work; a week a card is moved into joins them then.
+  const pads = createMemo((): Group[] => {
+    if (state.filter.group !== 1132 || !state.groups.length) return []
+    const have = state.groups.map((group) => range(group.name)?.lo)
+    return [0, 10, 20, 30, 40, 50]
+      .filter((lo) => !have.includes(lo))
+      .map((lo) => ({
+        key: `1132-pad-${lo}`,
+        by: 1132,
+        name: `Priority Order: ${lo} - ${lo + 9}`,
+        count: 0,
+        ids: [],
+        points: 0,
+      }))
+  })
+  const lanes = createMemo((): Lane[] => {
+    const when = folder()?.months ? month(folder()!.months!) : undefined
+    const sorted = (rows: Row[]) => (state.filter.group === 1132 ? rows.toSorted((a, b) => prio(a) - prio(b)) : rows)
+    const start = (group: Group) => range(group.name)?.lo ?? Infinity
+    if (state.groups.length)
+      return state.groups
+        .toSorted((a, b) => (state.filter.group === 1132 ? start(a) - start(b) : 0))
+        .map((group) => ({
+        key: group.key,
+        title: label(group, when, language),
+        name: group.name,
+        who: state.filter.group === 1604 ? Number(group.key.split("-")[1]) || undefined : undefined,
+        rows: sorted(state.rows.filter((row) => group.ids.includes(row.id))),
+      }))
+        // A group without cards takes no column, leaving the room to the groups that have them.
+        .filter((lane) => lane.rows.length)
     const groups = new Map<string, Row[]>()
     for (const row of state.rows) groups.set(row.status, [...(groups.get(row.status) ?? []), row])
-    return [...groups].map(([status, rows]) => ({ status, rows }))
+    return [...groups].map(([status, rows]) => ({ key: status, title: status || language.t("p1.status.none"), rows }))
   })
+
+  // With stories on, the board's cards and the list's rows show their stories, read for each requirement once per list.
+  createEffect(
+    on(
+      () => [!!state.filter.stories, state.rows] as const,
+      ([shown, rows]) => {
+        const host = p1.server()
+        if (!shown || !host) return
+        const root = state.root
+        const project = chosen()
+        if (!state.crew.length && project && state.space?.dev)
+          void members(host, p1.token(), { base: project.base, space: project.id, dev: state.space.dev }, language.locale())
+            .then((list) => setState("crew", list))
+            .catch(() => undefined)
+        for (const row of rows.filter((row) => !state.tales[row.id])) {
+          setState("tales", row.id, [])
+          void roster(host, p1.token(), root, row.id, language.locale())
+            .then((list) => state.root === root && setState("tales", row.id, list))
+            .catch(() => undefined)
+        }
+      },
+    ),
+  )
+
+  // A story's new owner from its board chip: shown at once, and the spec's stories read again when P1 refuses.
+  const assign = async (spec: number, story: Story, owner: number) => {
+    const person = state.crew.find((item) => item.id === owner)?.name ?? ""
+    setState("tales", spec, (list) => list.map((item) => (item.id === story.id ? { ...item, owner, person } : item)))
+    await retitle(p1.server(), p1.token(), story, { CurrentOwnerId: owner }, language.locale()).catch((err: unknown) => {
+      showToast({ variant: "error", title: `#${spec}`, description: err instanceof Error ? err.message : String(err) })
+      void roster(p1.server(), p1.token(), state.root, spec, language.locale())
+        .then((list) => setState("tales", spec, list))
+        .catch(() => undefined)
+    })
+  }
+
+  // A task's new owner from the board, the same way.
+  const delegate = async (spec: number, story: Story, task: Task, owner: number) => {
+    const person = state.crew.find((item) => item.id === owner)?.name ?? ""
+    setState("tales", spec, (list) =>
+      list.map((item) =>
+        item.id === story.id
+          ? { ...item, tasks: item.tasks.map((one) => (one.id === task.id ? { ...one, owner, person } : one)) }
+          : item,
+      ),
+    )
+    await change(p1.server(), p1.token(), story.project, task.id, fields.owner, owner, language.locale()).catch(
+      (err: unknown) => {
+        showToast({ variant: "error", title: `#${spec}`, description: err instanceof Error ? err.message : String(err) })
+        void roster(p1.server(), p1.token(), state.root, spec, language.locale())
+          .then((list) => setState("tales", spec, list))
+          .catch(() => undefined)
+      },
+    )
+  }
+
+  // The list's sort, newest requirement first until a column is picked, and where a column stands in it; only
+  // the first shows, while the one before it still settles ties.
+  const sorting = () => (state.filter.sort?.length ? state.filter.sort : [{ id: 1112, down: true }])
+  const rank = (id: number) => sorting().findIndex((item) => item.id === id)
+
+  // Sorts the list, remembering the direction of the column it now sorts by.
+  const sort = (next: Sort[]) =>
+    refine({ ...state.filter, sort: next, ways: { ...state.filter.ways, [next[0].id]: next[0].down } })
+
+  // The list's columns as shown: P1's, with a warning column for each link check that is on, where you put it.
+  const shown = createMemo(() => {
+    const marks = [
+      ...(state.filter.unlinked ? (["links"] as const) : []),
+      ...(state.filter.untested ? (["tests"] as const) : []),
+    ].map((kind) => ({
+      col: { id: kind === "links" ? -1 : -2, name: language.t(`p1.warn.${kind}`), type: 0 } as Column,
+      at: Math.min(p1.spot(kind), state.cols.length),
+    }))
+    const before = (at: number) => marks.filter((item) => item.at === at).map((item) => item.col)
+    return [...state.cols.flatMap((col, index) => [...before(index), col]), ...before(state.cols.length)]
+  })
+  const Flag = (flag: { kind: "links" | "tests"; up?: boolean }) => (
+    <span class="relative group/tip inline-flex" tabIndex={0} aria-label={language.t(`p1.warn.${flag.kind}`)}>
+      <Show when={flag.kind === "links"} fallback={<Untested />}>
+        <Unlinked />
+      </Show>
+      <Tip text={language.t(`p1.warn.${flag.kind}`)} side="left" up={flag.up} />
+    </span>
+  )
+
+  // A requirement's stories in the list: under a person's group, the ones they own when they own any.
+  const kids = (id: number, group?: Group) => {
+    const list = state.tales[id] ?? []
+    return group?.by === 1604 ? mine(list, Number(group.key.split("-")[1]) || undefined) : list
+  }
+
+  // A story's or task's row under its requirement in the list: its name and % finish under Title, its owner
+  // (who can be changed) under the owner, and its time spent and left under Points; a click opens the spec's stories.
+  const Kid = (kid: { spec: number; story: Story; task?: Task }) => {
+    const item = () => kid.task ?? kid.story
+    const finish = () => Math.max(0, Math.min(100, item().finish))
+    const has = (id: number) => state.cols.some((col) => col.id === id)
+    const Owner = () => (
+      <button
+        type="button"
+        data-action={kid.task ? "p1-task-owner" : "p1-story-owner"}
+        class="max-w-full truncate rounded px-1 -mx-1 text-text-weak group-hover/kid:text-text-base hover:!text-text-strong hover:bg-surface-raised-base-hover disabled:hover:bg-transparent"
+        classList={{ "!text-text-strong": state.swap?.story.id === kid.story.id && state.swap?.task?.id === kid.task?.id }}
+        disabled={state.level < 2}
+        onClick={(event) => {
+          event.stopPropagation()
+          setState("swap", { spec: kid.spec, story: kid.story, task: kid.task, at: event.currentTarget.getBoundingClientRect() })
+        }}
+      >
+        {item().person || language.t("p1.group.unassigned")}
+      </button>
+    )
+    const Time = () => (
+      <span class="tabular-nums text-text-base whitespace-nowrap">
+        {item().spent.toFixed(1)}h<span class="text-text-weak"> / </span>
+        {item().remain.toFixed(1)}h
+      </span>
+    )
+    return (
+      <tr
+        data-action={kid.task ? "p1-task" : "p1-story"}
+        class="group/kid border-b border-border-weaker-base bg-surface-base/40 hover:bg-surface-base-hover cursor-pointer text-12-regular"
+        onClick={(event) => setState("points", { id: kid.spec, x: event.clientX, y: event.clientY })}
+      >
+        <td />
+        <td />
+        <For each={shown()}>
+          {(col) => (
+            <td
+              class="px-4 py-2 align-middle overflow-hidden"
+              classList={{ "text-right": numeric(col.id) }}
+              style={fit(col)}
+            >
+              <Switch>
+                <Match when={col.id === 1101}>
+                  <div class="flex items-start gap-2" classList={{ "pl-5": !kid.task, "pl-11": !!kid.task }}>
+                    <span class="shrink-0 flex h-4 items-center [&>svg]:size-3.5">
+                      <Show when={kid.task} fallback={<StoryIcon />}>
+                        <TaskIcon />
+                      </Show>
+                    </span>
+                    <span class="min-w-0 flex-1 line-clamp-2 leading-4 text-text-base">{item().name}</span>
+                    <Show when={!has(1113)}>
+                      <span class="shrink-0 max-w-28">
+                        <Owner />
+                      </span>
+                    </Show>
+                    <Show when={!has(1131)}>
+                      <Time />
+                    </Show>
+                    <span class="shrink-0 flex items-center gap-2 h-4">
+                      <span class="h-1 w-10 rounded-full bg-background-base overflow-hidden">
+                        <span
+                          class="block h-full rounded-full"
+                          classList={{ "bg-surface-info-strong": !kid.task, "bg-surface-success-strong": !!kid.task }}
+                          style={{ width: `${finish()}%` }}
+                        />
+                      </span>
+                      <span class="min-w-8 text-right tabular-nums text-text-strong">{finish()}%</span>
+                    </span>
+                  </div>
+                </Match>
+                <Match when={col.id === 1112}>
+                  <span class="font-mono text-text-weak">{kid.task ? `#${kid.task.id}` : kid.story.tag || `#${kid.story.id}`}</span>
+                </Match>
+                <Match when={col.id === 1113}>
+                  <Owner />
+                </Match>
+                <Match when={col.id === 1131}>
+                  <Time />
+                </Match>
+              </Switch>
+            </td>
+          )}
+        </For>
+      </tr>
+    )
+  }
+
+  // Moves a requirement into a priority # group, out of the one it was in, keeping the groups in priority # order.
+  const regroup = (id: number, key: string) =>
+    setState("groups", (list) =>
+      [...list, ...pads().filter((group) => group.key === key && !list.some((item) => item.key === key))].map((group) => {
+        const has = group.ids.includes(id)
+        if (group.key === key) return has ? group : { ...group, ids: [...group.ids, id], count: group.count + 1 }
+        return has ? { ...group, ids: group.ids.filter((item) => item !== id), count: group.count - 1 } : group
+      })
+        // A week first filled by this move takes its place among the others.
+        .toSorted((a, b) => (range(a.name)?.lo ?? Infinity) - (range(b.name)?.lo ?? Infinity)),
+    )
+
+  // A card dropped on the board: it takes its new place and priority # at once, and P1 saves the priority #.
+  // When P1 refuses, the list reloads as P1 has it.
+  const drop = async (id: number, key: string, at: number, value: number) => {
+    const row = state.rows.find((item) => item.id === id)
+    if (!row) return
+    const moved = { ...row, cells: { ...row.cells, 1132: String(value) } }
+    const order = lanes().flatMap((lane) => {
+      const rest = lane.rows.filter((item) => item.id !== id)
+      return lane.key === key ? [...rest.slice(0, at), moved, ...rest.slice(at)] : rest
+    })
+    setState("rows", [...order, ...state.rows.filter((item) => item.id !== id && !order.includes(item))])
+    regroup(id, key)
+    if (String(value) === (row.cells[1132] ?? "")) return
+    setState("saving", id, true)
+    const host = p1.server()
+    const token = p1.token()
+    const locale = language.locale()
+    const ok = await prime(host, token, state.root, id, p1.user(), locale)
+      .then((found) =>
+        update(host, token, { project: state.root, id, folder: found.folder, update: found.update, values: [{ ID: 1132, Value: value }] }, locale),
+      )
+      .then(() => true)
+      .catch((err: unknown) => {
+        showToast({ variant: "error", title: `#${id}`, description: err instanceof Error ? err.message : String(err) })
+        return false
+      })
+    setState("saving", id, false)
+    if (ok) return void prime(host, token, state.root, id, p1.user(), locale, true).catch(() => undefined)
+    void fill(state.root, state.folder, state.query.trim())
+  }
+
+  // A field edited on a card: the card shows the new value, and a new priority # moves it to that group.
+  const edited = (row: Row, col: number, text: string) => {
+    setState("rows", (item) => item.id === row.id, "cells", col, text)
+    if (col === 1101) setState("rows", (item) => item.id === row.id, "title", text)
+    if (col === 1113) setState("rows", (item) => item.id === row.id, "owner", text)
+    if (col === 1131) setState("rows", (item) => item.id === row.id, "points", text)
+    if (col !== 1132 || state.filter.group !== 1132) return
+    const value = parseFloat(text) || 0
+    const group = [...state.groups, ...pads()].find((item) => {
+      const span = range(item.name)
+      return span && value >= span.lo && value <= span.hi
+    })
+    if (group) regroup(row.id, group.key)
+  }
 
   const sign = async () => {
     const user = state.user.trim()
@@ -389,7 +688,8 @@ export function P1Work() {
     if (found) {
       const got = await columns(host, token, found.project, language.locale()).catch(() => undefined)
       if (mark !== stamp) return
-      setState({ cols: got?.chosen ?? fallback, pool: got?.pool ?? [] })
+      const name = language.t("p1.col.priority")
+      setState({ cols: named(got?.chosen ?? fallback, name), pool: named(got?.pool ?? [], name) })
     }
     if (!found) {
       setState({ loading: false, folders: {}, kids: {}, open: {}, top: [], rows: [], total: 0, folder: 0, root: 0, space: undefined })
@@ -539,6 +839,14 @@ export function P1Work() {
     void access(host, token, root, folder, language.locale())
       .then((level) => setState("level", level))
       .catch(() => setState("level", 0))
+    // The link checks flag requirements rather than narrowing the list: P1 says which ones lack links,
+    // asked alongside the list.
+    const scope = { all: !state.prefs.current, closed: state.prefs.closed }
+    const flag = (on: boolean, kind: "links" | "tests") =>
+      on
+        ? bare(host, token, root, folder, query, language.locale(), state.filter, scope, kind).catch(() => [] as number[])
+        : Promise.resolve([] as number[])
+    const flagged = Promise.all([flag(state.filter.unlinked, "links"), flag(state.filter.untested, "tests")])
     const list = await requirements(
       host,
       token,
@@ -548,13 +856,19 @@ export function P1Work() {
       language.locale(),
       state.cols.map((col) => col.id),
       // Weekly committed work only groups a folder that spans roadmap months, as in P1.
-      state.filter.group === 1132 && !state.folders[folder]?.months ? { ...state.filter, group: 0 } : state.filter,
-      { all: !state.prefs.current, closed: state.prefs.closed },
+      {
+        ...state.filter,
+        unlinked: false,
+        untested: false,
+        group: state.filter.group === 1132 && !state.folders[folder]?.months ? 0 : state.filter.group,
+      },
+      scope,
     ).catch((err: unknown) => {
       if (mark === stamp && mine === wave) fail(err)
     })
+    const [links, tests] = await flagged
     if (mark !== stamp || mine !== wave || !list) return
-    setState({ rows: list.rows, total: list.total, groups: list.groups, loading: false, err: "", checked: {} })
+    setState({ rows: list.rows, total: list.total, groups: list.groups, loading: false, err: "", checked: {}, tales: {}, warn: { links, tests } })
     // Get the requirement dialogs ready for this project and folder while the list is read.
     warm(host, token, root, folder, list.rows[0]?.id ?? 0, p1.user(), language.locale())
   }
@@ -750,10 +1064,10 @@ export function P1Work() {
   // owner only where a development project owns the modules.
   const groupings = () => [
     { id: 0, name: language.t("p1.filter.none") },
-    ...(folder()?.months ? [{ id: 1132, name: language.t("p1.filter.weekly") }] : []),
-    { id: 1113, name: state.pool.find((col) => col.id === 1113)?.name || language.t("p1.filter.owner") },
-    ...(state.space?.dev ? [{ id: 1604, name: language.t("p1.filter.module") }] : []),
-    { id: 1110, name: state.pool.find((col) => col.id === 1110)?.name || language.t("p1.filter.created") },
+    ...(folder()?.months ? [{ id: 1132, name: language.t("p1.groupby.weekly") }] : []),
+    { id: 1113, name: language.t("p1.groupby.spec") },
+    ...(state.space?.dev ? [{ id: 1604, name: language.t("p1.groupby.story") }] : []),
+    { id: 1110, name: language.t("p1.groupby.submitted") },
   ]
 
   // A closed folder shows only while the settings say to show closed folders.
@@ -783,12 +1097,13 @@ export function P1Work() {
     void fill(state.root, state.folder, state.query.trim())
   }
 
-  // Opens the filter once the people and states it offers are in, from P1 for this project and folder.
+  // Opens the filter at once; the people and states it offers fill in as P1 sends them for this project and folder.
   const sift = async (at: DOMRect) => {
     const host = p1.server()
     const token = p1.token()
     const project = chosen()
     const locale = language.locale()
+    setState({ sift: at, choices: { ...state.choices, members: state.space?.dev ? (state.choices.members ?? []) : undefined } })
     const [who, how, team] = await Promise.all([
       owners(host, token, state.root, state.folder, locale).catch(() => [] as Choice[]),
       states(host, token, state.root, locale).catch(() => [] as Status[]),
@@ -796,7 +1111,7 @@ export function P1Work() {
         ? members(host, token, { base: project.base, space: project.id, dev: state.space.dev }, locale).catch(() => [] as Choice[])
         : Promise.resolve(undefined),
     ])
-    setState({ choices: { owners: who, states: how, members: team }, sift: at })
+    setState("choices", { owners: who, states: how, members: team })
   }
 
   // The list's rows under their groups when it is grouped, each group's rows hidden while it is folded shut.
@@ -1077,6 +1392,19 @@ export function P1Work() {
             />
             <span class="shrink-0 text-12-regular text-text-weaker">⌘K</span>
           </label>
+          {/* Reads the projects again when none loaded, else the folder's requirements. */}
+          <Tooltip placement="bottom" value={language.t("p1.refresh")}>
+            <button
+              type="button"
+              data-action="p1-refresh"
+              class="size-7 shrink-0 rounded-md flex items-center justify-center text-icon-base hover:text-text-strong hover:bg-surface-raised-base-hover disabled:opacity-50"
+              aria-label={language.t("p1.refresh")}
+              disabled={state.loading}
+              onClick={() => (state.project && state.root ? void fill(state.root, state.folder, state.query.trim()) : void load())}
+            >
+              <Icon name="reset" size="small" classList={{ "animate-spin": state.loading }} />
+            </button>
+          </Tooltip>
         </div>
         </Portal>
         <Show when={state.err}>
@@ -1142,10 +1470,12 @@ export function P1Work() {
               <button
                 type="button"
                 data-action="p1-filter"
-                class="shrink-0 relative size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base hover:text-text-strong"
+                class="shrink-0 relative size-8 rounded-lg flex items-center justify-center border transition-colors"
                 classList={{
-                  "text-text-interactive-base border-border-interactive-base": active(state.filter),
-                  "text-text-weak": !active(state.filter),
+                  "bg-surface-interactive-base border-transparent text-text-on-interactive-base hover:opacity-90":
+                    active(state.filter),
+                  "border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover":
+                    !active(state.filter),
                 }}
                 disabled={!state.root}
                 aria-label={language.t("p1.filter.title")}
@@ -1153,13 +1483,14 @@ export function P1Work() {
                 aria-pressed={active(state.filter)}
                 onClick={(event) => void sift(event.currentTarget.getBoundingClientRect())}
               >
-                <Icon name="sliders" size="small" />
+                <Icon name="sliders" size="small" class="[&_path]:[stroke-width:1.75]" />
               </button>
               <P1Group
                 value={groupings().some((item) => item.id === state.filter.group) ? state.filter.group : 0}
                 items={groupings()}
                 disabled={!state.root}
-                onPick={(group) => refine({ ...state.filter, group })}
+                // Grouping by spec and story owner is about stories, so it turns them on.
+                onPick={(group) => refine({ ...state.filter, group, stories: group === 1604 || state.filter.stories })}
               />
               <Button
                 variant="primary"
@@ -1172,34 +1503,10 @@ export function P1Work() {
                 {language.t("p1.new")}
               </Button>
               <div class="flex-1" />
-              {/* The month's workload and the team's score, for the selected roadmap month folder: a label over a bar,
-              with the numbers on hover. Either opens the report. */}
+              {/* The team's score for the selected roadmap month folder: a label over a bar, with the numbers on hover.
+              It opens the workload and performance report. */}
               <Show when={work()}>
                 <div class="shrink-0 flex items-center gap-2">
-                  <div class="relative group/tip">
-                    <button
-                      type="button"
-                      data-action="p1-work-points"
-                      class={gauge}
-                      aria-label={language.t("p1.work.load")}
-                      onClick={() => setState("report", true)}
-                    >
-                      <span class="text-11-medium text-text-weak">{language.t("p1.work.load")}</span>
-                      <span class="w-full h-1.5 rounded-full bg-border-weak-base overflow-hidden">
-                        <span
-                          class="block h-full min-w-1 rounded-full bg-gradient-to-r from-[#5b8def] to-[#3a6ff0]"
-                          style={{ width: `${Math.min(100, state.work?.load ?? 0)}%` }}
-                        />
-                      </span>
-                    </button>
-                    <Tip
-                      rows={[
-                        [language.t("p1.work.load"), `${Number((state.work?.load ?? 0).toFixed(2))}%`],
-                        [language.t("p1.work.committed"), String(state.work?.finished ?? 0)],
-                        [language.t("p1.work.capacity"), String(state.work?.points ?? 0)],
-                      ]}
-                    />
-                  </div>
                   <div class="relative group/tip">
                     <button
                       type="button"
@@ -1276,7 +1583,7 @@ export function P1Work() {
                     <Show
                       when={p1.view() === "board"}
                       fallback={
-                        <table class="table-fixed text-left border-collapse" style={{ width: `${state.cols.reduce((sum, col) => sum + size(col), lead)}px`, "min-width": "100%" }} data-component="p1-list">
+                        <table class="table-fixed text-left border-collapse" style={{ width: `${shown().reduce((sum, col) => sum + size(col), lead)}px`, "min-width": "100%" }} data-component="p1-list">
                           <thead class="sticky top-0 z-10 bg-background-base">
                             <tr class="group/head text-12-medium text-text-weak border-b border-border-weaker-base">
                               {/* P1's two leading columns: a check to pick requirements, and each one's icon. */}
@@ -1298,12 +1605,14 @@ export function P1Work() {
                                 />
                               </th>
                               <th style={{ width: `${mark}px` }} />
-                              <For each={state.cols}>
+                              <For each={shown()}>
                                 {(col) => (
                                   <th
                                     data-col={col.id}
-                                    class="relative px-4 py-2.5 font-medium whitespace-nowrap overflow-hidden text-ellipsis cursor-grab select-none"
+                                    class="group/th relative py-2.5 font-medium whitespace-nowrap cursor-grab select-none"
                                     classList={{
+                                      "px-4 overflow-hidden text-ellipsis": !flag(col.id),
+                                      "px-1 text-center": !!flag(col.id),
                                       "text-right": numeric(col.id),
                                       "opacity-30": state.move?.id === col.id,
                                       "shadow-[inset_3px_0_0_var(--border-interactive-base)]": slot(col) === "left",
@@ -1312,9 +1621,69 @@ export function P1Work() {
                                     style={fit(col)}
                                     onPointerDown={(event) => move(event, col)}
                                   >
-                                    {col.name}
+                                    {/* A warning column's heading is its icon, and it keeps its width. */}
+                                    <Show
+                                      when={flag(col.id)}
+                                      fallback={
+                                        <span class="flex w-full items-center gap-1.5" classList={{ "justify-end": numeric(col.id) }}>
+                                          <span class="min-w-0 truncate" classList={{ "flex-1": !numeric(col.id) }}>
+                                            {col.id === priority && size(col) < 112 ? "P #" : col.name}
+                                          </span>
+                                          {/* The column the list is sorted by shows its direction at its far right, as in P1;
+                                              a click turns it around. */}
+                                          <Show when={rank(col.id) === 0}>
+                                            <button
+                                              type="button"
+                                              data-action="p1-sort-flip"
+                                              class="shrink-0 size-5 -my-1 -mr-1.5 rounded flex items-center justify-center text-icon-interactive-base hover:bg-surface-base-hover"
+                                              aria-label={language.t("p1.sort.flip")}
+                                              onPointerDown={(event) => event.stopPropagation()}
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                sort(flip(state.filter.sort))
+                                              }}
+                                            >
+                                              <svg
+                                                class="size-2.5"
+                                                classList={{ "rotate-180": sorting()[0].down }}
+                                                viewBox="0 0 10 10"
+                                                aria-hidden="true"
+                                              >
+                                                <path d="M5 2.25L9 7.75H1L5 2.25Z" fill="currentColor" />
+                                              </svg>
+                                            </button>
+                                          </Show>
+                                          {/* Any other column shows, while pointed at, its own direction: clicking the
+                                              triangle sorts by the column that way. */}
+                                          <Show when={rank(col.id) !== 0}>
+                                            <button
+                                              type="button"
+                                              data-action="p1-sort-by"
+                                              class="shrink-0 size-5 -my-1 -mr-1.5 rounded flex items-center justify-center text-text-weak opacity-0 group-hover/th:opacity-100 hover:text-text-strong hover:bg-surface-base-hover transition-opacity"
+                                              aria-label={language.t("p1.sort.by")}
+                                              onPointerDown={(event) => event.stopPropagation()}
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                sort(resort(state.filter.sort, col.id, way(col, state.filter.ways)))
+                                              }}
+                                            >
+                                              <svg
+                                                class="size-2.5"
+                                                classList={{ "rotate-180": way(col, state.filter.ways) }}
+                                                viewBox="0 0 10 10"
+                                              >
+                                                <path d="M5 2.25L9 7.75H1L5 2.25Z" fill="currentColor" />
+                                              </svg>
+                                            </button>
+                                          </Show>
+                                        </span>
+                                      }
+                                    >
+                                      {(kind) => <Flag kind={kind()} />}
+                                    </Show>
                                     <div
                                       data-action="p1-resize"
+                                      classList={{ "pointer-events-none": !!flag(col.id) }}
                                       class="group/edge absolute top-0 -right-1.5 z-10 h-full w-3 cursor-col-resize flex justify-center"
                                       onClick={(event) => event.stopPropagation()}
                                       onDblClick={() => {
@@ -1358,7 +1727,7 @@ export function P1Work() {
                                     {(group) => (
                                       <Heading
                                         group={group()}
-                                        span={state.cols.length + 2}
+                                        span={shown().length + 2}
                                         shut={!!state.shut[group().key]}
                                         month={folder()?.months ? month(folder()!.months!) : undefined}
                                         onToggle={() => setState("shut", group().key, (value) => !value)}
@@ -1367,6 +1736,7 @@ export function P1Work() {
                                   </Show>
                                   <For each={part.rows}>
                                     {(row) => (
+                                      <>
                                       <tr
                                         data-action="p1-requirement"
                                         class="border-b border-border-weaker-base hover:bg-surface-base-hover"
@@ -1412,16 +1782,18 @@ export function P1Work() {
                                             <SpecIcon name={specIcon(row)} />
                                           </button>
                                         </td>
-                                        <For each={state.cols}>
+                                        <For each={shown()}>
                                           {(col) => (
                                             <td
                                               data-col={col.id}
-                                              class="px-4 py-3 text-13-regular text-text-base align-middle overflow-hidden break-words"
+                                              class="py-3 text-13-regular text-text-base align-middle break-words"
                                               classList={{
+                                                "px-4 overflow-hidden": !flag(col.id),
+                                                "px-1 text-center": !!flag(col.id),
                                                 "text-right": numeric(col.id),
                                                 "cursor-pointer hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)]":
                                                   p1.edit() === "inline" && editable(col.id, true),
-                                                "cursor-pointer": col.id !== 1131,
+                                                "cursor-pointer": col.id !== 1131 && !flag(col.id),
                                                 "bg-surface-base-hover": state.panel === row.id,
                                                 "opacity-30": state.move?.id === col.id,
                                                 "shadow-[inset_3px_0_0_var(--border-interactive-base)]": slot(col) === "left",
@@ -1430,7 +1802,7 @@ export function P1Work() {
                                               style={fit(col)}
                                               onPointerEnter={() => {
                                                 clearTimeout(hover)
-                                                if (col.id === 1131) return
+                                                if (col.id === 1131 || flag(col.id)) return
                                                 // Resting on a cell starts loading its requirement, so a click opens at once.
                                                 hover = setTimeout(
                                                   () =>
@@ -1443,6 +1815,7 @@ export function P1Work() {
                                               onPointerLeave={() => clearTimeout(hover)}
                                               onClick={(event) => {
                                                 event.stopPropagation()
+                                                if (flag(col.id)) return
                                                 // As in P1: the ID opens the spec's editor, a field edited in place
                                                 // puts the docked editor away, and any other field opens it docked.
                                                 if (col.id === 1112) return setState({ panel: undefined, item: row.id })
@@ -1464,14 +1837,25 @@ export function P1Work() {
                                               <Show
                                                 when={state.typing?.id === row.id && state.typing.col === col.id}
                                                 fallback={
-                                                  <Cell
-                                                    col={col.id}
-                                                    row={row}
-                                                    onPoints={(event) => {
-                                                      event.stopPropagation()
-                                                      setState("points", { id: row.id, x: event.clientX, y: event.clientY })
-                                                    }}
-                                                  />
+                                                  <Show
+                                                    when={flag(col.id)}
+                                                    fallback={
+                                                      <Cell
+                                                        col={col.id}
+                                                        row={row}
+                                                        onPoints={(event) => {
+                                                          event.stopPropagation()
+                                                          setState("points", { id: row.id, x: event.clientX, y: event.clientY })
+                                                        }}
+                                                      />
+                                                    }
+                                                  >
+                                                    {(kind) => (
+                                                      <Show when={state.warn[kind()].includes(row.id)}>
+                                                        <Flag kind={kind()} />
+                                                      </Show>
+                                                    )}
+                                                  </Show>
                                                 }
                                               >
                                                 <P1Inline
@@ -1492,6 +1876,21 @@ export function P1Work() {
                                           )}
                                         </For>
                                       </tr>
+                                      <Show when={state.filter.stories}>
+                                        <For each={kids(row.id, part.group)}>
+                                          {(story) => (
+                                            <>
+                                              <Kid spec={row.id} story={story} />
+                                              <Show when={state.filter.tasks}>
+                                                <For each={story.tasks}>
+                                                  {(task) => <Kid spec={row.id} story={story} task={task} />}
+                                                </For>
+                                              </Show>
+                                            </>
+                                          )}
+                                        </For>
+                                      </Show>
+                                      </>
                                     )}
                                   </For>
                                 </>
@@ -1501,55 +1900,26 @@ export function P1Work() {
                         </table>
                       }
                     >
-                      <div class="h-full p-4 flex gap-3 items-start">
-                        <For each={lanes()}>
-                          {(column) => (
-                            <div class="w-72 shrink-0 max-h-full flex flex-col rounded-xl bg-surface-base/60">
-                              <div class="shrink-0 px-3 py-2.5 flex items-center gap-2">
-                                <span class="truncate text-13-medium text-text-strong">
-                                  {column.status || language.t("p1.status.none")}
-                                </span>
-                                <span class="text-12-regular text-text-weak">{column.rows.length}</span>
-                              </div>
-                              <div class="min-h-0 overflow-y-auto px-2 pb-2 flex flex-col gap-2">
-                                <For each={column.rows}>
-                                  {(row) => (
-                                    <button
-                                      type="button"
-                                      data-action="p1-requirement"
-                                      class="w-full text-left p-3 rounded-lg bg-background-base border border-border-weaker-base hover:border-border-base disabled:opacity-60 flex flex-col gap-1.5"
-                                      disabled={state.opening === row.id}
-                                      onClick={() => setState("item", row.id)}
-                                      onContextMenu={(event) => {
-                                        event.preventDefault()
-                                        setState("act", { id: row.id, x: event.clientX, y: event.clientY })
-                                      }}
-                                    >
-                                      <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
-                                        <span class="font-mono">#{row.id}</span>
-                                        <Show when={state.opening === row.id} fallback={<span class="truncate">{row.type}</span>}>
-                                          <Spinner class="size-4" />
-                                        </Show>
-                                      </div>
-                                      <div class="text-13-medium text-text-strong line-clamp-3">{row.title}</div>
-                                      <Show when={row.owner || row.points}>
-                                        <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
-                                          <span class="truncate">{row.owner}</span>
-                                          <Show when={row.points}>
-                                            <span class="shrink-0">
-                                              {row.points} {language.t("p1.col.points").toLowerCase()}
-                                            </span>
-                                          </Show>
-                                        </div>
-                                      </Show>
-                                    </button>
-                                  )}
-                                </For>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
+                      <P1Board
+                        lanes={lanes()}
+                        project={state.root}
+                        folder={state.folder}
+                        sortable={state.filter.group === 1132 && !!state.groups.length}
+                        readonly={state.level < 2}
+                        opening={state.opening}
+                        saving={state.saving}
+                        onOpen={(id) => setState("item", id)}
+                        onMenu={(id, x, y) => setState("act", { id, x, y })}
+                        onEdited={edited}
+                        onPoints={(id, x, y) => setState("points", { id, x, y })}
+                        tales={state.filter.stories ? state.tales : undefined}
+                        tasks={!!state.filter.stories && !!state.filter.tasks}
+                        warn={state.warn}
+                        onTask={(spec, story, task, owner) => void delegate(spec, story, task, owner)}
+                        crew={state.crew}
+                        onOwner={(spec, story, owner) => void assign(spec, story, owner)}
+                        onMove={(id, key, at, value) => void drop(id, key, at, value)}
+                      />
                     </Show>
                   </Show>
                 </Show>
@@ -1619,6 +1989,26 @@ export function P1Work() {
             onChange={(next) => void tune(next)}
             onColumns={() => setState({ sets: undefined, columns: true })}
             onClose={() => setState("sets", undefined)}
+          />
+        )}
+      </Show>
+      <Show when={state.swap}>
+        {(swap) => (
+          <Menu
+            at={swap().at}
+            items={state.crew}
+            picked={[String((swap().task ?? swap().story).owner)]}
+            many={false}
+            people
+            clear={false}
+            onPick={(id) => {
+              const done = swap()
+              setState("swap", undefined)
+              if (!Number(id) || Number(id) === (done.task ?? done.story).owner) return
+              if (done.task) return void delegate(done.spec, done.story, done.task, Number(id))
+              void assign(done.spec, done.story, Number(id))
+            }}
+            onClose={() => setState("swap", undefined)}
           />
         )}
       </Show>
@@ -1877,6 +2267,14 @@ export function P1Work() {
 const check = 40
 const mark = 48
 const lead = check + mark
+// A link warning column's width.
+const warn = 40
+
+/** Which link warning a list column stands for: the warning columns take ids P1's fields never use. */
+function flag(id: number) {
+  if (id === -1) return "links" as const
+  if (id === -2) return "tests" as const
+}
 
 function numeric(id: number) {
   return [1131, 1132, 1130, 1143, 1144].includes(id)
@@ -1901,6 +2299,8 @@ function editable(id: number, title = false) {
 /** The narrowest a column can be dragged and still read its header and values. */
 function least(col: Column) {
   if (col.id === 1101) return 200
+  // Priority # narrows to "P #" and two-digit values.
+  if (col.id === priority) return 64
   return Math.max(numeric(col.id) || col.id === 1112 ? 64 : 88, col.name.length * 7 + 40)
 }
 
@@ -1953,18 +2353,24 @@ function Cell(props: { col: number; row: Row; onPoints: (event: MouseEvent) => v
   )
 }
 
+/** A group's name; priority # groups say which week (or none) their priority order stands for. */
+function label(group: Group, month: string | undefined, language: ReturnType<typeof useLanguage>) {
+  // P1's "Priority Order: 30 - 39" reads as "Priority # 30-39".
+  const span = group.by === 1132 ? range(group.name) : undefined
+  const name = span
+    ? language.t("p1.group.priority", { range: `${span.lo}-${span.hi}` })
+    : group.name || language.t("p1.group.unassigned")
+  const found = group.by === 1132 && month ? bucket(group.name, month) : undefined
+  if (!found) return name
+  if (found.kind === "commit") return `${name} (${language.t("p1.group.commit")})`
+  if (found.kind === "later") return `${name} (${language.t("p1.group.later")})`
+  return `${name} (${language.t(`p1.group.week${found.index + 1}`)}, ${found.from} - ${found.to})`
+}
+
 /** A group's heading across the list: its name, how many requirements it holds, and their points and time. */
 function Heading(props: { group: Group; span: number; shut: boolean; month?: string; onToggle: () => void }) {
   const language = useLanguage()
-  // Weekly committed work groups say which week (or none) their priority order stands for.
-  const name = () => {
-    const name = props.group.name || language.t("p1.group.unassigned")
-    const found = props.group.by === 1132 && props.month ? bucket(name, props.month) : undefined
-    if (!found) return name
-    if (found.kind === "commit") return `${name} (${language.t("p1.group.commit")})`
-    if (found.kind === "later") return `${name} (${language.t("p1.group.later")})`
-    return `${name} (${language.t(`p1.group.week${found.index + 1}`)}, ${found.from} - ${found.to})`
-  }
+  const name = () => label(props.group, props.month, language)
   return (
     <tr data-component="p1-group" class="border-b border-border-weaker-base bg-surface-base">
       <td colSpan={props.span} class="p-0">

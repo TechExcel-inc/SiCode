@@ -9,10 +9,12 @@ import { me } from "@/ead/api"
 import { useP1 } from "@/p1/settings"
 import { kloud } from "@/p1/kloud"
 import { HELP_URL } from "./about-popover"
+import { status } from "./status-popover"
+import { useServer } from "@/context/server"
 
 /**
  * The one account menu, at the far right of the top bar in every view: the EAD Pilot account, the P1 sign-in and
- * whether P1 is linked to Kloud, then Settings, Help and the version. A dot on the avatar means an account needs
+ * whether P1 is linked to Kloud, then the servers and tools, Settings, Help and the version. A dot on the avatar means an account needs
  * signing in again.
  */
 export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onSettings: () => void }) {
@@ -20,6 +22,7 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
   const p1 = useP1()
   const language = useLanguage()
   const platform = usePlatform()
+  const server = useServer()
 
   // Read in the background with a plain signal, never a resource: a resource read before its first answer holds the
   // window on "Loading" until EAD Pilot replies. Tried again a few times, since right after the app starts EAD Pilot
@@ -170,6 +173,20 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
           </Show>
           <DropdownMenu.Separator />
 
+          {/* The local server, MCP, LSP and plugins, with a dot for whether the server is up. */}
+          <Show when={status.ready()}>
+            <DropdownMenu.Item data-action="account-status" onSelect={() => status.open()}>
+              <DropdownMenu.ItemLabel>{language.t("account.status")}</DropdownMenu.ItemLabel>
+              <span
+                class="ml-auto size-2 shrink-0 rounded-full"
+                classList={{
+                  "bg-icon-success-base": server.healthy() === true,
+                  "bg-icon-critical-base": server.healthy() === false,
+                  "bg-border-weak-base": server.healthy() === undefined,
+                }}
+              />
+            </DropdownMenu.Item>
+          </Show>
           <DropdownMenu.Item data-action="account-settings" onSelect={props.onSettings}>
             <DropdownMenu.ItemLabel>{language.t("sidebar.settings")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>

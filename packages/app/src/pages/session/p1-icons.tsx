@@ -91,3 +91,80 @@ export function TaskIcon() {
     </svg>
   )
 }
+
+/** A story's fold arrow, drawn bolder than the shared chevron so it reads at full strength. */
+export function Fold(props: { open: boolean }) {
+  return (
+    <svg
+      class="size-4 shrink-0 transition-transform"
+      classList={{ "rotate-90": props.open }}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M6 3.5L10.5 8L6 12.5"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** A bold plus, for adding a task or story. */
+export function Plus() {
+  return (
+    <svg class="size-3.5 shrink-0" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M7 2V12M2 7H12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+    </svg>
+  )
+}
+
+/** Picking from a list: ticked lines, for choosing a story's related modules. */
+export function Choose() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2 4L3.25 5.25L5.5 3"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <path
+        d="M2 10L3.25 11.25L5.5 9"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+      <path d="M8 4.25H14M8 10.25H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+    </svg>
+  )
+}
+
+/** No linked requirements: two requirement cards joined by a link, in P1's requirement blue. */
+export function Unlinked() {
+  return (
+    <svg class="size-5 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="6.5" height="8" rx="1.2" fill="#3D7BFF" />
+      <rect x="8" y="6.5" width="6.5" height="8" rx="1.2" fill="#3D7BFF" fill-opacity="0.55" />
+      <path d="M3.25 4.25h3M3.25 6.5h2" stroke="#fff" stroke-width="1.1" stroke-linecap="round" />
+      <path d="M9.75 9.25h3M9.75 11.5h2" stroke="#fff" stroke-width="1.1" stroke-linecap="round" />
+      <path d="M5 9.5v2.25c0 .7.55 1.25 1.25 1.25H8" stroke="#3D7BFF" stroke-width="1.2" stroke-linecap="round" />
+    </svg>
+  )
+}
+
+/** No linked test cases: P1's green test case clipboard. */
+export function Untested() {
+  return (
+    <svg class="size-5 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.75" width="11" height="11.75" rx="1.5" fill="#1FC32F" />
+      <rect x="5.25" y="1.25" width="5.5" height="3" rx="0.9" fill="#1FC32F" stroke="var(--background-base)" stroke-width="0.9" />
+      <path d="M5 7.75h6M5 10.75h6" stroke="#fff" stroke-width="1.4" stroke-linecap="round" />
+    </svg>
+  )
+}

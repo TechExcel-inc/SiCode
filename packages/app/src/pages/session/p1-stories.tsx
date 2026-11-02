@@ -5,7 +5,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
 import { update } from "@/p1/form"
-import { members, modules, type Choice, type Home } from "@/p1/points"
+import { load, members, modules, type Choice, type Home, type Module } from "@/p1/points"
 import { useP1 } from "@/p1/settings"
 import {
   add,
@@ -18,13 +18,14 @@ import {
   drop,
   edit,
   field,
+  relate,
   spend,
   stories,
   type Story,
   type Task,
 } from "@/p1/stories"
 import { Menu, prime } from "./p1-inline"
-import { StoryIcon, TaskIcon } from "./p1-icons"
+import { Choose, Fold, Plus, StoryIcon, TaskIcon } from "./p1-icons"
 import { P1Pop } from "./p1-pop"
 import { Tip } from "./p1-tip"
 
@@ -66,12 +67,12 @@ export function P1Stories(props: {
     list: [] as Story[],
     people: [] as Choice[],
     mods: [] as Choice[],
+    // The spec's module rows, where P1 keeps a story's related modules.
+    rows: [] as Module[],
     hours: props.hours,
     // Saving rows by key ("s7" a story, "t70" a task, "spec", "form"), and their errors.
     busy: {} as Record<string, boolean>,
     errs: {} as Record<string, string>,
-    // Modules just picked on a story, shown while their tasks are being made.
-    adding: {} as Record<number, number[]>,
     shut: shut.get(props.spec) ?? ([] as number[]),
     // The story or task open in the form (a story alone to add a task to it), and a delete waiting for its second click.
     form: undefined as { kind: "story" | "task"; story?: Story; task?: Task } | undefined,
@@ -87,10 +88,13 @@ export function P1Stories(props: {
   const locale = () => language.locale()
 
   const read = async () => {
-    const list = await stories(host(), token(), props.project, props.spec, locale()).catch((err: unknown) => {
-      setState("err", message(err))
-    })
-    setState({ loading: false, ...(list ? { list, err: "" } : {}) })
+    const [list, rows] = await Promise.all([
+      stories(host(), token(), props.project, props.spec, locale()).catch((err: unknown) => {
+        setState("err", message(err))
+      }),
+      load(host(), token(), props.project, props.spec, props.home, locale()).catch(() => undefined),
+    ])
+    setState({ loading: false, ...(list ? { list, err: "" } : {}), ...(rows ? { rows } : {}) })
   }
 
   onMount(() => {
@@ -169,45 +173,14 @@ export function P1Stories(props: {
     void act(key, run)
   }
 
-  const extra = (story: Story, name: string, owner: number, mods: Choice[]) =>
-    mods.reduce(
-      (prev, mod) =>
-        prev.then(() =>
-          add(
-            host(),
-            token(),
-            {
-              project: props.project,
-              spec: props.spec,
-              story,
-              name: `${name} – ${mod.name}`,
-              owner,
-              module: mod.id,
-              points: 0,
-            },
-            locale(),
-          ),
-        ),
-      Promise.resolve(),
+  // A story's related modules, saved as the spec's module rows; picking them makes no tasks.
+  const related = (story: Story, ids: number[]) =>
+    relate(
+      host(),
+      token(),
+      { project: props.project, spec: props.spec, home: props.home, owner: story.owner, rows: state.rows, ids },
+      locale(),
     )
-
-  // Modules picked on a story row: a new one gets a task. P1 can't take one away yet, so that only says so.
-  const modulate = async (story: Story, ids: string) => {
-    const key = `s${story.id}`
-    const next = ids.split(",").filter(Boolean).map(Number)
-    const have = areas(story, state.mods).map((item) => item.id)
-    const added = state.mods.filter((item) => next.includes(item.id) && !have.includes(item.id))
-    if (added.length) {
-      setState(
-        "adding",
-        story.id,
-        added.map((item) => item.id),
-      )
-      await act(key, () => extra(story, story.name, story.owner, added))
-      setState("adding", story.id, [])
-    }
-    if (have.some((id) => !next.includes(id))) setState("errs", key, language.t("p1.stories.form.dropped"))
-  }
 
   const save = async (value: Value) => {
     const form = state.form
@@ -265,19 +238,13 @@ export function P1Stories(props: {
         ...(value.hours !== story.target ? aim(value.hours) : {}),
       }
       if (Object.keys(next).length) await edit(host(), token(), story, next, locale())
-      const have = areas(story, state.mods).map((item) => item.id)
-      await extra(
-        story,
-        value.name,
-        value.owner,
-        picked.filter((item) => !have.includes(item.id)),
-      )
+      await related(story, value.modules)
     })
     if (ok) setState("form", undefined)
   }
 
   const head = "relative px-3 py-2.5 text-12-medium text-text-weak text-left font-medium whitespace-nowrap"
-  const cell = "px-3 py-1.5 align-middle"
+  const cell = "px-3 py-2 align-top"
 
   // Columns resize by dragging their header's right edge, and keep the width you left them at.
   const size = (col: (typeof cols)[number]) =>
@@ -466,31 +433,22 @@ export function P1Stories(props: {
                   const key = `s${story.id}`
                   const open = () => !state.shut.includes(story.id)
                   const only = () => (story.tasks.length === 1 ? story.tasks[0] : undefined)
-                  const picked = () => {
-                    const have = areas(story, state.mods)
-                    const ids = have.map((item) => item.id)
-                    return [
-                      ...have,
-                      ...state.mods.filter(
-                        (item) => state.adding[story.id]?.includes(item.id) && !ids.includes(item.id),
-                      ),
-                    ]
-                  }
+                  const picked = () => areas(story, state.rows, state.mods)
                   return (
                     <>
                       <tr
                         class="border-b border-border-weaker-base bg-surface-base"
                         classList={{ "opacity-60": state.busy[key] }}
                       >
-                        <td class={`${cell} pl-3 py-2`}>
+                        <td class={`${cell} pl-3`}>
                           <div class="flex items-start gap-1.5 min-w-0">
                             <button
                               type="button"
-                              class="mt-0.5 size-6 shrink-0 rounded-md flex items-center justify-center text-icon-strong-base hover:bg-surface-base-hover"
+                              class="size-6 shrink-0 rounded-md flex items-center justify-center text-text-strong hover:bg-surface-base-hover"
                               aria-expanded={open()}
                               onClick={() => fold(story)}
                             >
-                              <Icon name={open() ? "chevron-down" : "chevron-right"} size="small" />
+                              <Fold open={open()} />
                             </button>
                             <div class="min-w-0 flex-1 flex flex-col gap-1.5">
                               <div class="flex items-start gap-2 min-w-0">
@@ -524,13 +482,15 @@ export function P1Stories(props: {
                                   many
                                   bare
                                   readonly={props.readonly}
-                                  onPick={(ids) => modulate(story, ids)}
+                                  onPick={(ids) =>
+                                    act(key, () => related(story, ids.split(",").filter(Boolean).map(Number)))
+                                  }
                                 >
                                   <span class="group/mods inline-flex flex-wrap items-center gap-1">
                                     <For each={picked()}>{(item) => <Chip name={item.name} />}</For>
                                     <Show when={!props.readonly}>
-                                      <span class="size-6 rounded-md flex items-center justify-center text-icon-base group-hover/mods:bg-surface-base-hover group-hover/mods:text-icon-strong-base">
-                                        <Icon name="selector" size="small" />
+                                      <span class="size-6 rounded-md flex items-center justify-center text-text-strong group-hover/mods:bg-surface-base-hover">
+                                        <Choose />
                                       </span>
                                     </Show>
                                   </span>
@@ -566,7 +526,7 @@ export function P1Stories(props: {
                           </Edit>
                         </td>
                         <td class={cell}>
-                          <div class="flex items-center justify-end gap-1 tabular-nums">
+                          <div class="h-6 flex items-center justify-end gap-1 tabular-nums">
                             <span class="text-text-strong" title={language.t("p1.stories.rollup")}>
                               {story.spent.toFixed(1)}h
                             </span>
@@ -651,7 +611,9 @@ export function P1Stories(props: {
                                   setState({ form: { kind: "task", story }, errs: { ...state.errs, form: "" } })
                                 }
                               >
-                                <Icon name="plus-small" size="small" />
+                                <span class="text-text-strong">
+                                  <Plus />
+                                </span>
                                 {language.t("p1.stories.task")}
                               </button>
                             </td>
@@ -670,7 +632,7 @@ export function P1Stories(props: {
                       class="h-8 px-2.5 rounded-md flex items-center gap-1.5 text-13-medium text-text-interactive-base hover:bg-surface-base-hover"
                       onClick={() => setState({ form: { kind: "story" }, errs: { ...state.errs, form: "" } })}
                     >
-                      <Icon name="plus-small" size="small" />
+                      <Plus />
                       {language.t("p1.stories.story")}
                     </button>
                   </td>
@@ -688,6 +650,7 @@ export function P1Stories(props: {
             task={form().task}
             people={state.people}
             mods={state.mods}
+            rows={state.rows}
             busy={state.busy.form}
             err={state.errs.form}
             onSave={save}
@@ -718,14 +681,14 @@ function Row(props: {
   const language = useLanguage()
   const set = (id: number, value: string | number) => () =>
     change(p1.server(), p1.token(), props.story.project, props.task.id, id, value, language.locale())
-  const cell = "px-3 py-1.5 align-middle"
+  const cell = "px-3 py-2 align-top"
   return (
     <>
       <tr
         class="border-b border-border-weaker-base hover:bg-surface-base-hover"
         classList={{ "opacity-60": props.busy }}
       >
-        <td class={`${cell} pl-[50px] py-2`}>
+        <td class={`${cell} pl-[50px]`}>
           <div class="relative flex items-start gap-2 min-w-0 pl-4">
             <span
               class="absolute left-0 -top-4 h-7 w-3 border-l border-b border-border-weak-base rounded-bl-md"
@@ -775,9 +738,11 @@ function Row(props: {
             <Person name={props.task.person || props.name(props.task.owner)} />
           </Pick>
         </td>
-        <td class={`${cell} text-right text-text-weaker`}>—</td>
+        <td class={`${cell} text-right text-text-weaker`}>
+          <span class="h-6 inline-flex items-center">—</span>
+        </td>
         <td class={cell}>
-          <div class="flex items-center justify-end gap-1 tabular-nums">
+          <div class="h-6 flex items-center justify-end gap-1 tabular-nums">
             <Edit
               value={String(props.task.spent)}
               kind="number"
@@ -978,7 +943,7 @@ function Bar(props: { value: number; story?: boolean }) {
         />
       </span>
       <span
-        class="shrink-0 min-w-9 whitespace-nowrap text-12-regular tabular-nums"
+        class="shrink-0 min-w-9 whitespace-nowrap text-13-regular tabular-nums"
         classList={{ "text-text-strong": props.story, "text-text-weak": !props.story }}
       >
         {pct()}%
@@ -1051,6 +1016,7 @@ function Form(props: {
   task?: Task
   people: Choice[]
   mods: Choice[]
+  rows: Module[]
   busy?: boolean
   err?: string
   onSave: (value: Value) => void
@@ -1066,14 +1032,14 @@ function Form(props: {
       return {
         name: props.story.name,
         owner: props.story.owner,
-        modules: areas(props.story, props.mods).map((item) => item.id),
+        modules: areas(props.story, props.rows, props.mods).map((item) => item.id),
         hours: props.story.target,
       }
     if (props.story)
       return {
         name: "",
         owner: props.story.owner,
-        modules: areas(props.story, props.mods)
+        modules: areas(props.story, props.rows, props.mods)
           .slice(0, 1)
           .map((item) => item.id),
         hours: 0,
@@ -1081,7 +1047,6 @@ function Form(props: {
     return { name: "", owner: Number(p1.user()) || 0, modules: [] as number[], hours: 0 }
   })()
   const [state, setState] = createStore({ ...start, hours: String(start.hours) })
-  const dropped = () => props.kind === "story" && start.modules.some((id) => !state.modules.includes(id))
   const person = () =>
     props.people.find((item) => item.id === state.owner)?.name || (old && "person" in old ? old.person : "")
   const submit = () =>
@@ -1195,9 +1160,6 @@ function Form(props: {
               </span>
             </Pick>
           </div>
-          <Show when={dropped()}>
-            <p class="mt-1.5 text-12-regular text-text-weak">{language.t("p1.stories.form.dropped")}</p>
-          </Show>
         </Field>
       </div>
       <div class="shrink-0 px-5 py-3 flex items-center gap-3 border-t border-border-weaker-base">

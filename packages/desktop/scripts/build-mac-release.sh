@@ -151,6 +151,17 @@ rm -rf "$out/$(basename "$app")"
 cp -R "$app" "$out/"
 cp "$dmg" "$out/"
 
+# An unsigned build is a new app to macOS each time, so it asks for folder access (such as Documents) again after
+# every install. Signed with the same certificate, builds keep the access granted once. The local copy is signed
+# when the keychain has the certificate (a self-signed "Code Signing" one does); the DMG stays as built.
+identity="${SICODE_SIGN:-EAD SiCode Dev}"
+if security find-identity -p codesigning 2>/dev/null | grep -qF "\"$identity\""; then
+  echo "==> signing with \"$identity\""
+  codesign --force --deep --sign "$identity" "$out/$(basename "$app")"
+else
+  echo "==> no \"$identity\" certificate in the keychain: left unsigned, so macOS asks for folder access after each install"
+fi
+
 keep=1
 echo "==> done"
 ls -lah "$out/$(basename "$app")" "$out/$(basename "$dmg")"

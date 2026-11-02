@@ -1,5 +1,5 @@
 import { call } from "./api"
-import { sprint, type Choice, type Home } from "./points"
+import { remove, save, sprint, type Choice, type Home, type Module } from "./points"
 
 /**
  * A spec's stories and the tasks under them, as they live in its linked development project and as
@@ -116,14 +116,14 @@ function left(value: unknown, points: number, spent: number) {
 }
 
 /**
- * A story's applicable modules: its own and its tasks', since P1 keeps one module per story.
- * P1 sometimes leaves a story's module name out, so names come from the project's modules too.
+ * A story's related modules: the modules its spec keeps points rows for, which is where P1 saves several
+ * modules for a story, or the story's own module while there are none. Its tasks keep their own modules.
+ * P1 sometimes leaves a module's name out, so names come from the project's modules too.
  */
-export function areas(story: Story, mods: Choice[] = []): Choice[] {
-  const all = [
-    { id: story.module, name: story.area },
-    ...story.tasks.map((task) => ({ id: task.module, name: task.area })),
-  ].map((item) => ({ id: item.id, name: item.name || mods.find((mod) => mod.id === item.id)?.name || "" }))
+export function areas(story: Story, rows: Module[] = [], mods: Choice[] = []): Choice[] {
+  const all = (
+    rows.length ? rows.map((row) => ({ id: row.module, name: row.name })) : [{ id: story.module, name: story.area }]
+  ).map((item) => ({ id: item.id, name: item.name || mods.find((mod) => mod.id === item.id)?.name || "" }))
   return all.filter((item, index) => item.id && item.name && all.findIndex((other) => other.id === item.id) === index)
 }
 
@@ -136,6 +136,11 @@ async function dev(base: string, token: string, path: string, locale: string, bo
     throw new Error(`${String(err || "P1 refused the change")} (${path.split("?")[0]})`)
   }
   return record(data) && "Data" in data ? data.Data : data
+}
+
+/** A spec's stories and their tasks as P1 lists them, without each story's target time. */
+export async function listed(base: string, token: string, project: number, spec: number, locale: string) {
+  return readStories(await dev(base, token, "Story/ListBySpec", locale, { SpecProjectId: project, SpecItemId: spec }))
 }
 
 export async function stories(base: string, token: string, project: number, spec: number, locale: string) {
@@ -170,7 +175,10 @@ async function exact(base: string, token: string, project: number, ids: number[]
     if (parts[index] % 60) await change(base, token, project, id, field.remain, parts[index], locale)
 }
 
-/** A new story for the spec in the development project's running sprint, with a task for each module. */
+/**
+ * A new story for the spec in the development project's running sprint, with its related modules. It starts
+ * without tasks: those are made when the coding is done, and one may cover several modules or a module several.
+ */
 export async function create(
   base: string,
   token: string,
@@ -185,10 +193,7 @@ export async function create(
     SpecItemId: input.spec,
     AssignToProjectId: target.project,
     StoryCreation: { SubProjectId: sub, CurrentOwnerId: input.owner, ...aim(input.target) },
-    // Modules are the story's related modules: their tasks carry no points, the story keeps its own.
-    TaskCreations: input.modules.map((item) =>
-      task(item.id, input.owner, input.modules.length > 1 ? `${input.name} – ${item.name}` : input.name, sub, 0),
-    ),
+    TaskCreations: [],
   })
   const story = (Array.isArray(data) ? data : []).filter(record).find((item) => Number(item.Option) === 1)
   const id = Number(story?.Id) || 0
@@ -201,7 +206,48 @@ export async function create(
       CurrentOwnerId: input.owner,
       ...aim(input.target),
     })
+  await relate(
+    base,
+    token,
+    {
+      project: input.project,
+      spec: input.spec,
+      home: input.home,
+      owner: input.owner,
+      rows: [],
+      ids: input.modules.map((item) => item.id),
+    },
+    locale,
+  )
   return id
+}
+
+/**
+ * Saves a story's related modules as its spec's module rows, the way P1 keeps several modules for a story:
+ * new ones go in without points, since the story keeps its own, and ones no longer picked come out.
+ */
+export async function relate(
+  base: string,
+  token: string,
+  input: { project: number; spec: number; home: Home; owner: number; rows: Module[]; ids: number[] },
+  locale: string,
+) {
+  const have = input.rows.map((row) => row.module)
+  for (const id of input.ids.filter((id) => !have.includes(id)))
+    await save(
+      base,
+      token,
+      {
+        project: input.project,
+        spec: input.spec,
+        home: input.home,
+        row: { module: id, name: "", owner: input.owner, person: "", points: 0, tasks: 0, time: "", finish: "" },
+        moved: false,
+      },
+      locale,
+    )
+  for (const row of input.rows.filter((row) => !input.ids.includes(row.module)))
+    await remove(base, token, input.project, input.spec, row.module, locale)
 }
 
 /** A task for `Task/AssignSpec`, shaped as P1's web app sends it; points are whole, hours left are set after. */

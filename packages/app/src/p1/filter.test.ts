@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { bunch, readGroups, readFolders } from "./api"
-import { active, blank, bucket, closed, condition, expand, month, open, readOwners, readStates, weeks } from "./filter"
+import { active, blank, bucket, closed, condition, expand, flip, lean, month, open, order, resort, readOwners, readStates, weeks } from "./filter"
 
 describe("p1 filter", () => {
   test("sends nothing for an empty filter, since P1 refuses an empty condition", () => {
@@ -138,5 +138,39 @@ describe("p1 filter", () => {
     expect(bucket("Others", "202610")).toEqual({ kind: "later" })
     expect(month({ start: "202610", end: "202610" }, new Date(2026, 9, 29))).toBe("202610")
     expect(month({ start: "202601", end: "202603" }, new Date(2026, 9, 29))).toBe("202603")
+  })
+})
+
+describe("sort", () => {
+  test("a column sorts first, in the list's direction or the one asked for, the one before it second", () => {
+    expect(resort(undefined, 1101)).toEqual([{ id: 1101, down: true }, { id: 1112, down: true }])
+    expect(resort(undefined, 1101, false)).toEqual([{ id: 1101, down: false }, { id: 1112, down: true }])
+    expect(resort([{ id: 1101, down: false }, { id: 1112, down: true }], 1113)).toEqual([
+      { id: 1113, down: false },
+      { id: 1101, down: false },
+    ])
+  })
+  test("the column already sorted by keeps its sort", () => {
+    expect(resort([{ id: 1101, down: false }, { id: 1112, down: true }], 1101, true)).toEqual([
+      { id: 1101, down: false },
+      { id: 1112, down: true },
+    ])
+  })
+  test("IDs and dates sort newest first, the rest A to Z", () => {
+    expect(lean({ id: 1112, type: 4 })).toBe(true)
+    expect(lean({ id: 1150, type: 3 })).toBe(true)
+    expect(lean({ id: 1101, type: 5 })).toBe(false)
+    expect(lean({ id: 1114, type: 7 })).toBe(false)
+  })
+  test("flipping turns the first column around", () => {
+    expect(flip([{ id: 1101, down: true }, { id: 1112, down: true }])).toEqual([
+      { id: 1101, down: false },
+      { id: 1112, down: true },
+    ])
+    expect(flip(undefined)).toEqual([{ id: 1112, down: false }])
+  })
+  test("P1 gets the fields and 1 for descending", () => {
+    expect(order(undefined)).toEqual({ SortFields: [1112], SortOrder: [1] })
+    expect(order([{ id: 1101, down: false }, { id: 1112, down: true }])).toEqual({ SortFields: [1101, 1112], SortOrder: [0, 1] })
   })
 })

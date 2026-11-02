@@ -1,6 +1,6 @@
 import { client } from "./http"
 import { decode64, htmlOf } from "./doc"
-import { blank, condition, readOwners, readStates, type Filter } from "./filter"
+import { blank, condition, order, readOwners, readStates, type Filter } from "./filter"
 
 type Http = typeof fetch
 
@@ -474,6 +474,26 @@ export async function children(
   return readFolders(data)
 }
 
+/**
+ * The requirements P1 finds with no linked requirements (`links`) or no linked test cases (`tests`), by id,
+ * from the same list the page shows; the list marks them instead of showing only them.
+ */
+export async function bare(
+  base: string,
+  token: string,
+  project: number,
+  folder: number,
+  query: string,
+  locale: string,
+  filter: Filter,
+  scope: { all: boolean; closed: boolean },
+  kind: "links" | "tests",
+) {
+  const next = { ...filter, group: 0, unlinked: kind === "links", untested: kind === "tests" }
+  const list = await requirements(base, token, project, folder, query, locale, [], next, scope)
+  return list.rows.map((row) => row.id)
+}
+
 export async function requirements(
   base: string,
   token: string,
@@ -497,12 +517,11 @@ export async function requirements(
     Fields: fields,
     KeyWord: query,
     SupportFieldID: 1,
-    SortFields: [1112],
-    SortOrder: [1],
+    ...order(filter.sort),
     ...condition(grouped ? filter : { ...filter, group: 0 }),
   })
-  // The list's own fields by id, as P1 asks for them, plus the columns you chose.
-  const basic = [...new Set([1112, 1101, 1102, 1113, 1114, 1121, 1131, ...columns])]
+  // The list's own fields by id, as P1 asks for them, plus priority # for the board's cards and the columns you chose.
+  const basic = [...new Set([1112, 1101, 1102, 1113, 1114, 1121, 1131, 1132, ...columns])]
   // A server that refuses some column still lists the basic ones.
   const data = await post(base, token, "/DevSpecAPI/ReqItemList", locale, http, body(basic)).catch((err: unknown) => {
     if (denied(err)) throw err

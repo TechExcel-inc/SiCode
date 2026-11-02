@@ -12,8 +12,54 @@ export type Filter = {
   modules: number[]
   // The field the list is grouped by: 0 for none, 1113 spec owner, 1604 module owner.
   group: number
+  // Requirements with no linked requirements, or no linked test cases, carry a warning icon; P1 can also list only them.
   unlinked: boolean
   untested: boolean
+  // The board shows each requirement's stories, and each story's tasks under it; P1's list doesn't see these.
+  stories?: boolean
+  tasks?: boolean
+  // How the list is sorted: by a column, then by the one sorted by before it, each up or down.
+  sort?: Sort[]
+  // The direction each column was last sorted in, by field id, which it takes again when sorted by.
+  ways?: Record<string, boolean>
+}
+
+export type Sort = { id: number; down: boolean }
+
+/** The list's sort when none was picked: newest requirement first, as P1 lists it. */
+const first: Sort = { id: 1112, down: true }
+
+/** The direction a column first sorts in: IDs and dates newest first, everything else A to Z by what it shows. */
+export function lean(col: { id: number; type: number }) {
+  return col.id === 1112 || col.type === 3
+}
+
+/** The direction a column sorts in when picked: the way it was last sorted, or its first direction. */
+export function way(col: { id: number; type: number }, ways?: Record<string, boolean>) {
+  return ways?.[col.id] ?? lean(col)
+}
+
+/**
+ * The sort by a column, in `down` or else the list's current direction: it comes first, and the column sorted by
+ * before it comes second, so rows that tie on the new column keep their old order. The column the list is
+ * already sorted by keeps its sort, so the list is just read again.
+ */
+export function resort(sort: Sort[] | undefined, id: number, down?: boolean) {
+  const top = sort?.[0] ?? first
+  if (top.id === id) return sort?.length ? sort : [top]
+  return [{ id, down: down ?? top.down }, top]
+}
+
+/** The sort with its first column's direction turned around. */
+export function flip(sort: Sort[] | undefined) {
+  const top = sort?.[0] ?? first
+  return [{ ...top, down: !top.down }, ...(sort ?? []).slice(1)]
+}
+
+/** The list request's sort fields: P1 takes 1 for descending. */
+export function order(sort: Sort[] | undefined) {
+  const list = sort?.length ? sort : [first]
+  return { SortFields: list.map((item) => item.id), SortOrder: list.map((item) => (item.down ? 1 : 0)) }
 }
 
 export const blank: Filter = {
@@ -24,18 +70,21 @@ export const blank: Filter = {
   group: 0,
   unlinked: false,
   untested: false,
+  stories: false,
+  tasks: false,
 }
 
 export type Status = Choice & { closed: boolean }
 
-/** Whether the filter narrows the list, for marking its button; the grouping marks its own. */
+/** Whether the filter narrows or adds to the list, for marking its button; the grouping marks its own. */
 export function active(filter: Filter) {
   return !!(
     filter.owners.length ||
     filter.states.length ||
     filter.modules.length ||
     filter.unlinked ||
-    filter.untested
+    filter.untested ||
+    filter.stories
   )
 }
 

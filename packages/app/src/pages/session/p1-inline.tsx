@@ -113,7 +113,7 @@ export function P1Inline(props: {
   }
 
   onMount(async () => {
-    setRect(root?.closest("td")?.getBoundingClientRect())
+    setRect(root?.closest("td, [data-cell]")?.getBoundingClientRect())
     const seen = known.get(key)
     if (seen && !rich(seen.field)) show(seen.field, seen.choices, seen.moves)
     const found = await ready.catch((err: unknown) => {
@@ -424,8 +424,10 @@ export function P1Inline(props: {
                   el.select()
                 })
               }
-              class={`${box} text-right`}
+              // Typed straight in: no spinner arrows.
+              class={`${box} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
               type="number"
+              inputMode="decimal"
               disabled={state.busy}
               value={state.value.value}
               onKeyDown={keys}

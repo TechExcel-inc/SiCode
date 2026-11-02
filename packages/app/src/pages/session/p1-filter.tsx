@@ -6,14 +6,15 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { blank, closed, expand, open, type Filter, type Status } from "@/p1/filter"
 import type { Choice } from "@/p1/points"
+import { Unlinked, Untested } from "./p1-icons"
 import { Menu } from "./p1-inline"
 import { layer } from "./p1-pop"
 
 type Key = "owners" | "states" | "modules"
 
 /**
- * The requirement list's filter, as P1 has it: owners (or submitters), states, module owners and two link
- * checks; the grouping has its own button. Changes wait for OK; Clear only empties the boxes, and clicking outside drops them.
+ * The requirement list's filter, as P1 has it: owners (or submitters), states and module owners; whether stories
+ * and tasks show; and two link checks that flag requirements missing links; the grouping has its own button. Changes wait for OK; Clear only empties the boxes, and clicking outside drops them.
  */
 export function P1Filter(props: {
   at: DOMRect
@@ -129,11 +130,42 @@ export function P1Filter(props: {
           <label class="mt-1 flex items-start gap-2 text-13-regular text-text-base cursor-pointer">
             <input
               type="checkbox"
+              data-action="p1-filter-stories"
+              class="mt-0.5 size-4 shrink-0 accent-[var(--surface-interactive-base)]"
+              checked={!!state.stories}
+              onChange={(event) => setState("stories", event.currentTarget.checked)}
+            />
+            {language.t("p1.filter.stories")}
+          </label>
+          {/* Tasks show under their stories, so this waits for the stories box. */}
+          <label
+            class="pl-6 flex items-start gap-2 text-13-regular"
+            classList={{
+              "text-text-base cursor-pointer": !!state.stories,
+              "text-text-weak cursor-default": !state.stories,
+            }}
+          >
+            <input
+              type="checkbox"
+              data-action="p1-filter-tasks"
+              class="mt-0.5 size-4 shrink-0 accent-[var(--surface-interactive-base)] disabled:opacity-40"
+              disabled={!state.stories}
+              checked={!!state.stories && !!state.tasks}
+              onChange={(event) => setState("tasks", event.currentTarget.checked)}
+            />
+            {language.t("p1.filter.tasks")}
+          </label>
+          <label class="flex items-start gap-2 text-13-regular text-text-base cursor-pointer">
+            <input
+              type="checkbox"
               class="mt-0.5 size-4 shrink-0 accent-[var(--surface-interactive-base)]"
               checked={state.unlinked}
               onChange={(event) => setState("unlinked", event.currentTarget.checked)}
             />
-            {language.t("p1.filter.unlinked")}
+            <span>{language.t("p1.filter.unlinked")}</span>
+            <span class="shrink-0 mt-0.5">
+              <Unlinked />
+            </span>
           </label>
           <label class="flex items-start gap-2 text-13-regular text-text-base cursor-pointer">
             <input
@@ -142,7 +174,10 @@ export function P1Filter(props: {
               checked={state.untested}
               onChange={(event) => setState("untested", event.currentTarget.checked)}
             />
-            {language.t("p1.filter.untested")}
+            <span>{language.t("p1.filter.untested")}</span>
+            <span class="shrink-0 mt-0.5">
+              <Untested />
+            </span>
           </label>
         </div>
         <div class="px-3 py-2.5 flex items-center justify-between border-t border-border-weaker-base">
@@ -150,7 +185,7 @@ export function P1Filter(props: {
             type="button"
             data-action="p1-filter-clear"
             class="h-8 px-2.5 rounded-md text-13-regular text-text-weak hover:bg-surface-raised-base-hover"
-            onClick={() => setState({ ...blank, submitter: state.submitter, group: state.group })}
+            onClick={() => setState({ ...blank, submitter: state.submitter, group: state.group, sort: state.sort })}
           >
             {language.t("p1.inline.clear")}
           </button>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { readColumns } from "./columns"
+import { named, readColumns } from "./columns"
 import { readModules } from "./points"
 
 describe("p1 list", () => {
@@ -26,5 +26,13 @@ describe("p1 list", () => {
     expect(rows).toEqual([
       { module: 9, name: "DevSuite Admin", owner: 578, person: "David He", points: 4, tasks: 1, time: "4h/0h", finish: "100%" },
     ])
+  })
+
+  test("shows Priority Order under SiCode's name and leaves the other columns as P1 names them", () => {
+    const list = [
+      { id: 1132, name: "Priority Order", type: 1 },
+      { id: 1131, name: "Points", type: 1 },
+    ]
+    expect(named(list, "Priority #").map((item) => item.name)).toEqual(["Priority #", "Points"])
   })
 })
