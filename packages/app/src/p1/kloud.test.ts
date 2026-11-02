@@ -14,7 +14,12 @@ describe("p1 kloud", () => {
         },
       },
     })
-    expect(found).toEqual({ company: 6708, api: "https://api.kloud.cn/peertime/V1/", web: "https://kloud.cn/" })
+    expect(found).toEqual({
+      company: 6708,
+      api: "https://api.kloud.cn/peertime/V1/",
+      web: "https://kloud.cn/",
+      meet: "https://wss.kloud.cn/",
+    })
     expect(readKloud({ Data: { SubSystemId: 6708, KloudServer: "" } })).toBeUndefined()
     // P1's formal Kloud sites use company 6708, whatever the server reports.
     expect(

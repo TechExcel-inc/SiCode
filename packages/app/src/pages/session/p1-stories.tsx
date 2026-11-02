@@ -4,7 +4,8 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
-import { update } from "@/p1/form"
+import { brief, guess, type Guess } from "@/p1/estimate"
+import { plain, update } from "@/p1/form"
 import { load, members, modules, type Choice, type Home, type Module } from "@/p1/points"
 import { useP1 } from "@/p1/settings"
 import {
@@ -25,7 +26,7 @@ import {
   type Task,
 } from "@/p1/stories"
 import { Menu, prime } from "./p1-inline"
-import { Choose, Fold, Plus, StoryIcon, TaskIcon } from "./p1-icons"
+import { Choose, Fold, Plus, Refresh, Spark, StoryIcon, TaskIcon } from "./p1-icons"
 import { P1Pop } from "./p1-pop"
 import { Tip } from "./p1-tip"
 
@@ -55,6 +56,8 @@ export function P1Stories(props: {
   hours: number
   home: Home
   readonly: boolean
+  // Asks the AI a question; without it there is no AI estimate.
+  ask?: (prompt: string, system: string) => Promise<string>
   x: number
   y: number
   onClose: (changed: boolean) => void
@@ -63,6 +66,9 @@ export function P1Stories(props: {
   const language = useLanguage()
   const [state, setState] = createStore({
     loading: true,
+    // The AI's suggested points and story targets, while it is asked and once it answers.
+    guessing: false,
+    guess: undefined as Guess | undefined,
     err: "",
     list: [] as Story[],
     people: [] as Choice[],
@@ -157,6 +163,38 @@ export function P1Stories(props: {
       setState("hours", value)
     })
 
+  // Asks the AI, in a hidden session, for the spec's points and each story's target time from what P1 holds.
+  // The answer is only shown; Apply saves it.
+  const estimate = async () => {
+    if (state.guessing) return
+    setState({ guessing: true, guess: undefined, errs: { ...state.errs, guess: "" } })
+    const found = await prime(host(), token(), props.project, props.spec, p1.user(), locale()).catch(() => undefined)
+    const text = plain(found?.values[1102]?.html || found?.values[1102]?.value || "")
+    const reply = await (props.ask ?? (async () => ""))(
+      brief({ id: props.spec, title: props.title, text, points: state.hours }, state.list),
+      "You estimate software work. Reply with one JSON object only, exactly in the shape asked for. No code fences, no commentary, no tools.",
+    ).catch((err: unknown) => {
+      setState("errs", "guess", message(err))
+      return ""
+    })
+    const next = guess(reply, state.list)
+    setState({ guessing: false, guess: next })
+    if (!next && !state.errs.guess) setState("errs", "guess", language.t("p1.stories.ai.none"))
+  }
+
+  // Saves the suggestion: the spec's points, then each story's target time that differs.
+  const apply = async () => {
+    const found = state.guess
+    if (!found) return
+    setState("guess", undefined)
+    if (found.points !== state.hours) await hours(String(found.points))
+    for (const item of found.stories) {
+      const story = state.list.find((one) => one.id === item.id)
+      if (!story || story.target === item.hours) continue
+      await act(`s${story.id}`, () => edit(host(), token(), story, aim(item.hours), locale()))
+    }
+  }
+
   const fold = (story: Story) => {
     const next = state.shut.includes(story.id) ? state.shut.filter((id) => id !== story.id) : [...state.shut, story.id]
     setState("shut", next)
@@ -243,6 +281,8 @@ export function P1Stories(props: {
     if (ok) setState("form", undefined)
   }
 
+  const tool =
+    "h-9 px-3 rounded-lg flex items-center gap-1.5 text-13-medium border border-border-weaker-base bg-background-base hover:bg-surface-base-hover disabled:opacity-50"
   const head = "relative px-3 py-2.5 text-12-medium text-text-weak text-left font-medium whitespace-nowrap"
   const cell = "px-3 py-2 align-top"
 
@@ -357,6 +397,115 @@ export function P1Stories(props: {
           <Icon name="close" size="small" />
         </button>
       </div>
+      {/* The dialog's toolbar: add a story, fold or open every story, read again, and ask the AI for an estimate. */}
+      <div
+        data-component="p1-stories-bar"
+        class="shrink-0 h-14 px-5 flex items-center gap-2 border-b border-border-weaker-base bg-[color-mix(in_srgb,var(--text-interactive-base)_7%,var(--background-base))]"
+      >
+        <Show when={!props.readonly && props.home.dev}>
+          <button
+            type="button"
+            data-action="p1-stories-new"
+            class={`${tool} text-text-strong`}
+            onClick={() => setState({ form: { kind: "story" }, errs: { ...state.errs, form: "" } })}
+          >
+            <Plus />
+            {language.t("p1.stories.story")}
+          </button>
+        </Show>
+        <Show when={state.list.length}>
+          <button
+            type="button"
+            data-action="p1-stories-fold"
+            class={`${tool} text-text-base`}
+            onClick={() => {
+              const next = state.shut.length ? [] : state.list.map((story) => story.id)
+              setState("shut", next)
+              shut.set(props.spec, next)
+            }}
+          >
+            <Icon name={state.shut.length ? "expand" : "collapse"} size="small" />
+            {language.t(state.shut.length ? "p1.stories.open" : "p1.stories.fold")}
+          </button>
+        </Show>
+        <button
+          type="button"
+          data-action="p1-stories-refresh"
+          class={`${tool} w-9 px-0 justify-center text-icon-base`}
+          aria-label={language.t("p1.refresh")}
+          title={language.t("p1.refresh")}
+          disabled={state.loading}
+          onClick={() => void read()}
+        >
+          <Refresh />
+        </button>
+        <div class="flex-1" />
+        <Show when={!props.readonly && props.ask}>
+          <button
+            type="button"
+            data-action="p1-stories-ai"
+            class="h-9 px-3.5 rounded-lg flex items-center gap-2 text-13-medium text-white bg-gradient-to-r from-[#6d5cf6] to-[#3b82f6] shadow-xs hover:brightness-110 disabled:opacity-60"
+            disabled={state.guessing || state.loading}
+            onClick={() => void estimate()}
+          >
+            <Show when={state.guessing} fallback={<Spark />}>
+              <Spinner class="size-3.5" />
+            </Show>
+            {language.t(state.guessing ? "p1.stories.ai.busy" : "p1.stories.ai.estimate")}
+          </button>
+        </Show>
+      </div>
+      {/* The AI's suggestion, shown until you apply or dismiss it. */}
+      <Show when={state.guess}>
+        {(found) => (
+          <div
+            data-component="p1-stories-guess"
+            class="shrink-0 px-5 py-3 flex items-start gap-3 border-b border-border-weaker-base bg-[color-mix(in_srgb,#6d5cf6_10%,var(--background-base))]"
+          >
+            <span class="mt-0.5 text-[#8b7cf8]">
+              <Spark />
+            </span>
+            <div class="min-w-0 flex-1 flex flex-col gap-1.5">
+              <div class="text-13-regular text-text-base">
+                <span class="text-13-medium text-text-strong">
+                  {language.t("p1.stories.ai.points", { hours: found().points.toFixed(1) })}
+                </span>
+                <Show when={found().why}>
+                  <span class="text-text-weak"> · {found().why}</span>
+                </Show>
+              </div>
+              <Show when={found().stories.length}>
+                <div class="flex flex-wrap gap-1.5">
+                  <For each={found().stories}>
+                    {(item) => (
+                      <span
+                        class="max-w-80 h-6 px-2 rounded-md flex items-center gap-1.5 bg-background-base border border-border-weaker-base text-12-regular"
+                        title={item.why}
+                      >
+                        <span class="min-w-0 truncate text-text-base">
+                          {state.list.find((story) => story.id === item.id)?.name}
+                        </span>
+                        <span class="shrink-0 text-text-strong tabular-nums">{item.hours.toFixed(1)}h</span>
+                      </span>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
+            <div class="shrink-0 flex items-center gap-2">
+              <Button variant="secondary" size="small" data-action="p1-stories-ai-dismiss" onClick={() => setState("guess", undefined)}>
+                {language.t("p1.stories.ai.dismiss")}
+              </Button>
+              <Button variant="primary" size="small" data-action="p1-stories-ai-apply" onClick={() => void apply()}>
+                {language.t("p1.stories.ai.apply")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Show>
+      <Show when={state.errs.guess}>
+        <p class="shrink-0 px-5 pt-2 text-12-regular text-text-diff-delete-base">{state.errs.guess}</p>
+      </Show>
       <Show when={state.err || state.errs.spec}>
         <p class="shrink-0 px-5 pt-2 text-12-regular text-text-diff-delete-base">{state.err || state.errs.spec}</p>
       </Show>
@@ -624,20 +773,6 @@ export function P1Stories(props: {
                   )
                 }}
               </For>
-              <Show when={!props.readonly && props.home.dev}>
-                <tr>
-                  <td colSpan={6} class="px-3 py-2.5">
-                    <button
-                      type="button"
-                      class="h-8 px-2.5 rounded-md flex items-center gap-1.5 text-13-medium text-text-interactive-base hover:bg-surface-base-hover"
-                      onClick={() => setState({ form: { kind: "story" }, errs: { ...state.errs, form: "" } })}
-                    >
-                      <Plus />
-                      {language.t("p1.stories.story")}
-                    </button>
-                  </td>
-                </tr>
-              </Show>
             </tbody>
           </table>
         </Show>
@@ -1201,3 +1336,4 @@ function tenth(value: string) {
 function percent(value: string) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
 }
+

@@ -24,6 +24,8 @@ export type Filter = {
   ways?: Record<string, boolean>
   // How many requirements a page of the list holds.
   size?: number
+  // The saved search the list shows: P1 lists by its id (-10 the ad-hoc search, saved ones above 0).
+  query?: { id: number; name: string }
 }
 
 export type Sort = { id: number; down: boolean }
@@ -105,6 +107,7 @@ export function condition(filter: Filter) {
     ...(filter.group ? { GroupByID: filter.group, SubGroupByID: 0 } : {}),
     ...(filter.unlinked ? { withoutReqLink: 1 } : {}),
     ...(filter.untested ? { WithoutTestTempLink: 1 } : {}),
+    ...(filter.query?.id ? { QueryID: filter.query.id } : {}),
   }
 }
 

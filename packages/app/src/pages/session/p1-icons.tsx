@@ -168,3 +168,136 @@ export function Untested() {
     </svg>
   )
 }
+
+/** AI: a four-point spark with a small one beside it. */
+export function Spark() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M6.5 1.5l1.3 3.7 3.7 1.3-3.7 1.3-1.3 3.7-1.3-3.7L1.5 6.5l3.7-1.3z" />
+      <path d="M12 9.5l.65 1.85 1.85.65-1.85.65L12 14.5l-.65-1.85L9.5 12l1.85-.65z" />
+    </svg>
+  )
+}
+
+/** Stories and their tasks: the story's book, with a task's tick in front of it. */
+export function Stories() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <g class="text-icon-info-base" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
+        <rect x="1.5" y="1" width="9" height="11.5" rx="1.75" />
+        <path d="M4.5 1V6L6 5L7.5 6V1" fill="currentColor" />
+      </g>
+      <g class="text-icon-success-base">
+        <rect x="8" y="8" width="7" height="7" rx="1.75" fill="var(--background-base)" stroke="currentColor" stroke-width="1.3" />
+        <path d="M9.9 11.5L11.1 12.7L13.2 10.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+      </g>
+    </svg>
+  )
+}
+
+/** The product feature map: a product with its modules branching under it, for turning the map on and off. */
+export function FeatureMap() {
+  return (
+    <svg
+      class="size-4 shrink-0"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="5.5" y="1.5" width="5" height="3.5" rx="1" />
+      <path d="M8 5v2.5M3.5 10V7.5h9V10" />
+      <rect x="1.5" y="10" width="4" height="4" rx="1" />
+      <rect x="10.5" y="10" width="4" height="4" rx="1" />
+    </svg>
+  )
+}
+
+/** A product in the feature map: P1's light blue box. */
+export function Product() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 16.6 16.2" aria-hidden="true">
+      <path
+        d="M15.7 3.85H.93a.5.5 0 0 1-.42-.78L2.27.43C2.45.16 2.75 0 3.08 0h10.49c.32 0 .62.16.8.43l1.75 2.64a.5.5 0 0 1-.42.78z"
+        fill="#B1DEFE"
+      />
+      <path d="M0 5v10.23c0 .51.42.93.93.93h14.78c.51 0 .93-.42.93-.93V5a1 1 0 0 0-1-1H1a1 1 0 0 0-1 1z" fill="#83CBFF" />
+    </svg>
+  )
+}
+
+/** A module in the feature map: P1's purple cube. */
+export function Module() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M9.04 3.7a2.7 2.7 0 0 1 1.92 0l6.09 2.34c.57.22.57 1.03 0 1.25l-6.09 2.34a2.7 2.7 0 0 1-1.92 0L2.95 7.29c-.57-.22-.57-1.03 0-1.25z" fill="#D8BBF0" />
+      <path d="M2.33 8.1v6.32c0 1.1.68 2.1 1.71 2.49l4.48 1.71c.73.28 1.48-.25 1.48-1.02v-6.72L3.6 7.6c-.6-.23-1.27.21-1.27.5z" fill="#B48AD9" />
+      <path d="M17.67 8.1v6.32c0 1.1-.68 2.1-1.71 2.49l-4.48 1.71c-.73.28-1.48-.25-1.48-1.02v-6.72l6.4-2.48c.6-.23 1.27.21 1.27.5z" fill="#9B6BC9" />
+    </svg>
+  )
+}
+
+/** A feature folder in the feature map: P1's green folder. */
+export function Feature() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 16 14" aria-hidden="true">
+      <path d="M1.45 0h4.31c.54 0 1.05.25 1.38.68l4.2 5.43H0V1.45C0 .65.65 0 1.45 0z" fill="#05AD0D" />
+      <rect x="0" y="2.47" width="16" height="11.34" rx="1.6" fill="#1CC925" />
+    </svg>
+  )
+}
+
+/** Every requirement: P1's four blue petals. */
+export function Petals() {
+  return (
+    <svg class="size-4 shrink-0" viewBox="0 0 15 15" aria-hidden="true">
+      <path
+        d="M6.92 3.46v3.46H3.46a3.46 3.46 0 1 1 3.46-3.46zm0 8.08V8.08H3.46a3.46 3.46 0 1 0 3.46 3.46zm1.16 0V8.08h3.46a3.46 3.46 0 1 1-3.46 3.46z"
+        fill="#83CBFF"
+      />
+      <path d="M8.08 3.46v3.46h3.46a3.46 3.46 0 1 0-3.46-3.46z" fill="#B1DEFE" />
+    </svg>
+  )
+}
+
+/** Closes or opens the folder panel, as P1's: the list's lines with an arrow pointing the way the panel goes. */
+export function Collapse(props: { open: boolean }) {
+  return (
+    <svg
+      class="size-4 shrink-0"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7.5 3.5h6M7.5 8h6M7.5 12.5h6M2 3.5h2.5M2 12.5h2.5" />
+      <path d={props.open ? "M4.5 6L2.5 8l2 2" : "M2.5 6l2 2-2 2"} />
+    </svg>
+  )
+}
+
+/** Reads again, as P1's refresh: an open ring with its arrow at the top right. */
+export function Refresh(props: { spin?: boolean }) {
+  return (
+    <svg
+      class="size-4 shrink-0"
+      classList={{ "animate-spin": props.spin }}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M13.25 8A5.25 5.25 0 1 1 11.6 4.2" />
+      <path d="M12 1.75v2.75H9.25" />
+    </svg>
+  )
+}

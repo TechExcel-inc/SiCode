@@ -37,10 +37,12 @@ import { P1Stories } from "./p1-stories"
 import { change, edit as retitle, field as fields, listed as roster, type Story, type Task } from "@/p1/stories"
 import { Menu, P1Inline, prime } from "./p1-inline"
 import { P1Filter } from "./p1-filter"
+import { P1Features, type Pick } from "./p1-features"
+import { P1Query } from "./p1-query"
 import { P1Group } from "./p1-group"
 import { P1Prefs, tint } from "./p1-prefs"
 import { keep as prefer, plain, prefs, type Prefs } from "@/p1/prefs"
-import { FolderType, Panel, SpecIcon, StoryIcon, TaskIcon, Unlinked, Untested, typed } from "./p1-icons"
+import { Collapse, FeatureMap, FolderType, Refresh, SpecIcon, Stories, StoryIcon, TaskIcon, Unlinked, Untested, typed } from "./p1-icons"
 import { Tip } from "./p1-tip"
 import { P1Workload } from "./p1-workload"
 import { P1Attach } from "./p1-attach"
@@ -81,7 +83,8 @@ const actions = [
   { key: "customize", icon: "sliders", ready: true },
 ] as const
 
-export function P1Work() {
+/** P1 work: requirements by folder, as a list or a board. `ask` puts a question to the AI. */
+export function P1Work(props: { ask?: (prompt: string, system: string) => Promise<string> }) {
   const p1 = useP1()
   let hover: ReturnType<typeof setTimeout> | undefined
   let pane: HTMLElement | undefined
@@ -230,6 +233,10 @@ export function P1Work() {
     top: [] as number[],
     rows: [] as Row[],
     total: 0,
+    // The product feature the list is narrowed to, picked in the feature map.
+    feature: undefined as Pick | undefined,
+    // The folder panel's search.
+    seek: "",
     // The page of the list shown.
     page: 1,
     space: undefined as Space | undefined,
@@ -837,7 +844,16 @@ export function P1Work() {
     const token = p1.token()
     if (!host || !token) return
     const mine = ++wave
+    // A feature narrows one folder's list; another folder starts from all of it.
+    if (folder !== state.folder) setState("feature", undefined)
     setState({ loading: true, folder, query, root, page })
+    // A feature with no specs lists none, as there is nothing to ask P1 for.
+    if (state.feature && !state.feature.ids.length) {
+      setState({ rows: [], total: 0, groups: [], loading: false, err: "", checked: {}, tales: {} })
+      return
+    }
+    // A feature lists its specs by id, as P1 searches for them.
+    const words = state.feature ? state.feature.ids.join(",") : query
     void access(host, token, root, folder, language.locale())
       .then((level) => setState("level", level))
       .catch(() => setState("level", 0))
@@ -854,7 +870,7 @@ export function P1Work() {
       token,
       root,
       folder,
-      query,
+      words,
       language.locale(),
       state.cols.map((col) => col.id),
       // Weekly committed work only groups a folder that spans roadmap months, as in P1.
@@ -993,7 +1009,8 @@ export function P1Work() {
     </div>
   )
 
-  const node = (id: number, depth: number): JSX.Element => (
+  // A folder's row; `flat` shows it alone, as a search result, without its subfolders.
+  const node = (id: number, depth: number, flat = false): JSX.Element => (
     <Show when={state.folders[id]}>
       {(item) => (
         <>
@@ -1049,7 +1066,7 @@ export function P1Work() {
               <Icon name="menu" size="small" />
             </button>
           </div>
-          <Show when={state.open[id]}>
+          <Show when={state.open[id] && !flat}>
             <For each={(state.kids[id] ?? []).filter(shows)}>{(kid) => node(kid, depth + 1)}</For>
           </Show>
         </>
@@ -1076,6 +1093,17 @@ export function P1Work() {
 
   // A closed folder shows only while the settings say to show closed folders.
   const shows = (id: number) => state.prefs.closed || !state.folders[id]?.closed
+  // The folders read so far whose names hold the search, in tree order.
+  const found = createMemo(() => {
+    const words = state.seek.trim().toLowerCase()
+    if (!words) return []
+    const walk = (ids: number[]): number[] =>
+      ids.filter(shows).flatMap((id) => [
+        ...(state.folders[id]?.name.toLowerCase().includes(words) ? [id] : []),
+        ...walk(state.kids[id] ?? []),
+      ])
+    return walk(state.top)
+  })
 
   // Applies a change to P1's view settings at once and keeps it in P1; showing closed folders reads the tree again.
   const tune = async (next: Prefs) => {
@@ -1152,7 +1180,7 @@ export function P1Work() {
     "w-full px-2.5 py-2 flex items-center gap-2.5 rounded-lg text-left text-13-regular text-text-strong hover:bg-surface-base-hover disabled:text-text-weaker disabled:hover:bg-transparent"
 
   // The folder tree's width, dragged between half and double its usual 256px and kept in P1 settings.
-  // Shown over the list while closed, it is a little wider than usual.
+  // Shown over the list while closed, it keeps the same width.
   const breadth = () => Math.min(512, Math.max(128, state.wide ?? p1.width("tree") ?? 256))
   const drag = (event: PointerEvent) => {
     event.preventDefault()
@@ -1172,7 +1200,7 @@ export function P1Work() {
   const tree = (over = false) => (
     <aside
       class="relative shrink-0 border-r border-border-weaker-base flex flex-col min-h-0"
-      style={{ width: `${over ? 308 : breadth()}px` }}
+      style={{ width: `${breadth()}px` }}
     >
       <Show when={!over}>
         <div
@@ -1185,25 +1213,51 @@ export function P1Work() {
           <div class="w-px h-full bg-transparent group-hover:w-0.5 group-hover:bg-border-strong-base group-active:w-0.5 group-active:bg-border-interactive-base" />
         </div>
       </Show>
-      <div class="shrink-0 h-14 pl-3 pr-4 mb-2 flex items-center gap-2 border-b border-border-weaker-base">
+      {/* Finds a folder by name among those read so far, and reads the tree again. */}
+      <div class="shrink-0 h-12 pl-3 pr-2 flex items-center gap-1.5 border-b border-border-weaker-base">
+        <label class="min-w-0 flex-1 h-8 px-2.5 flex items-center gap-2 rounded-lg border border-border-weaker-base bg-surface-base focus-within:border-border-interactive-base">
+          <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-weak" />
+          <input
+            data-action="p1-folders-search"
+            class="min-w-0 flex-1 bg-transparent text-13-regular text-text-strong placeholder:text-text-weak outline-none"
+            value={state.seek}
+            placeholder={language.t("p1.folders.search")}
+            onInput={(event) => setState("seek", event.currentTarget.value)}
+            onKeyDown={(event) => event.key === "Escape" && setState("seek", "")}
+          />
+          <Show when={state.seek}>
+            <button
+              type="button"
+              class="shrink-0 size-5 rounded flex items-center justify-center text-icon-weak hover:text-text-strong"
+              aria-label={language.t("p1.folders.clear")}
+              onClick={() => setState("seek", "")}
+            >
+              <Icon name="close-small" size="small" />
+            </button>
+          </Show>
+        </label>
         <button
           type="button"
-          data-action={p1.folded() ? "p1-folders-pin" : "p1-folders-hide"}
-          class="shrink-0 size-8 rounded-md flex items-center justify-center text-text-weak hover:text-text-strong hover:bg-surface-base-hover"
-          aria-label={language.t(p1.folded() ? "p1.folders.show" : "p1.folders.hide")}
-          title={language.t(p1.folded() ? "p1.folders.show" : "p1.folders.hide")}
-          onClick={() => (setState("peek", false), p1.fold(!p1.folded()))}
+          data-action="p1-folders-refresh"
+          class="shrink-0 size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base text-text-base hover:text-text-strong hover:bg-surface-base-hover disabled:opacity-50"
+          aria-label={language.t("p1.refresh")}
+          title={language.t("p1.refresh")}
+          disabled={!state.project}
+          onClick={() => state.project && void pick(state.project)}
         >
-          <Panel open={!p1.folded()} />
+          <Refresh spin={state.loading} />
         </button>
-        <span class="truncate text-14-medium text-text-strong">{language.t("p1.folders")}</span>
       </div>
-      <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
+      <div class="flex-1 min-h-0 overflow-y-auto px-2 pt-2 pb-3 flex flex-col gap-0.5">
         <Show
           when={state.top.length}
           fallback={<Hint text={language.t(state.loading ? "p1.loading" : "p1.empty.folders")} />}
         >
-          <For each={state.top.filter(shows)}>{(id) => node(id, 0)}</For>
+          <Show when={state.seek.trim()} fallback={<For each={state.top.filter(shows)}>{(id) => node(id, 0)}</For>}>
+            <Show when={found().length} fallback={<Hint text={language.t("p1.folders.nomatch")} />}>
+              <For each={found()}>{(id) => node(id, 0, true)}</For>
+            </Show>
+          </Show>
         </Show>
       </div>
     </aside>
@@ -1394,7 +1448,7 @@ export function P1Work() {
               disabled={state.loading}
               onClick={() => (state.project && state.root ? void fill(state.root, state.folder, state.query.trim()) : void load())}
             >
-              <Icon name="reset" size="small" classList={{ "animate-spin": state.loading }} />
+              <Refresh spin={state.loading} />
             </button>
           </Tooltip>
         </div>
@@ -1404,6 +1458,196 @@ export function P1Work() {
             {state.err}
           </p>
         </Show>
+          <div class="shrink-0 h-14 pl-3 pr-4 flex items-center gap-3 border-b border-border-weaker-base">
+            {/* The selected folder, as P1 heads its list with it; its actions are in the tree. */}
+            {/* As wide as the folder panel, so the arrow sits on its edge whether the panel is open or not. */}
+            <div
+              class="shrink-0 min-w-0 h-8 flex items-center gap-2"
+              style={{ width: `${breadth() - 64}px` }}
+              title={folder()?.name}
+            >
+              <Show when={folder()} fallback={<Icon name="folder" size="small" class="shrink-0 text-text-weak" />}>
+                {(item) => (
+                  <Show when={typed(item().type)} fallback={<Icon name="folder" size="small" class="shrink-0 text-text-weak" />}>
+                    <FolderType type={item().type} closed={item().closed} />
+                  </Show>
+                )}
+              </Show>
+              <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">
+                {folder()?.name ?? language.t("p1.requirements")}
+              </span>
+            </div>
+            {/* Closes or opens the folder panel; while closed, pointing at it shows the folders over the list. */}
+            <button
+              type="button"
+              data-action={p1.folded() ? "p1-folders-show" : "p1-folders-hide"}
+              class="shrink-0 size-8 rounded-md flex items-center justify-center text-text-base hover:text-text-strong hover:bg-surface-base-hover"
+              aria-label={language.t(p1.folded() ? "p1.folders.show" : "p1.folders.hide")}
+              title={language.t(p1.folded() ? "p1.folders.show" : "p1.folders.hide")}
+              onMouseEnter={() => p1.folded() && peek(true)}
+              onMouseLeave={() => p1.folded() && peek(false)}
+              onClick={() => (setState("peek", false), p1.fold(!p1.folded()))}
+            >
+              <Collapse open={!p1.folded()} />
+            </button>
+            <div class="shrink-0 w-px h-5 bg-border-weaker-base" />
+            <div class="shrink-0 flex items-center p-0.5 rounded-lg border border-border-weaker-base bg-surface-base">
+              <For each={["list", "board"] as const}>
+                {(view) => (
+                  <button
+                    type="button"
+                    data-action={`p1-view-${view}`}
+                    class="h-7 px-3 rounded-md text-13-medium"
+                    classList={{
+                      "bg-background-base text-text-strong shadow-xs": p1.view() === view,
+                      "text-text-weak hover:text-text-base": p1.view() !== view,
+                    }}
+                    aria-pressed={p1.view() === view}
+                    onClick={() => p1.show(view)}
+                  >
+                    {language.t(`p1.view.${view}`)}
+                  </button>
+                )}
+              </For>
+            </div>
+            <button
+              type="button"
+              data-action="p1-filter"
+              class="shrink-0 relative size-8 rounded-lg flex items-center justify-center border transition-colors"
+              classList={{
+                "bg-surface-interactive-base border-transparent text-text-on-interactive-base hover:opacity-90":
+                  active(state.filter),
+                "border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover":
+                  !active(state.filter),
+              }}
+              disabled={!state.root}
+              aria-label={language.t("p1.filter.title")}
+              title={language.t("p1.filter.title")}
+              aria-pressed={active(state.filter)}
+              onClick={(event) => void sift(event.currentTarget.getBoundingClientRect())}
+            >
+              <Icon name="sliders" size="small" class="[&_path]:[stroke-width:1.75]" />
+            </button>
+            {/* The product feature map beside the list, on or off. */}
+            <button
+              type="button"
+              data-action="p1-features"
+              class="shrink-0 size-8 rounded-lg flex items-center justify-center border transition-colors"
+              classList={{
+                "bg-surface-interactive-base border-transparent text-text-on-interactive-base hover:opacity-90": p1.mapped(),
+                "border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover": !p1.mapped(),
+              }}
+              disabled={!state.root}
+              aria-label={language.t("p1.features.title")}
+              title={language.t("p1.features.title")}
+              aria-pressed={p1.mapped()}
+              onClick={() => {
+                p1.map(!p1.mapped())
+                // Closing the map lists every requirement again.
+                if (p1.mapped() || !state.feature) return
+                setState("feature", undefined)
+                void fill(state.root, state.folder, state.query.trim())
+              }}
+            >
+              <FeatureMap />
+            </button>
+            {/* P1's query controls, then the search. */}
+            <P1Query
+              project={state.root}
+              folder={state.folder}
+              value={state.filter.query}
+              disabled={!state.root}
+              onChange={(query) => refine({ ...state.filter, query })}
+            />
+            <label class="w-[180px] xl:w-[220px] min-w-0 h-8 px-2.5 flex items-center gap-2 rounded-lg border border-border-weaker-base bg-surface-base focus-within:border-border-interactive-base">
+              <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-weak" />
+              <input
+                ref={(el) => (finder = el)}
+                data-action="p1-search"
+                class="min-w-0 flex-1 bg-transparent text-13-regular text-text-strong placeholder:text-text-weak outline-none"
+                value={state.query}
+                placeholder={language.t("p1.search.requirement")}
+                onInput={(event) => search(event.currentTarget.value)}
+              />
+              <span class="shrink-0 text-12-regular text-text-weaker">⌘K</span>
+            </label>
+            <Button
+              variant="primary"
+              size="large"
+              icon="plus-small"
+              disabled={!state.folder || !state.root}
+              onClick={() => setState("item", 0)}
+              data-action="p1-new"
+            >
+              {language.t("p1.new")}
+            </Button>
+            <div class="flex-1" />
+            {/* The team's score for the selected roadmap month folder: a label over a bar, with the numbers on hover.
+            It opens the workload and performance report. */}
+            <Show when={work()}>
+              <div class="shrink-0 flex items-center gap-2">
+                <div class="relative group/tip">
+                  <button
+                    type="button"
+                    data-action="p1-work-score"
+                    class={gauge}
+                    aria-label={language.t("p1.work.team")}
+                    onClick={() => setState("report", true)}
+                  >
+                    <span class="text-11-medium text-text-weak">{language.t("p1.work.team")}</span>
+                    <span class="w-full h-1.5 rounded-full bg-border-weak-base overflow-hidden">
+                      <span
+                        class="block h-full min-w-1 rounded-full bg-gradient-to-r from-[#f0c46c] to-[#e2a83e]"
+                        style={{ width: `${Math.min(100, (state.team?.score ?? 0) * 10)}%` }}
+                      />
+                    </span>
+                  </button>
+                  <Tip
+                    rows={[
+                      [language.t("p1.work.team"), String(state.team?.score ?? 0)],
+                      [language.t("p1.work.high"), String(state.team?.high ?? 0)],
+                      [language.t("p1.work.low"), String(state.team?.low ?? 0)],
+                    ]}
+                  />
+                </div>
+              </div>
+            </Show>
+            {/* One way to edit from the list, switched here: a pencil edits in place, a side panel opens the spec. */}
+            <div class="relative group/tip shrink-0">
+              <button
+                type="button"
+                data-action="p1-edit-mode"
+                class="size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base hover:bg-surface-base-hover"
+                aria-label={language.t(p1.edit() === "inline" ? "p1.prefs.inline.name" : "p1.prefs.panel.name")}
+                onClick={() => {
+                  p1.mode(p1.edit() === "inline" ? "panel" : "inline")
+                  setState({ panel: undefined, typing: undefined })
+                }}
+              >
+                {/* The icon itself carries the mode's color: the icon component sets its own grey otherwise. */}
+                <Show
+                  when={p1.edit() === "inline"}
+                  fallback={
+                    <Icon name="layout-left-full" size="small" class="-scale-x-100" style={{ color: tint.panel }} />
+                  }
+                >
+                  <Icon name="pencil-line" size="small" style={{ color: tint.inline }} />
+                </Show>
+              </button>
+              <Tip text={language.t(p1.edit() === "inline" ? "p1.prefs.inline.name" : "p1.prefs.panel.name")} />
+            </div>
+            <button
+              type="button"
+              data-action="p1-prefs"
+              class="shrink-0 size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base text-text-weak hover:text-text-strong"
+              classList={{ "text-text-strong border-border-strong-base": !!state.sets }}
+              disabled={!state.root}
+              aria-label={language.t("p1.prefs.title")}
+              onClick={(event) => setState("sets", event.currentTarget.getBoundingClientRect())}
+            >
+              <Icon name="settings-gear" size="small" />
+            </button>
+          </div>
         <div class="relative flex-1 min-h-0 flex">
           <Show when={!p1.folded()}>{tree()}</Show>
           <Show when={p1.folded() && state.peek}>
@@ -1415,145 +1659,18 @@ export function P1Work() {
               {tree(true)}
             </div>
           </Show>
+          <Show when={p1.mapped() && state.root && state.folder}>
+            <P1Features
+              place={{ project: state.root, space: state.space?.folder ?? 0, folder: state.folder }}
+              products={state.space?.products ?? []}
+              picked={state.feature?.id}
+              onPick={(pick) => {
+                setState("feature", pick)
+                void fill(state.root, state.folder, state.query.trim())
+              }}
+            />
+          </Show>
           <section ref={(el) => (pane = el)} class="relative flex-1 min-w-0 flex flex-col min-h-0">
-            <div class="shrink-0 h-14 pl-3 pr-4 flex items-center gap-3 border-b border-border-weaker-base">
-              <Show when={p1.folded()}>
-                <button
-                  type="button"
-                  data-action="p1-folders-show"
-                  class="shrink-0 size-8 rounded-md flex items-center justify-center text-text-weak hover:text-text-strong hover:bg-surface-base-hover"
-                  aria-label={language.t("p1.folders.show")}
-                  title={language.t("p1.folders.show")}
-                  onMouseEnter={() => peek(true)}
-                  onMouseLeave={() => peek(false)}
-                  onClick={() => (setState("peek", false), p1.fold(false))}
-                >
-                  <Panel open={false} />
-                </button>
-              </Show>
-              {/* The selected folder, shown only; its actions are in the tree. */}
-              <div
-                class="shrink-0 w-[174px] h-8 px-3 flex items-center rounded-lg border border-border-weaker-base bg-surface-base"
-                title={folder()?.name}
-              >
-                <div class="min-w-0 flex-1 truncate text-14-medium text-text-strong">
-                  {folder()?.name ?? language.t("p1.requirements")}
-                </div>
-              </div>
-              <div class="shrink-0 flex items-center p-0.5 rounded-lg border border-border-weaker-base bg-surface-base">
-                <For each={["list", "board"] as const}>
-                  {(view) => (
-                    <button
-                      type="button"
-                      data-action={`p1-view-${view}`}
-                      class="h-7 px-3 rounded-md text-13-medium"
-                      classList={{
-                        "bg-background-base text-text-strong shadow-xs": p1.view() === view,
-                        "text-text-weak hover:text-text-base": p1.view() !== view,
-                      }}
-                      aria-pressed={p1.view() === view}
-                      onClick={() => p1.show(view)}
-                    >
-                      {language.t(`p1.view.${view}`)}
-                    </button>
-                  )}
-                </For>
-              </div>
-              <button
-                type="button"
-                data-action="p1-filter"
-                class="shrink-0 relative size-8 rounded-lg flex items-center justify-center border transition-colors"
-                classList={{
-                  "bg-surface-interactive-base border-transparent text-text-on-interactive-base hover:opacity-90":
-                    active(state.filter),
-                  "border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover":
-                    !active(state.filter),
-                }}
-                disabled={!state.root}
-                aria-label={language.t("p1.filter.title")}
-                title={language.t("p1.filter.title")}
-                aria-pressed={active(state.filter)}
-                onClick={(event) => void sift(event.currentTarget.getBoundingClientRect())}
-              >
-                <Icon name="sliders" size="small" class="[&_path]:[stroke-width:1.75]" />
-              </button>
-              <Button
-                variant="primary"
-                size="large"
-                icon="plus-small"
-                disabled={!state.folder || !state.root}
-                onClick={() => setState("item", 0)}
-                data-action="p1-new"
-              >
-                {language.t("p1.new")}
-              </Button>
-              <div class="flex-1" />
-              {/* The team's score for the selected roadmap month folder: a label over a bar, with the numbers on hover.
-              It opens the workload and performance report. */}
-              <Show when={work()}>
-                <div class="shrink-0 flex items-center gap-2">
-                  <div class="relative group/tip">
-                    <button
-                      type="button"
-                      data-action="p1-work-score"
-                      class={gauge}
-                      aria-label={language.t("p1.work.team")}
-                      onClick={() => setState("report", true)}
-                    >
-                      <span class="text-11-medium text-text-weak">{language.t("p1.work.team")}</span>
-                      <span class="w-full h-1.5 rounded-full bg-border-weak-base overflow-hidden">
-                        <span
-                          class="block h-full min-w-1 rounded-full bg-gradient-to-r from-[#f0c46c] to-[#e2a83e]"
-                          style={{ width: `${Math.min(100, (state.team?.score ?? 0) * 10)}%` }}
-                        />
-                      </span>
-                    </button>
-                    <Tip
-                      rows={[
-                        [language.t("p1.work.team"), String(state.team?.score ?? 0)],
-                        [language.t("p1.work.high"), String(state.team?.high ?? 0)],
-                        [language.t("p1.work.low"), String(state.team?.low ?? 0)],
-                      ]}
-                    />
-                  </div>
-                </div>
-              </Show>
-              {/* One way to edit from the list, switched here: a pencil edits in place, a side panel opens the spec. */}
-              <div class="relative group/tip shrink-0">
-                <button
-                  type="button"
-                  data-action="p1-edit-mode"
-                  class="size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base hover:bg-surface-base-hover"
-                  aria-label={language.t(p1.edit() === "inline" ? "p1.prefs.inline.name" : "p1.prefs.panel.name")}
-                  onClick={() => {
-                    p1.mode(p1.edit() === "inline" ? "panel" : "inline")
-                    setState({ panel: undefined, typing: undefined })
-                  }}
-                >
-                  {/* The icon itself carries the mode's color: the icon component sets its own grey otherwise. */}
-                  <Show
-                    when={p1.edit() === "inline"}
-                    fallback={
-                      <Icon name="layout-left-full" size="small" class="-scale-x-100" style={{ color: tint.panel }} />
-                    }
-                  >
-                    <Icon name="pencil-line" size="small" style={{ color: tint.inline }} />
-                  </Show>
-                </button>
-                <Tip text={language.t(p1.edit() === "inline" ? "p1.prefs.inline.name" : "p1.prefs.panel.name")} />
-              </div>
-              <button
-                type="button"
-                data-action="p1-prefs"
-                class="shrink-0 size-8 rounded-lg flex items-center justify-center border border-border-weaker-base bg-surface-base text-text-weak hover:text-text-strong"
-                classList={{ "text-text-strong border-border-strong-base": !!state.sets }}
-                disabled={!state.root}
-                aria-label={language.t("p1.prefs.title")}
-                onClick={(event) => setState("sets", event.currentTarget.getBoundingClientRect())}
-              >
-                <Icon name="settings-gear" size="small" />
-              </button>
-            </div>
             {/* The list's own bar, as in P1: how it is grouped, its search, and its pages. */}
             <div class="shrink-0 h-12 pl-3 pr-4 flex items-center gap-3 border-b border-border-weaker-base">
               <P1Group
@@ -1563,18 +1680,30 @@ export function P1Work() {
                 // Grouping by spec and story owner is about stories, so it turns them on.
                 onPick={(group) => refine({ ...state.filter, group, stories: group === 1604 || state.filter.stories })}
               />
-              <label class="w-[220px] xl:w-[280px] min-w-0 h-8 px-2.5 flex items-center gap-2 rounded-lg border border-border-weaker-base bg-surface-base focus-within:border-border-interactive-base">
-                <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-weak" />
-                <input
-                  ref={(el) => (finder = el)}
-                  data-action="p1-search"
-                  class="min-w-0 flex-1 bg-transparent text-13-regular text-text-strong placeholder:text-text-weak outline-none"
-                  value={state.query}
-                  placeholder={language.t("p1.search.requirement")}
-                  onInput={(event) => search(event.currentTarget.value)}
-                />
-                <span class="shrink-0 text-12-regular text-text-weaker">⌘K</span>
-              </label>
+              <Show when={state.feature}>
+                {(pick) => (
+                  <span
+                    data-component="p1-feature-chip"
+                    class="min-w-0 max-w-64 h-8 pl-2.5 pr-1 flex items-center gap-1.5 rounded-lg border border-border-interactive-base bg-surface-interactive-weak text-13-regular text-text-strong"
+                  >
+                    <FeatureMap />
+                    <span class="min-w-0 truncate">{pick().title}</span>
+                    <button
+                      type="button"
+                      data-action="p1-feature-clear"
+                      class="size-6 shrink-0 rounded-md flex items-center justify-center text-icon-base hover:text-text-strong hover:bg-surface-base-hover"
+                      aria-label={language.t("p1.features.every")}
+                      title={language.t("p1.features.every")}
+                      onClick={() => {
+                        setState("feature", undefined)
+                        void fill(state.root, state.folder, state.query.trim())
+                      }}
+                    >
+                      <Icon name="close-small" size="small" />
+                    </button>
+                  </span>
+                )}
+              </Show>
               <div class="flex-1" />
               <Show when={state.root && state.folder}>
                 <div data-component="p1-pager" class="shrink-0 flex items-center gap-2 text-13-regular text-text-weak">
@@ -1785,7 +1914,7 @@ export function P1Work() {
                                       <>
                                       <tr
                                         data-action="p1-requirement"
-                                        class="border-b border-border-weaker-base hover:bg-surface-base-hover"
+                                        class="group/req border-b border-border-weaker-base hover:bg-surface-base-hover"
                                         classList={{ "opacity-60": state.opening === row.id }}
                                         onContextMenu={(event) => {
                                           event.preventDefault()
@@ -1865,7 +1994,9 @@ export function P1Work() {
                                                 // As in P1: the ID opens the spec's editor, a field edited in place
                                                 // puts the docked editor away, and any other field opens it docked.
                                                 if (col.id === 1112) return setState({ panel: undefined, item: row.id })
-                                                if (col.id === 1131) return
+                                                // Points edit in place in either mode, with the story estimate a click away.
+                                                if (col.id === 1131)
+                                                  return setState({ panel: undefined, typing: { id: row.id, col: col.id } })
                                                 // The list's settings pick one way to edit: every field in the panel,
                                                 // or in place where P1 allows it and the row's menu elsewhere.
                                                 // In the panel, a click on a cell's text opens the spec and a click
@@ -1891,7 +2022,11 @@ export function P1Work() {
                                                         row={row}
                                                         onPoints={(event) => {
                                                           event.stopPropagation()
-                                                          setState("points", { id: row.id, x: event.clientX, y: event.clientY })
+                                                          setState({ panel: undefined, typing: { id: row.id, col: 1131 } })
+                                                        }}
+                                                        onStories={(event) => {
+                                                          event.stopPropagation()
+                                                          setState({ typing: undefined, points: { id: row.id, x: event.clientX, y: event.clientY } })
                                                         }}
                                                       />
                                                     }
@@ -1904,6 +2039,25 @@ export function P1Work() {
                                                   </Show>
                                                 }
                                               >
+                                                <div class="flex items-center gap-1.5">
+                                                <Show when={col.id === 1131}>
+                                                  <button
+                                                    type="button"
+                                                    data-action="p1-points-open"
+                                                    class="size-7 shrink-0 rounded-md flex items-center justify-center hover:bg-surface-raised-base-hover"
+                                                    aria-label={language.t("p1.points.open")}
+                                                    title={language.t("p1.points.open")}
+                                                    // Keeps the box focused, so it doesn't save and close before the click.
+                                                    onMouseDown={(event) => event.preventDefault()}
+                                                    onClick={(event) => {
+                                                      event.stopPropagation()
+                                                      setState({ typing: undefined, points: { id: row.id, x: event.clientX, y: event.clientY } })
+                                                    }}
+                                                  >
+                                                    <Stories />
+                                                  </button>
+                                                </Show>
+                                                <div class="min-w-0 flex-1">
                                                 <P1Inline
                                                   project={state.root}
                                                   id={row.id}
@@ -1917,6 +2071,8 @@ export function P1Work() {
                                                     if (state.typing?.id === row.id && state.typing.col === col.id) setState("typing", undefined)
                                                   }}
                                                 />
+                                                </div>
+                                                </div>
                                               </Show>
                                             </td>
                                           )}
@@ -2086,6 +2242,7 @@ export function P1Work() {
               hours={parseFloat(row?.cells[1131] ?? "") || 0}
               home={{ base: project?.base ?? 0, space: project?.id ?? 0, dev: state.space?.dev }}
               readonly={state.level < 2}
+              ask={props.ask}
               x={open().x}
               y={open().y}
               onClose={(changed) => {
@@ -2351,7 +2508,13 @@ function least(col: Column) {
 }
 
 /** One list cell, drawn the way P1 draws that field. */
-function Cell(props: { col: number; row: Row; onPoints: (event: MouseEvent) => void }) {
+function Cell(props: {
+  col: number
+  row: Row
+  onPoints: (event: MouseEvent) => void
+  onStories: (event: MouseEvent) => void
+}) {
+  const language = useLanguage()
   const value = () => props.row.cells[props.col] ?? ""
   // A cell's text carries `data-text`, so a click can tell it from the cell's empty space.
   if (props.col === 1112)
@@ -2367,16 +2530,30 @@ function Cell(props: { col: number; row: Row; onPoints: (event: MouseEvent) => v
       </div>
     )
   if (props.col === 1114) return <Status text={value()} />
+  // Points edit in place; on the row's hover, the stories and tasks icon before them opens their dialog.
   if (props.col === 1131)
     return (
-      <button
-        type="button"
-        data-action="p1-points"
-        class="px-2 py-0.5 rounded-md text-text-interactive-base hover:bg-surface-base-hover underline-offset-2 hover:underline"
-        onClick={(event) => props.onPoints(event)}
-      >
-        {Math.round((parseFloat(value()) || 0) * 10) / 10}h
-      </button>
+      <span class="inline-flex items-center gap-1">
+        <button
+          type="button"
+          data-action="p1-points-stories"
+          class="size-7 shrink-0 rounded-md flex items-center justify-center opacity-0 group-hover/req:opacity-100 focus-visible:opacity-100 hover:bg-surface-raised-base-hover"
+          aria-label={language.t("p1.points.open")}
+          title={language.t("p1.points.open")}
+          onClick={(event) => props.onStories(event)}
+        >
+          <Stories />
+        </button>
+        <button
+          type="button"
+          data-action="p1-points"
+          class="px-2 py-0.5 rounded-md text-text-interactive-base hover:bg-surface-base-hover underline-offset-2 hover:underline"
+          onClick={(event) => props.onPoints(event)}
+          data-text
+        >
+          {Math.round((parseFloat(value()) || 0) * 10) / 10}h
+        </button>
+      </span>
     )
   if (props.col === 1137) return <span data-text>{props.row.attachments || ""}</span>
   if (props.col === 1139) return <span data-text>{value().replace(",", "/")}</span>

@@ -26,6 +26,9 @@ type State = {
   active?: boolean
   // Where the list's link warning columns sit: how many of its columns come before each.
   spots?: Record<string, number>
+  // The product feature map shown beside the list, and whether it holds the folder's features or the whole product's.
+  map?: boolean
+  scope?: "relevant" | "all"
 }
 
 export type Box = { x: number; y: number; w: number; h?: number }
@@ -62,6 +65,14 @@ export const { use: useP1, provider: P1Provider } = createSimpleContext({
       active: () => !!store.active,
       activate(on: boolean) {
         setStore("active", on)
+      },
+      mapped: () => !!store.map,
+      map(on: boolean) {
+        setStore("map", on)
+      },
+      scope: () => store.scope ?? "relevant",
+      reach(next: "relevant" | "all") {
+        setStore("scope", next)
       },
       folded: () => !!store.folded,
       fold(on: boolean) {

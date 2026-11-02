@@ -130,7 +130,9 @@ export function P1Inline(props: {
           ? { id: 1113, name: "", type: 7 }
           : props.col === 1114
             ? { id: 1114, name: "", type: 7 }
-            : undefined)
+            : props.col === 1131
+              ? { id: 1131, name: "", type: 1 }
+              : undefined)
     setState({ folder: found.folder, update: found.update, pages: all, values: found.values })
     const locked = found.rules.locked || found.access < 2
     if (
@@ -149,7 +151,8 @@ export function P1Inline(props: {
     // A pick already on its way keeps what you chose.
     if (state.busy) return
     if (field.id === 1114) return show(field, choices, found.states)
-    const value = found.values[field.id] ?? { value: "", choice: "", html: "" }
+    // A field the form didn't send starts from what the cell shows.
+    const value = found.values[field.id] ?? { value: select(field) ? "" : props.text, choice: "", html: "" }
     // Keep the current choice even when it isn't in the list (an inactive owner, say).
     const extra =
       select(field) && value.choice && value.choice !== "0" && !choices.some((item) => String(item.id) === value.choice)

@@ -6,7 +6,7 @@ import { client } from "./http"
  * and where Kloud lives, a P1 sign-in is swapped for a Kloud token, and each P1 attachment finds its Kloud
  * document through a binding id.
  */
-export type Kloud = { company: number; api: string; web: string }
+export type Kloud = { company: number; api: string; web: string; meet?: string }
 
 /**
  * The Kloud company and hosts from P1's integration info; none when the P1 server isn't linked to Kloud. P1's web
@@ -21,7 +21,9 @@ export function readKloud(data: unknown, server = ""): Kloud | undefined {
   const api = text(info.KloudServer.SubDomain_PeertimeApi)
   const web = text(info.KloudServer.SubDomain_KloudWeb)
   if (!company || !api || !web) return
-  return { company, api: `https://${api}/peertime/V1/`, web: `https://${web}/` }
+  // The meeting server, where Kloud keeps product feature maps.
+  const meet = text(info.KloudServer.SubDomain_MeetingApi)
+  return { company, api: `https://${api}/peertime/V1/`, web: `https://${web}/`, ...(meet ? { meet: `https://${meet}/` } : {}) }
 }
 
 /** The id P1 binds an attachment version to its Kloud document with. */

@@ -3,6 +3,7 @@ import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { P1Work } from "./p1-work"
+import { useAsk } from "./p1-ask"
 
 const soon = {
   work: { icon: "checklist", label: "rail.work", body: "rail.soon.work" },
@@ -13,6 +14,7 @@ const soon = {
 export function RailPlaceholder() {
   const layout = useLayout()
   const language = useLanguage()
+  const ask = useAsk()
   const item = createMemo(() => {
     const nav = layout.nav.current()
     if (nav === "work" || nav === "spec" || nav === "task") return soon[nav]
@@ -35,7 +37,7 @@ export function RailPlaceholder() {
             <div class="text-14-regular text-text-weak max-w-md">{language.t(entry().body)}</div>
           </div>
         }>
-          <P1Work />
+          <P1Work ask={ask} />
         </Show>
       )}
     </Show>
