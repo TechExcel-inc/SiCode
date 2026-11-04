@@ -207,6 +207,12 @@ beforeAll(async () => {
     }),
   }))
 
+  mock.module("@/ead/settings", () => ({
+    useEad: () => ({
+      sharedServerPrompt: () => undefined,
+    }),
+  }))
+
   const mod = await import("./submit")
   createPromptSubmit = mod.createPromptSubmit
 })

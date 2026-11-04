@@ -5,7 +5,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
-import { loadPlans, renew } from "./api"
+import { formatSharedServerPrompt, loadPlans, loadProductSharedServer, renew, type ProductSharedServer } from "./api"
 import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
@@ -300,21 +300,46 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       setStore("contextMarkdown", "")
     }
 
+    const token = () => {
+      // Re-evaluate once the Pilot server is applied: before that, eadApi() may still be production.
+      applied()
+      const raw = (store.token ?? "").trim()
+      if (!raw) return ""
+      const saved = normalizeApi(store.tokenApiUrl ?? "")
+      const current = normalizeApi(eadApi())
+      if (saved && saved !== current) return ""
+      // Unbound leftover tokens must not hit production (parity with Cursor authTokenApiUrl).
+      if (!saved && current.includes("eadfm.com")) return ""
+      return raw
+    }
+
+    // Session-only: the Shared AI Coding Server the chosen product codes on, read again when the product or the
+    // sign-in changes, or when the user enables or disables a server.
+    const [shared, setShared] = createSignal<ProductSharedServer>()
+    const [sharedTick, setSharedTick] = createSignal(0)
+    createEffect(() => {
+      const t = token()
+      const pid = store.productId ?? 0
+      sharedTick()
+      setShared(undefined)
+      if (!t || !(pid > 0)) return
+      const state = { live: true }
+      onCleanup(() => (state.live = false))
+      void loadProductSharedServer(t, pid)
+        .then((info) => state.live && setShared(info))
+        .catch(() => undefined)
+    })
+
     return {
       ready,
       muted: () => mute,
-      token: () => {
-        // Re-evaluate once the Pilot server is applied: before that, eadApi() may still be production.
-        applied()
-        const raw = (store.token ?? "").trim()
-        if (!raw) return ""
-        const saved = normalizeApi(store.tokenApiUrl ?? "")
-        const current = normalizeApi(eadApi())
-        if (saved && saved !== current) return ""
-        // Unbound leftover tokens must not hit production (parity with Cursor authTokenApiUrl).
-        if (!saved && current.includes("eadfm.com")) return ""
-        return raw
-      },
+      token,
+      /** The chosen product's Shared AI Coding Server, or undefined when it does not use one. */
+      sharedServer: shared,
+      /** Read the product's Shared AI Coding Server again, e.g. after the user enabled it. */
+      refreshSharedServer: () => setSharedTick((n) => n + 1),
+      /** The block a chat message carries while EAD is open, telling the model about that server. */
+      sharedServerPrompt: () => formatSharedServerPrompt(shared()),
       productId: () => store.productId ?? 0,
       productName: () => store.productName ?? "",
       nodeId: () => store.nodeId ?? 0,

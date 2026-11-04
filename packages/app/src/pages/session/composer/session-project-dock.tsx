@@ -60,6 +60,7 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
         agent: last?.agent,
         model: last ? { providerID: last.model.providerID, modelID: last.model.modelID } : undefined,
         variant: last?.model.variant,
+        system: last?.system,
         parts: carried({
           fresh: fresh(),
           parts: first ? (sync.data.part[first.id] ?? []) : [],

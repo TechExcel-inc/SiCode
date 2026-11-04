@@ -69,6 +69,7 @@ export function SessionSuggestDock(props: { request: QuestionRequest; suggestion
         agent: message?.agent,
         model: message ? { providerID: message.model.providerID, modelID: message.model.modelID } : undefined,
         variant: message?.model.variant,
+        system: message?.system,
         parts: carried({ fresh: true, parts: message ? (sync.data.part[message.id] ?? []) : [], prompt: "", from: "" }),
       })
       return created

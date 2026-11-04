@@ -42,6 +42,8 @@ export function continueRequest(sessionID: string, messages: readonly { role: st
     agent: last?.agent,
     model: last ? { providerID: last.model.providerID, modelID: last.model.modelID } : undefined,
     variant: last?.model.variant,
+    // The same context the last message had (the chosen node, the shared server), so the steps go on with it.
+    system: last?.system,
     parts: [{ type: "text" as const, text: CONTINUE_TEXT }],
   }
 }

@@ -12,6 +12,7 @@ mod markdown;
 mod os;
 mod server;
 mod settings_backup;
+mod shared_server;
 mod window_customizer;
 mod windows;
 
@@ -406,7 +407,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             wsl_path,
             resolve_app_path,
             open_path,
-            ead::ead_fetch
+            ead::ead_fetch,
+            shared_server::shared_server_key
         ])
         .events(tauri_specta::collect_events![
             LoadingWindowComplete,

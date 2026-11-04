@@ -20,6 +20,7 @@ export const commands = {
 	resolveAppPath: (appName: string) => __TAURI_INVOKE<string | null>("resolve_app_path", { appName }),
 	openPath: (path: string, appName: string | null) => __TAURI_INVOKE<null>("open_path", { path, appName }),
 	eadFetch: (input: EadFetchInput) => __TAURI_INVOKE<EadFetchOutput>("ead_fetch", { input }),
+	sharedServerKey: (serverId: number) => __TAURI_INVOKE<SharedServerKey>("shared_server_key", { serverId }),
 };
 
 /** Events */
@@ -51,6 +52,19 @@ export type ServerReadyData = {
 		url: string,
 		username: string | null,
 		password: string | null,
+	};
+
+export type SharedServerKey = {
+		
+	/**
+ * OpenSSH public key line, sent to EAD Pilot to put on the server.
+ */
+publicKey: string,
+		
+	/**
+ * Private key file on this computer, for `ssh -i`.
+ */
+path: string,
 	};
 
 export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { type: "Done" };

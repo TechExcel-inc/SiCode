@@ -1,11 +1,11 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useEad } from "@/ead/settings"
-import { me } from "@/ead/api"
+import { disableSharedServer, enableSharedServer, loadSharedServers, me, type SharedServer } from "@/ead/api"
 import { useP1 } from "@/p1/settings"
 import { kloud } from "@/p1/kloud"
 import { HELP_URL } from "./about-popover"
@@ -13,8 +13,8 @@ import { status } from "./status-popover"
 import { useServer } from "@/context/server"
 
 /**
- * The one account menu, at the far right of the top bar in every view: the EAD Pilot account, the P1 sign-in and
- * whether P1 is linked to Kloud, then the servers and tools, Settings, Help and the version. A dot on the avatar means an account needs
+ * The one account menu, at the far right of the top bar in every view: the EAD Pilot account, the P1 sign-in, the
+ * account's Shared AI Coding Servers (each one enabled with the user's own SSH key) and whether P1 is linked to Kloud, then the servers and tools, Settings, Help and the version. A dot on the avatar means an account needs
  * signing in again.
  */
 export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onSettings: () => void }) {
@@ -63,6 +63,52 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
       },
     ),
   )
+
+  // The account's Shared AI Coding Servers, read once the profile (and so the account) is known. Enabling one makes
+  // an SSH key pair on this computer and has EAD Pilot put the public half on the server.
+  const [shared, setShared] = createSignal<SharedServer[]>()
+  const [busy, setBusy] = createSignal<number>()
+  const [sharedError, setSharedError] = createSignal("")
+  createEffect(
+    on(
+      () => [ead.token(), profile()?.tenantId] as const,
+      ([token, tenantId]) => {
+        setShared(undefined)
+        setSharedError("")
+        if (!token || !profile()) return
+        const state = { live: true }
+        onCleanup(() => (state.live = false))
+        void loadSharedServers(token, tenantId)
+          .then((rows) => state.live && setShared(rows))
+          .catch(() => state.live && setShared([]))
+      },
+    ),
+  )
+
+  const toggleShared = async (row: SharedServer) => {
+    const token = ead.token()
+    if (!token || busy()) return
+    setSharedError("")
+    setBusy(row.serverId)
+    try {
+      const tenantId = profile()?.tenantId
+      let next: SharedServer | undefined
+      if (row.enabled) {
+        next = await disableSharedServer(token, row.serverId, tenantId)
+      } else {
+        if (!platform.sharedServerKey) throw new Error(language.t("account.shared.desktopOnly"))
+        const key = await platform.sharedServerKey(row.serverId)
+        next = await enableSharedServer(token, row.serverId, key.publicKey, tenantId)
+      }
+      const enabled = next?.enabled ?? !row.enabled
+      setShared((rows) => rows?.map((item) => (item.serverId === row.serverId ? { ...item, enabled } : item)))
+      ead.refreshSharedServer()
+    } catch (err) {
+      setSharedError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(undefined)
+    }
+  }
 
   const name = createMemo(() => profile()?.name || profile()?.email || "")
   const host = createMemo(() => p1.server().replace(/^https?:\/\//, "").replace(/\/.*$/, ""))
@@ -151,6 +197,56 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
             <DropdownMenu.Item data-action="account-p1-sign-out" onSelect={() => p1.clear()}>
               <DropdownMenu.ItemLabel>{language.t("rail.account.signOut")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
+          </Show>
+
+          <Show when={ead.token() && shared()}>
+            <DropdownMenu.Separator />
+            <div class={label}>{language.t("account.shared.title")}</div>
+            <Show
+              when={shared()?.length}
+              fallback={<div class={`${line} text-text-weak`}>{language.t("account.shared.none")}</div>}
+            >
+              <For each={shared()}>
+                {(row) => (
+                  <DropdownMenu.Item
+                    data-action="account-shared-server"
+                    closeOnSelect={false}
+                    disabled={busy() !== undefined}
+                    onSelect={() => void toggleShared(row)}
+                  >
+                    <span
+                      class="size-2 shrink-0 rounded-full"
+                      classList={{
+                        "bg-[#3fbf6a]": row.enabled,
+                        "bg-border-strong-base": !row.enabled,
+                      }}
+                    />
+                    <span class="min-w-0 flex flex-col">
+                      <span class="truncate text-text-strong">{row.name}</span>
+                      <span class="truncate text-12-regular text-text-weak">
+                        {row.sshLogin}@{row.sshHost}:{row.sshPort}
+                      </span>
+                    </span>
+                    <span class="ml-auto shrink-0 text-12-regular text-text-weak">
+                      {language.t(
+                        busy() === row.serverId
+                          ? row.enabled
+                            ? "account.shared.disabling"
+                            : "account.shared.enabling"
+                          : row.enabled
+                            ? "account.shared.disable"
+                            : "account.shared.enable",
+                      )}
+                    </span>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </Show>
+            <Show when={sharedError()}>
+              <div class="px-2 py-1 text-12-regular text-icon-critical-base break-words" data-slot="account-shared-error">
+                {sharedError()}
+              </div>
+            </Show>
           </Show>
 
           <Show when={p1In()}>

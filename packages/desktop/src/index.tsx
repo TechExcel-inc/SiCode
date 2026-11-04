@@ -146,6 +146,10 @@ const createPlatform = (): Platform => {
       await commands.openPath(path, app ?? null)
     },
 
+    sharedServerKey(serverId: number) {
+      return commands.sharedServerKey(serverId)
+    },
+
     back() {
       window.history.back()
     },

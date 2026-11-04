@@ -138,8 +138,14 @@ describe("continueRequest", () => {
       agent: "build",
       model: { providerID: "ead", modelID: "EAD 3.2" },
       variant: "high",
+      system: undefined,
       parts: [{ type: "text", text: "Continue with the remaining steps." }],
     })
+  })
+
+  test("carries the context of the person's last message, such as the shared server", () => {
+    const withSystem = { id: "m1", role: "user", agent: "build", model: { providerID: "ead", modelID: "EAD 3.2" }, system: "<shared-ai-coding-server>x</shared-ai-coding-server>" } as never
+    expect(continueRequest("ses_1", [withSystem]).system).toBe("<shared-ai-coding-server>x</shared-ai-coding-server>")
   })
 
   test("leaves agent and model to the session's defaults when it has no message from the person", () => {
@@ -148,6 +154,7 @@ describe("continueRequest", () => {
       agent: undefined,
       model: undefined,
       variant: undefined,
+      system: undefined,
       parts: [{ type: "text", text: "Continue with the remaining steps." }],
     })
   })

@@ -1396,3 +1396,140 @@ export async function loadTeamMembers(token: string, productId: number, http: Ht
     return [{ email, label: label || email }]
   })
 }
+
+/** A Shared AI Coding Server the account Superadmin registered in EAD Pilot. */
+export type SharedServer = {
+  serverId: number
+  name: string
+  os: "windows" | "mac"
+  sshHost: string
+  sshPort: number
+  sshLogin: string
+  rootFolder: string
+  /** This user has put their own SSH key on the server. */
+  enabled: boolean
+}
+
+function tenantHeaders(tenantId?: number): Record<string, string> {
+  return tenantId && tenantId > 0 ? { "X-Tenant-Id": String(tenantId) } : {}
+}
+
+function asSharedServer(row: Record<string, unknown>): SharedServer | undefined {
+  const serverId = Number(row.serverId)
+  if (!(serverId > 0)) return
+  return {
+    serverId,
+    name: String(row.name ?? ""),
+    os: row.os === "mac" ? "mac" : "windows",
+    sshHost: String(row.sshHost ?? ""),
+    sshPort: Number(row.sshPort) || 22,
+    sshLogin: String(row.sshLogin ?? ""),
+    rootFolder: String(row.rootFolder ?? ""),
+    enabled: row.enabled === true,
+  }
+}
+
+export async function loadSharedServers(token: string, tenantId?: number, http: Http = eadHttp()) {
+  const data = await call(http, "/shared-ai-coding-servers", token, { headers: tenantHeaders(tenantId) })
+  if (!Array.isArray(data)) return [] as SharedServer[]
+  return data.flatMap((row) => {
+    const item = row && typeof row === "object" ? asSharedServer(row as Record<string, unknown>) : undefined
+    return item ? [item] : []
+  })
+}
+
+// Enabling signs in to the server, so a refusal carries a message worth showing as it is.
+async function sharedServerAction(http: Http, path: string, token: string, tenantId?: number, body?: unknown) {
+  const res = await http(`${eadApi()}${path}`, {
+    method: "POST",
+    headers: { ...headers(token), ...tenantHeaders(tenantId), "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  }).catch((err) => {
+    throw new Error(err instanceof Error ? err.message : "Load failed")
+  })
+  if (res.status === 401) throw new Error("AUTH_EXPIRED")
+  const data = (await readJson(res).catch(() => null)) as Record<string, unknown> | null
+  if (!res.ok) {
+    const message = data && typeof data.message === "string" && data.message.trim() ? data.message : `HTTP ${res.status}`
+    throw new Error(message)
+  }
+  return data ? asSharedServer(data) : undefined
+}
+
+/** Puts this user's public key on the server; EAD Pilot signs in with the saved password. */
+export function enableSharedServer(token: string, serverId: number, publicKey: string, tenantId?: number, http: Http = eadHttp()) {
+  return sharedServerAction(http, `/shared-ai-coding-servers/${serverId}/enable`, token, tenantId, { publicKey })
+}
+
+/** Takes this user's key off the server. */
+export function disableSharedServer(token: string, serverId: number, tenantId?: number, http: Http = eadHttp()) {
+  return sharedServerAction(http, `/shared-ai-coding-servers/${serverId}/disable`, token, tenantId)
+}
+
+/** The Shared AI Coding Server an EAD product codes on, as the product's settings in EAD Pilot choose it. */
+export type ProductSharedServer = {
+  scope: "backend" | "frontend" | "both"
+  /** Undefined when the product names a server this account no longer has. */
+  server?: SharedServer
+}
+
+/** Undefined when the product does not use a shared server. */
+export async function loadProductSharedServer(token: string, productId: number, http: Http = eadHttp()) {
+  if (!(productId > 0)) return
+  const product = (await call(http, `/products/${productId}`, token)) as Record<string, unknown> | null
+  if (!product || product.sharedAiCodingEnabled !== true) return
+  const serverId = Number(product.sharedAiCodingServerId)
+  if (!(serverId > 0)) return
+  const scope = product.sharedAiCodingScope === "frontend" || product.sharedAiCodingScope === "both" ? product.sharedAiCodingScope : "backend"
+  const tenantId = Number(product.tenantId) || undefined
+  const servers = await loadSharedServers(token, tenantId, http)
+  return { scope, server: servers.find((row) => row.serverId === serverId) } satisfies ProductSharedServer
+}
+
+/** Where SiCode keeps the private key it made when the user enabled the server (desktop shared_server_key). */
+export function sharedServerKeyPath(serverId: number) {
+  return `~/.ssh/sicode_ead_s${serverId}_ed25519`
+}
+
+// The words here stay clear of EadTools' trigger words in opencode/src/session/ead-tools.ts, so this block alone does
+// not load the EAD Pilot tools.
+export function formatSharedServerPrompt(info: ProductSharedServer | undefined) {
+  if (!info) return
+  const server = info.server
+  if (!server) {
+    return [
+      `<shared-ai-coding-server>`,
+      `This product is set to code on a Shared AI Coding Server that no longer exists in EAD Pilot. Tell the user to choose another server in the product's settings before work that needs it.`,
+      `</shared-ai-coding-server>`,
+    ].join("\n")
+  }
+  if (!server.enabled) {
+    return [
+      `<shared-ai-coding-server>`,
+      `This product codes on the Shared AI Coding Server "${server.name}" (${server.sshHost}), but this user has not enabled it yet, so there is no key to reach it.`,
+      `Before work that needs that computer, tell the user to open the account menu at the top right of SiCode and choose Enable next to "${server.name}" under Shared AI Coding Server.`,
+      `</shared-ai-coding-server>`,
+    ].join("\n")
+  }
+  const windows = server.os === "windows"
+  const ssh = `ssh -i ${sharedServerKeyPath(server.serverId)} -p ${server.sshPort} -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${server.sshLogin}@${server.sshHost}`
+  const scope =
+    info.scope === "both"
+      ? "All of this product's code, back end and front end, is on that computer."
+      : info.scope === "frontend"
+        ? "This product's front-end code is on that computer; its back-end code is in the local folder."
+        : "This product's back-end code is on that computer; its front-end code is in the local folder."
+  return [
+    `<shared-ai-coding-server>`,
+    `This product codes on a shared remote ${windows ? "Windows" : "Mac"} computer, "${server.name}". ${scope}`,
+    `Root folder on that computer: ${server.rootFolder}. The code is under it; do not change anything outside it.`,
+    `Run every command there through ssh with the user's own key, one command per call:`,
+    `  ${ssh} "<command>"`,
+    windows
+      ? `The remote shell is cmd.exe. For PowerShell, run: powershell -NoProfile -Command "<script>". Paths use backslashes, e.g. ${server.rootFolder}\\...`
+      : `The remote shell is the login shell (zsh on a Mac).`,
+    `Read files with ssh (${windows ? "type, or Get-Content" : "cat"}); to edit, copy the file here, change it, and copy it back with scp -i ${sharedServerKeyPath(server.serverId)} -P ${server.sshPort}. Build, run and test on that computer, not locally, for the code that lives there.`,
+    `Other people use the same computer and the same login; leave their files and running programs alone.`,
+    `</shared-ai-coding-server>`,
+  ].join("\n")
+}

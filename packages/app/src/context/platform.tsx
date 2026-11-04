@@ -87,6 +87,9 @@ export type Platform = {
 
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
+
+  /** SSH key pair for a Shared AI Coding Server, made on first use; returns the public key (desktop only) */
+  sharedServerKey?(serverId: number): Promise<{ publicKey: string; path: string }>
 }
 
 export type DisplayBackend = "auto" | "wayland"

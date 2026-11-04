@@ -25,6 +25,7 @@ import { routable, routeFolder, routeTitle } from "./route"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionQuestionRequest, typedAnswers } from "@/pages/session/composer/session-request-tree"
 import { formatSystemPrompt } from "@/ead/api"
+import { useEad } from "@/ead/settings"
 
 type PendingPrompt = {
   abort: AbortController
@@ -232,6 +233,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
+  const ead = useEad()
   const language = useLanguage()
   const params = useParams()
   const server = useServer()
@@ -514,6 +516,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const agent = layout.nav.current() === "design" ? DESIGN_AGENT : currentAgent.name
     const context = prompt.context.items().slice()
     const nodeSystem = formatNodeSystemPrompt(input.currentNode())
+    // While EAD is open, the chosen product's Shared AI Coding Server goes with every message.
+    const sharedSystem = layout.nav.current() === "ead" ? ead.sharedServerPrompt() : undefined
+    const system = [nodeSystem, sharedSystem].filter(Boolean).join("\n\n") || undefined
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
@@ -522,7 +527,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
-      system: nodeSystem,
+      system,
     }
 
     const clearInput = () => {
