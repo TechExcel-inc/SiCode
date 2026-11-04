@@ -162,6 +162,18 @@ else
   echo "==> no \"$identity\" certificate in the keychain: left unsigned, so macOS asks for folder access after each install"
 fi
 
+# Making the DMG mounts the app on a temporary volume, and macOS lists every copy it has seen in Launchpad: the
+# bundle, each DMG mount and the copy here. Only the installed app should show, so the build's copies are forgotten.
+lsr=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+if [[ -x "$lsr" ]]; then
+  "$lsr" -u "$app" >/dev/null 2>&1 || true
+  "$lsr" -u "$out/$(basename "$app")" >/dev/null 2>&1 || true
+  "$lsr" -dump 2>/dev/null |
+    /usr/bin/grep -E '^path: +/Volumes/dmg\.[^/]+/.*\.app' |
+    sed -E 's/^path: +//; s/ \(0x[0-9a-f]+\)$//' |
+    while IFS= read -r stale; do "$lsr" -u "$stale" >/dev/null 2>&1 || true; done
+fi
+
 keep=1
 echo "==> done"
 ls -lah "$out/$(basename "$app")" "$out/$(basename "$dmg")"

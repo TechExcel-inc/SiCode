@@ -1,10 +1,11 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
 import { brief, guess, type Guess } from "@/p1/estimate"
+import { guess as suggest, kinds, types } from "@/p1/kinds"
 import { plain, update } from "@/p1/form"
 import { load, members, modules, type Choice, type Home, type Module } from "@/p1/points"
 import { useP1 } from "@/p1/settings"
@@ -12,13 +13,14 @@ import {
   add,
   aim,
   areas,
-  budget,
   change,
   create,
   discard,
   drop,
   edit,
   field,
+  least,
+  mark,
   relate,
   spend,
   stories,
@@ -27,6 +29,7 @@ import {
 } from "@/p1/stories"
 import { Menu, prime } from "./p1-inline"
 import { Choose, Fold, Plus, Refresh, Spark, StoryIcon, TaskIcon } from "./p1-icons"
+import { KindTag } from "./p1-kind"
 import { P1Pop } from "./p1-pop"
 import { Tip } from "./p1-tip"
 
@@ -60,6 +63,10 @@ export function P1Stories(props: {
   ask?: (prompt: string, system: string) => Promise<string>
   x: number
   y: number
+  /** A story to edit straight away: only its Edit story form shows, and closing it closes this. */
+  story?: number
+  /** The same, with the story already in hand (as the weekly board has it), so its form opens at once. */
+  tale?: Story
   onClose: (changed: boolean) => void
 }) {
   const p1 = useP1()
@@ -73,6 +80,8 @@ export function P1Stories(props: {
     list: [] as Story[],
     people: [] as Choice[],
     mods: [] as Choice[],
+    // Each module's type by id, to suggest a story's type from its modules.
+    types: {} as Record<number, number>,
     // The spec's module rows, where P1 keeps a story's related modules.
     rows: [] as Module[],
     hours: props.hours,
@@ -100,16 +109,33 @@ export function P1Stories(props: {
       }),
       load(host(), token(), props.project, props.spec, props.home, locale()).catch(() => undefined),
     ])
-    setState({ loading: false, ...(list ? { list, err: "" } : {}), ...(rows ? { rows } : {}) })
+    setState({ loading: false, ...(list ? { list: mark(list, p1.clocks()), err: "" } : {}), ...(rows ? { rows } : {}) })
+    // Opened for one story: its form opens once the stories are read; a story that's gone closes this.
+    if (props.story && !props.tale && !opened && list) {
+      opened = true
+      const story = state.list.find((item) => item.id === props.story)
+      if (!story) return props.onClose(false)
+      setState("form", { kind: "story", story })
+    }
   }
+  let opened = false
 
+  // Just one story's form: asked for by id from the list, or handed over by the weekly board.
+  const alone = () => !!props.story || !!props.tale
   onMount(() => {
+    if (props.tale) {
+      opened = true
+      setState("form", { kind: "story", story: props.tale })
+    }
     void read()
     void members(host(), token(), props.home, locale())
       .then((people) => setState("people", people))
       .catch(() => undefined)
     void modules(host(), token(), props.home, locale())
       .then((mods) => setState("mods", mods))
+      .catch(() => undefined)
+    void types(host(), token(), props.home, locale())
+      .then((map) => setState("types", map))
       .catch(() => undefined)
   })
 
@@ -195,6 +221,18 @@ export function P1Stories(props: {
     }
   }
 
+  // A story's own time spent or left, refusing less than its tasks' total.
+  const grow = (story: Story, key: "spent" | "remain", hours: number) => {
+    const floor = least(story, key)
+    if (hours < floor) {
+      setState("errs", `s${story.id}`, language.t("p1.stories.floor", { hours: floor.toFixed(1) }))
+      return
+    }
+    // A story's own time is kept in SiCode for now, as P1 keeps none on stories.
+    p1.clock(story.id, { spent: story.spent, remain: story.remain, [key]: hours })
+    setState({ list: mark(state.list, p1.clocks()), changed: true, errs: { ...state.errs, [`s${story.id}`]: "" } })
+  }
+
   const fold = (story: Story) => {
     const next = state.shut.includes(story.id) ? state.shut.filter((id) => id !== story.id) : [...state.shut, story.id]
     setState("shut", next)
@@ -223,7 +261,7 @@ export function P1Stories(props: {
   const save = async (value: Value) => {
     const form = state.form
     if (!form) return
-    if (!value.name || !value.owner || !value.modules.length) {
+    if (!value.name || !value.owner || !value.modules.length || (form.kind === "story" && !value.type)) {
       setState("errs", "form", language.t("p1.stories.needs"))
       return
     }
@@ -242,6 +280,7 @@ export function P1Stories(props: {
             name: value.name,
             owner: value.owner,
             target: value.hours,
+            type: value.type,
             modules: picked,
           },
           locale(),
@@ -273,11 +312,13 @@ export function P1Stories(props: {
       const next = {
         ...(value.name !== story.name ? { StoryTitle: value.name } : {}),
         ...(value.owner !== story.owner ? { CurrentOwnerId: value.owner } : {}),
+        ...(value.type !== story.type ? { StoryType: value.type } : {}),
         ...(value.hours !== story.target ? aim(value.hours) : {}),
       }
       if (Object.keys(next).length) await edit(host(), token(), story, next, locale())
       await related(story, value.modules)
     })
+    if (ok && alone()) return props.onClose(true)
     if (ok) setState("form", undefined)
   }
 
@@ -324,7 +365,28 @@ export function P1Stories(props: {
     p1.size(`stories.${col.key}`, undefined)
   }
 
+  const editor = () => (
+    <Show when={state.form}>
+      {(form) => (
+        <Form
+          kind={form().kind}
+          story={form().story}
+          task={form().task}
+          people={state.people}
+          mods={state.mods}
+          types={state.types}
+          rows={state.rows}
+          busy={state.busy.form}
+          err={state.errs.form}
+          onSave={save}
+          onClose={() => (alone() ? props.onClose(state.changed) : setState("form", undefined))}
+        />
+      )}
+    </Show>
+  )
+
   return (
+    <Show when={!alone()} fallback={editor()}>
     <P1Pop
       name="stories"
       x={props.x}
@@ -348,17 +410,27 @@ export function P1Stories(props: {
         >
           <div class="relative group/tip px-4 py-2 flex flex-col gap-0.5">
             <span class="text-11-medium text-text-weak">{language.t("p1.stories.sum.points")}</span>
-            <Edit
-              value={String(state.hours)}
-              kind="number"
-              readonly={props.readonly}
-              busy={state.busy.spec}
-              class="text-14-medium text-text-strong tabular-nums"
-              width="w-16"
-              onSave={hours}
+            {/* A spec's points are its stories' added up, shown only; a spec without stories keeps its own. */}
+            <Show
+              when={state.list.length}
+              fallback={
+                <Edit
+                  value={String(state.hours)}
+                  kind="number"
+                  readonly={props.readonly}
+                  busy={state.busy.spec}
+                  class="text-14-medium text-text-strong tabular-nums"
+                  width="w-16"
+                  onSave={hours}
+                >
+                  {state.hours.toFixed(1)}h
+                </Edit>
+              }
             >
-              {state.hours.toFixed(1)}h
-            </Edit>
+              <span class="text-14-medium text-text-strong tabular-nums">
+                {state.list.reduce((sum, story) => sum + story.target, 0).toFixed(1)}h
+              </span>
+            </Show>
             <Tip side="left" text={language.t("p1.stories.targethint")} />
           </div>
           <For
@@ -483,7 +555,14 @@ export function P1Stories(props: {
                         title={item.why}
                       >
                         <span class="min-w-0 truncate text-text-base">
-                          {state.list.find((story) => story.id === item.id)?.name}
+                          <Show when={state.list.find((story) => story.id === item.id)}>
+                            {(story) => (
+                              <>
+                                <KindTag type={story().type} />
+                                {story().name}
+                              </>
+                            )}
+                          </Show>
                         </span>
                         <span class="shrink-0 text-text-strong tabular-nums">{item.hours.toFixed(1)}h</span>
                       </span>
@@ -614,6 +693,7 @@ export function P1Stories(props: {
                                     act(key, () => edit(host(), token(), story, { StoryTitle: next }, locale()))
                                   }
                                 >
+                                  <KindTag type={story.type} />
                                   {story.name}
                                 </Edit>
                                 <Show when={state.busy[key]}>
@@ -675,24 +755,30 @@ export function P1Stories(props: {
                           </Edit>
                         </td>
                         <td class={cell}>
+                          {/* A story's time is its tasks': it can be raised, the extra shared over them, but not set
+                          below their total. Without tasks it is set on the story itself. */}
                           <div class="h-6 flex items-center justify-end gap-1 tabular-nums">
-                            <span class="text-text-strong" title={language.t("p1.stories.rollup")}>
-                              {story.spent.toFixed(1)}h
-                            </span>
-                            <span class="text-text-weaker">/</span>
-                            {/* With no tasks a story's time left is its target time; with tasks it is spread over them. */}
-                            <Edit
-                              value={String(story.remain)}
-                              width="w-14"
-                              kind="number"
-                              readonly={props.readonly || !story.tasks.length}
-                              busy={state.busy[key]}
-                              class="tabular-nums"
-                              align
-                              onSave={(next) => act(key, () => budget(host(), token(), story, tenth(next), locale()))}
-                            >
-                              {story.remain.toFixed(1)}h
-                            </Edit>
+                            <For each={["spent", "remain"] as const}>
+                              {(part, index) => (
+                                <>
+                                  <Show when={index() > 0}>
+                                    <span class="text-text-weaker">/</span>
+                                  </Show>
+                                  <Edit
+                                    value={String(story[part])}
+                                    width="w-14"
+                                    kind="number"
+                                    readonly={props.readonly}
+                                    busy={state.busy[key]}
+                                    class="tabular-nums"
+                                    align
+                                    onSave={(next) => grow(story, part, tenth(next))}
+                                  >
+                                    {story[part].toFixed(1)}h
+                                  </Edit>
+                                </>
+                              )}
+                            </For>
                           </div>
                         </td>
                         <td class={cell} title={only() ? undefined : language.t("p1.stories.rollup")}>
@@ -777,23 +863,9 @@ export function P1Stories(props: {
           </table>
         </Show>
       </div>
-      <Show when={state.form}>
-        {(form) => (
-          <Form
-            kind={form().kind}
-            story={form().story}
-            task={form().task}
-            people={state.people}
-            mods={state.mods}
-            rows={state.rows}
-            busy={state.busy.form}
-            err={state.errs.form}
-            onSave={save}
-            onClose={() => setState("form", undefined)}
-          />
-        )}
-      </Show>
+      {editor()}
     </P1Pop>
+    </Show>
   )
 }
 
@@ -1012,6 +1084,8 @@ function Pick(props: {
   people?: boolean
   many?: boolean
   bare?: boolean
+  // Fills its box, as a form field does.
+  wide?: boolean
   readonly: boolean
   onPick: (choice: string) => unknown
   children: JSX.Element
@@ -1024,6 +1098,7 @@ function Pick(props: {
         disabled={props.readonly}
         class="max-w-full rounded-md text-left disabled:cursor-default"
         classList={{
+          "w-full": !!props.wide,
           "px-1.5 -mx-1.5 py-0.5 hover:bg-surface-base-hover": !props.bare && !props.readonly,
           [ring]: !!at() && !props.bare,
         }}
@@ -1139,7 +1214,7 @@ function Problem(props: { text: string }) {
   )
 }
 
-type Value = { name: string; owner: number; modules: number[]; hours: number }
+type Value = { name: string; owner: number; modules: number[]; hours: number; type: number }
 
 /**
  * The popup for a new or changed story or task. People and SiCode's agents fill the same fields,
@@ -1151,6 +1226,8 @@ function Form(props: {
   task?: Task
   people: Choice[]
   mods: Choice[]
+  // Each module's type by id; a story's type is suggested from its modules' until one is picked.
+  types: Record<number, number>
   rows: Module[]
   busy?: boolean
   err?: string
@@ -1181,7 +1258,22 @@ function Form(props: {
       }
     return { name: "", owner: Number(p1.user()) || 0, modules: [] as number[], hours: 0 }
   })()
-  const [state, setState] = createStore({ ...start, hours: String(start.hours) })
+  const [state, setState] = createStore({
+    ...start,
+    hours: String(start.hours),
+    type: props.kind === "story" && !props.task ? (props.story?.type ?? 0) : 0,
+    // A type picked by hand, or the story's own, which its modules no longer change.
+    fixed: props.kind === "story" && !!props.story?.type,
+  })
+  createEffect(() => {
+    if (props.kind !== "story" || state.fixed) return
+    setState("type", suggest(state.modules, props.types))
+  })
+  // A story's modules are of its type: once it has one, only those are offered, while module types are known.
+  const typed = () => props.kind === "story" && !!state.type && Object.keys(props.types).length > 0
+  const offered = createMemo(() =>
+    typed() ? props.mods.filter((item) => props.types[item.id] === state.type) : props.mods,
+  )
   const person = () =>
     props.people.find((item) => item.id === state.owner)?.name || (old && "person" in old ? old.person : "")
   const submit = () =>
@@ -1190,6 +1282,7 @@ function Form(props: {
       owner: state.owner,
       modules: state.modules.filter(Boolean),
       hours: tenth(state.hours),
+      type: state.type,
     })
   const grow = (el: HTMLTextAreaElement) => {
     el.style.height = "auto"
@@ -1217,6 +1310,7 @@ function Form(props: {
         <Show when={props.kind === "task" && props.story}>
           {(story) => (
             <div class="mt-0.5 text-12-regular text-text-weak truncate">
+              <KindTag type={story().type} />
               {language.t("p1.stories.form.in", { name: story().name })}
             </div>
           )}
@@ -1276,22 +1370,55 @@ function Form(props: {
             />
           </Field>
         </div>
+        <Show when={props.kind === "story"}>
+          <Field label={language.t("p1.stories.form.type")}>
+            <select
+              data-action="p1-story-type"
+              required
+              class="h-9 w-full px-2 rounded-md border border-border-weak-base bg-background-base text-13-regular text-text-strong outline-none focus:border-border-interactive-base"
+              classList={{ "text-text-weak": !state.type }}
+              value={String(state.type)}
+              onChange={(event) => {
+                const type = Number(event.currentTarget.value)
+                // Modules of another type no longer fit the story.
+                setState({
+                  type,
+                  fixed: true,
+                  modules: Object.keys(props.types).length
+                    ? state.modules.filter((id) => props.types[id] === type)
+                    : state.modules,
+                })
+              }}
+            >
+              <option value="0" disabled>
+                {language.t("p1.stories.type")}
+              </option>
+              <For each={kinds}>
+                {(item) => <option value={String(item.id)}>{language.t(`p1.kind.${item.key}`)}</option>}
+              </For>
+            </select>
+          </Field>
+        </Show>
         <Field label={language.t(props.kind === "story" ? "p1.stories.form.modules" : "p1.stories.form.module")}>
           <div class={box}>
             <Pick
-              items={props.mods}
+              items={offered()}
               picked={state.modules.map(String)}
               many={props.kind === "story"}
+              wide
               readonly={false}
               onPick={(ids) => setState("modules", ids.split(",").filter(Boolean).map(Number))}
             >
-              <span class="flex flex-wrap gap-1">
-                <For
-                  each={props.mods.filter((item) => state.modules.includes(item.id))}
-                  fallback={<span class="text-13-regular text-text-weak">{language.t("p1.stories.modules")}</span>}
-                >
-                  {(item) => <Chip name={item.name} />}
-                </For>
+              <span class="w-full flex items-center gap-2">
+                <span class="flex-1 min-w-0 flex flex-wrap gap-1">
+                  <For
+                    each={props.mods.filter((item) => state.modules.includes(item.id))}
+                    fallback={<span class="text-13-regular text-text-weak">{language.t("p1.stories.modules")}</span>}
+                  >
+                    {(item) => <Chip name={item.name} />}
+                  </For>
+                </span>
+                <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
               </span>
             </Pick>
           </div>

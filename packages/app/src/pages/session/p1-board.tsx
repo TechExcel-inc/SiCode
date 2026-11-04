@@ -10,6 +10,7 @@ import { card, fit, mine, range, rank, width } from "@/p1/board"
 import { StoryIcon, TaskIcon, Unlinked, Untested } from "./p1-icons"
 import { Tip } from "./p1-tip"
 import { Menu, P1Inline } from "./p1-inline"
+import { KindTag } from "./p1-kind"
 
 /**
  * One board column: its key, heading and cards, P1's group name when the board is grouped, and the person it
@@ -34,6 +35,8 @@ export function P1Board(props: {
   opening: number
   saving: Record<number, boolean>
   onOpen: (id: number) => void
+  /** Opens a spec on All Links, from a link check's flag. */
+  onLinks?: (id: number) => void
   onMenu: (id: number, x: number, y: number) => void
   onEdited: (row: Row, col: number, text: string) => void
   onPoints: (id: number, x: number, y: number) => void
@@ -333,6 +336,9 @@ export function P1Board(props: {
             </Show>
           </span>
           <span class="min-w-0 flex-1 line-clamp-2" classList={{ "text-text-base": !chip.task, "text-text-weak": !!chip.task }}>
+            <Show when={!chip.task}>
+              <KindTag type={chip.story.type} />
+            </Show>
             {item().name}
           </span>
         </span>
@@ -458,17 +464,18 @@ export function P1Board(props: {
             {/* The link checks' warnings: no linked requirements, no linked test cases. */}
             <For each={(["links", "tests"] as const).filter((kind) => props.warn?.[kind].includes(card.row.id))}>
               {(kind) => (
-                <span
+                <button
+                  type="button"
                   class="relative group/tip inline-flex"
-                  tabIndex={0}
                   aria-label={language.t(`p1.warn.${kind}`)}
                   onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => props.onLinks?.(card.row.id)}
                 >
                   <Show when={kind === "links"} fallback={<Untested />}>
                     <Unlinked />
                   </Show>
                   <Tip text={language.t(`p1.warn.${kind}`)} side="left" />
-                </span>
+                </button>
               )}
             </For>
             <Show when={card.opening || card.saving}>

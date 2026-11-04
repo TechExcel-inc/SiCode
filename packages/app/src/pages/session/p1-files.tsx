@@ -39,6 +39,11 @@ export function Attachments(props: {
   split: number
   must: boolean
   readonly: boolean
+  /** P1's view type for the files: 402 a requirement (the default), 201 a test case. */
+  view?: number
+  /** Files waiting for an item that isn't created yet; they upload once it is. */
+  queue?: File[]
+  onQueue?: (files: File[]) => void
 }) {
   const p1 = useP1()
   const language = useLanguage()
@@ -63,7 +68,7 @@ export function Attachments(props: {
 
   const read = async () => {
     if (!props.id) return setState("loading", false)
-    const list = await files(p1.server(), p1.token(), props.project, props.id, language.locale()).catch(
+    const list = await files(p1.server(), p1.token(), props.project, props.id, language.locale(), props.view).catch(
       (err: unknown) => {
         setState({ err: message(err), loading: false })
       },
@@ -73,7 +78,7 @@ export function Attachments(props: {
     void bind(list)
     // Pictures show as themselves, fetched with your sign-in.
     for (const file of list.filter((item) => item.kind !== 6 && picture(item.name) && !state.urls[item.id]))
-      void fetchFile(p1.server(), p1.token(), props.project, file, language.locale(), true)
+      void fetchFile(p1.server(), p1.token(), props.project, file, language.locale(), true, props.view)
         .then((url) => setState("urls", file.id, url))
         .catch(() => undefined)
   }
@@ -84,12 +89,28 @@ export function Attachments(props: {
   }
   onCleanup(() => Object.values(state.urls).forEach((url) => URL.revokeObjectURL(url)))
 
+  // Pictures waiting to upload show from the file itself.
+  const local = new Map<File, string>()
+  const preview = (file: File) => {
+    if (!picture(file.name)) return
+    const found = local.get(file)
+    if (found) return found
+    const url = URL.createObjectURL(file)
+    local.set(file, url)
+    return url
+  }
+  onCleanup(() => local.forEach((url) => URL.revokeObjectURL(url)))
+  const waiting = () => (props.id ? [] : (props.queue ?? []))
+  const takes = () => !props.readonly && (!!props.id || !!props.onQueue)
+  const unqueue = (file: File) => props.onQueue?.(waiting().filter((item) => item !== file))
+
   const add = async (list: File[]) => {
-    if (!props.id || props.readonly || !list.length) return
+    if (props.readonly || !list.length) return
+    if (!props.id) return props.onQueue?.([...waiting(), ...list])
     setState({ busy: true, err: "" })
     for (const file of list)
-      await upload(p1.server(), p1.token(), props.project, props.id, file, language.locale()).catch((err: unknown) =>
-        setState("err", message(err)),
+      await upload(p1.server(), p1.token(), props.project, props.id, file, language.locale(), props.view).catch(
+        (err: unknown) => setState("err", message(err)),
       )
     setState("busy", false)
     await read()
@@ -116,9 +137,8 @@ export function Attachments(props: {
       )
       return read()
     }
-    await (kind === "view"
-      ? opener.open(props.project, file, state.live[file.id])
-      : opener.download(props.project, file)
+    await (
+      kind === "view" ? opener.open(props.project, file, state.live[file.id]) : opener.download(props.project, file)
     ).catch((err: unknown) => setState("err", message(err)))
   }
 
@@ -169,7 +189,7 @@ export function Attachments(props: {
               </For>
             </div>
             <div class="flex items-center gap-2.5">
-              <Show when={state.view === "list" && !props.readonly && props.id}>
+              <Show when={state.view === "list" && takes()}>
                 <button
                   type="button"
                   class="flex items-center gap-1 text-14-regular text-[#2d8cf0]"
@@ -199,9 +219,9 @@ export function Attachments(props: {
             tabIndex={0}
             class={`${box} relative min-h-[124px] outline-none focus:border-[#1984c8]`}
             classList={{
-              "px-5 py-2.5 flex flex-wrap": state.view === "thumb" && !!docs().length,
+              "px-5 py-2.5 flex flex-wrap": state.view === "thumb" && !!(docs().length || waiting().length),
               "border-dashed border-[#1984c8]": state.drag,
-              "border-dashed": !docs().length && !state.drag && state.view === "thumb",
+              "border-dashed": !docs().length && !waiting().length && !state.drag && state.view === "thumb",
             }}
             onDragOver={(event) => {
               event.preventDefault()
@@ -230,11 +250,11 @@ export function Attachments(props: {
             >
               <Show when={state.view === "thumb"}>
                 <Show
-                  when={docs().length}
+                  when={docs().length || waiting().length}
                   fallback={
                     <button
                       type="button"
-                      disabled={props.readonly || !props.id}
+                      disabled={!takes()}
                       class="w-full min-h-[122px] flex flex-col items-center justify-center gap-2 disabled:cursor-default"
                       onClick={() => pick?.click()}
                     >
@@ -276,7 +296,38 @@ export function Attachments(props: {
                       </div>
                     )}
                   </For>
-                  <Show when={!props.readonly && props.id}>
+                  <For each={waiting()}>
+                    {(file) => (
+                      <div class="w-[104px] mr-5 mb-2.5 flex flex-col">
+                        <div class="relative h-[124px] flex items-center justify-center overflow-hidden border border-border-weak-base bg-white">
+                          <Show
+                            when={preview(file)}
+                            fallback={
+                              <img
+                                src={`/p1/document/${icon({ name: file.name, kind: 0 })}.svg`}
+                                alt=""
+                                class="w-[40%]"
+                              />
+                            }
+                          >
+                            {(url) => (
+                              <img src={url()} alt="" class="max-w-full max-h-full min-w-[40%] object-contain" />
+                            )}
+                          </Show>
+                          <button
+                            type="button"
+                            aria-label={language.t("p1.files.remove")}
+                            class="absolute top-1 right-1 size-5 rounded-full flex items-center justify-center bg-black/55 text-white hover:bg-black/75"
+                            onClick={() => unqueue(file)}
+                          >
+                            <Icon name="close-small" size="small" />
+                          </button>
+                        </div>
+                        <span class="mt-2.5 text-14-regular text-text-base truncate">{file.name}</span>
+                      </div>
+                    )}
+                  </For>
+                  <Show when={takes()}>
                     <button
                       type="button"
                       class="w-[104px] h-[124px] mr-5 mb-2.5 flex flex-col items-center justify-center rounded-[5px] border border-dashed border-border-weak-base text-text-weak hover:border-[#2d8cf0]"
@@ -330,6 +381,26 @@ export function Attachments(props: {
                           </tr>
                         )}
                       </For>
+                      <For each={waiting()}>
+                        {(file) => (
+                          <tr>
+                            <td class="px-3 py-2 border-b border-border-weaker-base text-text-base">{file.name}</td>
+                            <td class="px-3 py-2 border-b border-border-weaker-base text-text-weak">
+                              {language.t("p1.files.waiting")}
+                            </td>
+                            <td class="border-b border-border-weaker-base text-center">
+                              <button
+                                type="button"
+                                aria-label={language.t("p1.files.remove")}
+                                class="px-2 text-text-weak hover:text-text-strong"
+                                onClick={() => unqueue(file)}
+                              >
+                                <Icon name="close-small" size="small" />
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                      </For>
                     </tbody>
                   </table>
                 </div>
@@ -346,31 +417,33 @@ export function Attachments(props: {
           </Show>
         </div>
       </div>
-      {/* Linked Meetings: the meetings recorded on the spec, P1 keeps them with its attachments. */}
-      <div class="flex items-start">
-        <Label left text={`${language.t("p1.files.meetings")} (${meetings().length})`} />
-        <div class={`${box} min-w-0 flex-1 min-h-[124px] px-5 py-2.5 flex flex-wrap`}>
-          <For each={meetings()}>
-            {(file) => (
-              <div class="relative group/tip w-[104px] h-[124px] mr-5 mb-2.5 flex flex-col rounded-[5px] border border-border-weak-base">
-                <div class="flex-1 flex items-center justify-center">
-                  <img src="/p1/document/meeting.svg" alt="" class="w-[40%]" />
+      {/* Linked Meetings: the meetings recorded on the spec, P1 keeps them with its attachments; test cases have none. */}
+      <Show when={(props.view ?? 402) === 402}>
+        <div class="flex items-start">
+          <Label left text={`${language.t("p1.files.meetings")} (${meetings().length})`} />
+          <div class={`${box} min-w-0 flex-1 min-h-[124px] px-5 py-2.5 flex flex-wrap`}>
+            <For each={meetings()}>
+              {(file) => (
+                <div class="relative group/tip w-[104px] h-[124px] mr-5 mb-2.5 flex flex-col rounded-[5px] border border-border-weak-base">
+                  <div class="flex-1 flex items-center justify-center">
+                    <img src="/p1/document/meeting.svg" alt="" class="w-[40%]" />
+                  </div>
+                  <div class="pb-2 flex flex-col items-center text-12-regular text-text-base text-center">
+                    <span>{stamp(file.changed.date || file.date)}</span>
+                    <span class="truncate max-w-full px-1">By: {file.changed.by}</span>
+                  </div>
+                  <Tip text={language.t("p1.tab.soon")} />
                 </div>
-                <div class="pb-2 flex flex-col items-center text-12-regular text-text-base text-center">
-                  <span>{stamp(file.changed.date || file.date)}</span>
-                  <span class="truncate max-w-full px-1">By: {file.changed.by}</span>
-                </div>
-                <Tip text={language.t("p1.tab.soon")} />
-              </div>
-            )}
-          </For>
-          <div class="relative group/tip w-[104px] h-[124px] mb-2.5 flex flex-col items-center justify-center rounded-[5px] border border-border-weak-base text-text-base">
-            <Icon name="plus-small" />
-            <span class="mt-2.5 text-13-regular">{language.t("p1.files.meeting")}</span>
-            <Tip text={language.t("p1.tab.soon")} />
+              )}
+            </For>
+            <div class="relative group/tip w-[104px] h-[124px] mb-2.5 flex flex-col items-center justify-center rounded-[5px] border border-border-weak-base text-text-base">
+              <Icon name="plus-small" />
+              <span class="mt-2.5 text-13-regular">{language.t("p1.files.meeting")}</span>
+              <Tip text={language.t("p1.tab.soon")} />
+            </div>
           </div>
         </div>
-      </div>
+      </Show>
       <Show when={state.menu}>
         {(menu) => (
           <Menu

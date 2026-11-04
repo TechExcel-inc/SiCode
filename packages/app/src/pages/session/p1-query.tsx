@@ -223,33 +223,6 @@ export function P1Query(props: {
 
   return (
     <div data-component="p1-query" class="relative shrink-0 flex items-center gap-1.5">
-      <button
-        type="button"
-        data-action="p1-query-advanced"
-        class={tool}
-        classList={{
-          "bg-surface-interactive-base border-transparent text-text-on-interactive-base hover:opacity-90": active(),
-          "border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover": !active(),
-        }}
-        disabled={props.disabled}
-        aria-label={language.t("p1.query.advanced")}
-        title={language.t("p1.query.advanced")}
-        aria-expanded={state.open}
-        onClick={() => void show()}
-      >
-        <Icon name="magnifying-glass" size="small" />
-      </button>
-      <button
-        type="button"
-        data-action="p1-query-cancel"
-        class={`${tool} border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover`}
-        disabled={props.disabled || !active()}
-        aria-label={language.t("p1.query.cancel")}
-        title={language.t("p1.query.cancel")}
-        onClick={cancel}
-      >
-        <Icon name="circle-ban-sign" size="small" />
-      </button>
       <div class="relative">
         <button
           type="button"
@@ -333,6 +306,33 @@ export function P1Query(props: {
           </div>
         </Show>
       </div>
+      <button
+        type="button"
+        data-action="p1-query-advanced"
+        class={tool}
+        classList={{
+          "bg-surface-interactive-base border-transparent text-text-on-interactive-base hover:opacity-90": active(),
+          "border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover": !active(),
+        }}
+        disabled={props.disabled}
+        aria-label={language.t("p1.query.advanced")}
+        title={language.t("p1.query.advanced")}
+        aria-expanded={state.open}
+        onClick={() => void show()}
+      >
+        <Icon name="magnifying-glass" size="small" />
+      </button>
+      <button
+        type="button"
+        data-action="p1-query-cancel"
+        class={`${tool} border-border-weaker-base bg-surface-base text-text-strong hover:bg-surface-base-hover`}
+        disabled={props.disabled || !active()}
+        aria-label={language.t("p1.query.cancel")}
+        title={language.t("p1.query.cancel")}
+        onClick={cancel}
+      >
+        <Icon name="circle-ban-sign" size="small" />
+      </button>
       <Show when={state.open}>
         <div class="fixed inset-0 z-40" onClick={() => setState("open", false)} />
         <div

@@ -3,6 +3,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
 import type { Filter } from "./filter"
+import type { Clock } from "./stories"
 import { bind } from "./http"
 
 type State = {
@@ -11,7 +12,7 @@ type State = {
   user: string
   name: string
   project: number
-  view: "list" | "board"
+  view: "list" | "board" | "weekly"
   // The folder tree is closed; hovering its icon shows it over the list.
   folded?: boolean
   // Each column's width as you dragged it: the list's by field id, a popup's by "popup.column".
@@ -29,6 +30,8 @@ type State = {
   // The product feature map shown beside the list, and whether it holds the folder's features or the whole product's.
   map?: boolean
   scope?: "relevant" | "all"
+  // Story owners' own time spent and left, by P1 server and story id; P1 keeps no time on stories.
+  clocks?: Record<string, Record<string, Clock>>
 }
 
 export type Box = { x: number; y: number; w: number; h?: number }
@@ -65,6 +68,10 @@ export const { use: useP1, provider: P1Provider } = createSimpleContext({
       active: () => !!store.active,
       activate(on: boolean) {
         setStore("active", on)
+      },
+      clocks: () => store.clocks?.[store.server ?? ""] ?? {},
+      clock(id: number, next: Clock) {
+        setStore("clocks", (all) => ({ ...all, [store.server ?? ""]: { ...all?.[store.server ?? ""], [id]: next } }))
       },
       mapped: () => !!store.map,
       map(on: boolean) {

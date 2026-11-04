@@ -116,6 +116,10 @@ export type Space = {
   name: string
   /** The linked development project and space, where spec points' modules live. */
   dev?: { project: number; space: number }
+  /** The linked test library project and space, where test cases live. */
+  test?: { project: number; space: number; name: string }
+  /** The linked knowledge project and space. */
+  knowledge?: { project: number; space: number; name: string }
   /** The Kloud product feature folders the project's feature map shows, when the project turns the map on. */
   products?: number[]
 }
@@ -264,6 +268,15 @@ export function readSpace(data: unknown): Space | undefined {
   const project = cellNum(req.PrimarySpace, ["projectId"])
   if (!project) return
   const dev = record(body.P1ProjectDataValue.Development) ? body.P1ProjectDataValue.Development.PrimarySpace : undefined
+  const linked = (key: string) => {
+    const found = record(body.P1ProjectDataValue) ? body.P1ProjectDataValue[key] : undefined
+    const at = record(found) && found.Enabled !== false && record(found.PrimarySpace) ? found.PrimarySpace : undefined
+    return at && cellNum(at, ["projectId"])
+      ? { project: cellNum(at, ["projectId"]), space: cellNum(at, ["spaceId"]), name: cellText(at, ["spaceName"]) }
+      : undefined
+  }
+  const test = linked("TestLiberary")
+  const knowledge = linked("Knowledge")
   const options = body.P1ProjectDataValue.ProjectOptions
   const manage = record(options) && record(options.Management) ? options.Management : undefined
   const products = manage && manage.EnableProductFunctionalTree
@@ -279,6 +292,8 @@ export function readSpace(data: unknown): Space | undefined {
     ...(record(dev) && cellNum(dev, ["projectId"])
       ? { dev: { project: cellNum(dev, ["projectId"]), space: cellNum(dev, ["spaceId"]) } }
       : {}),
+    ...(test ? { test } : {}),
+    ...(knowledge ? { knowledge } : {}),
     ...(products.length ? { products } : {}),
   }
 }

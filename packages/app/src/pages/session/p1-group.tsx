@@ -66,31 +66,51 @@ export function Grouping(props: { id: number }) {
  * The requirement list's Group by field: reads "Group by" until a grouping is chosen, then that grouping's name,
  * and picks another from a short menu.
  */
-export function P1Group(props: { value: number; items: Choice[]; disabled?: boolean; onPick: (id: number) => void }) {
+export function P1Group(props: {
+  value: number
+  items: Choice[]
+  disabled?: boolean
+  /** Shown as the grouping, view only, when the view allows just that one (the weekly board's story owner). */
+  fixed?: string
+  onPick: (id: number) => void
+}) {
   const language = useLanguage()
   const [at, setAt] = createSignal<DOMRect>()
   const name = () => (props.value ? props.items.find((item) => item.id === props.value)?.name : undefined)
 
   return (
-    <div class="shrink-0">
-      <button
-        type="button"
-        data-action="p1-group"
-        class="h-8 min-w-36 pl-3 pr-2 rounded-lg flex items-center gap-2 border bg-surface-base text-13-regular hover:bg-surface-base-hover"
-        classList={{
-          "text-text-strong border-border-interactive-base": !!name(),
-          "text-text-weak border-border-weaker-base": !name(),
-          "bg-surface-base-hover": !!at(),
-        }}
-        disabled={props.disabled}
-        aria-label={language.t("p1.filter.group")}
-        aria-haspopup="menu"
-        aria-expanded={!!at()}
-        onClick={(event) => setAt(event.currentTarget.getBoundingClientRect())}
+    <div class="shrink-0 flex items-center gap-2">
+      <span class="text-13-regular text-text-weak whitespace-nowrap">{language.t("p1.filter.group")}</span>
+      <Show
+        when={!props.fixed}
+        fallback={
+          <span
+            data-component="p1-group-fixed"
+            class="h-8 min-w-36 px-3 rounded-lg flex items-center border border-border-weaker-base bg-surface-base text-13-regular text-text-strong whitespace-nowrap"
+          >
+            {props.fixed}
+          </span>
+        }
       >
-        <span class="flex-1 text-left whitespace-nowrap">{name() ?? language.t("p1.filter.group")}</span>
-        <Icon name="chevron-down" size="small" class="shrink-0 text-icon-base" />
-      </button>
+        <button
+          type="button"
+          data-action="p1-group"
+          class="h-8 min-w-36 pl-3 pr-2 rounded-lg flex items-center gap-2 border bg-surface-base text-13-regular hover:bg-surface-base-hover"
+          classList={{
+            "text-text-strong border-border-interactive-base": !!name(),
+            "text-text-weak border-border-weaker-base": !name(),
+            "bg-surface-base-hover": !!at(),
+          }}
+          disabled={props.disabled}
+          aria-label={language.t("p1.filter.group")}
+          aria-haspopup="menu"
+          aria-expanded={!!at()}
+          onClick={(event) => setAt(event.currentTarget.getBoundingClientRect())}
+        >
+          <span class="flex-1 text-left whitespace-nowrap">{name() ?? language.t("p1.groupby.none")}</span>
+          <Icon name="chevron-down" size="small" class="shrink-0 text-icon-base" />
+        </button>
+      </Show>
       <Show when={at()}>
         {(rect) => (
           <Pick

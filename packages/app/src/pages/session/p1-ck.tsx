@@ -33,11 +33,10 @@ function build(locale: string) {
   return ready
 }
 
-// P1's full toolbar for a memo field, less what needs P1's own services (Kloud uploads, docs, AI links, Max).
+// P1's toolbar for a memo field, in the order P1 shows it, less what needs P1's own services (Kloud uploads, docs,
+// AI links, Max). P1 leaves undo and redo off the bar (Cmd+Z and Cmd+Shift+Z still work); what doesn't fit goes in
+// the ⋮ menu.
 const items = [
-  "undo",
-  "redo",
-  "|",
   "heading",
   "|",
   "fontfamily",
@@ -45,23 +44,23 @@ const items = [
   "fontColor",
   "fontBackgroundColor",
   "|",
-  "sourceEditing",
-  "alignment",
-  "|",
   "bold",
   "italic",
   "underline",
   "strikethrough",
   "|",
-  "link",
-  "insertTable",
-  "blockQuote",
-  "mediaEmbed",
+  "sourceEditing",
+  "alignment",
   "|",
-  "bulletedList",
   "numberedList",
+  "bulletedList",
   "outdent",
   "indent",
+  "|",
+  "link",
+  "blockQuote",
+  "insertTable",
+  "mediaEmbed",
 ]
 
 /** P1's rich text editor for a memo field: its CKEditor with its toolbar above the text. */

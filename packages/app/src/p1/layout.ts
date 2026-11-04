@@ -32,7 +32,7 @@ export function arrange(fields: Field[], width: number): Row[] {
     if (bare) return [{ field, bare, at: { ...at, ll: at.cl, lr: at.cl, lt: at.ct, lb: at.cb } }]
     return [{ field, bare, at }]
   })
-  const rows = order(group(list, across), "top", "left")
+  const rows = order(group(spread(list), across), "top", "left")
   return rows.map((row) => {
     const flat = row.list.every((item) => row.bottom - item.at.cb < 5 && row.top > item.at.ct - 5)
     const columns = flat
@@ -45,7 +45,12 @@ export function arrange(fields: Field[], width: number): Row[] {
       columns: columns.map((column, index) => {
         const lines = column.list.reduce<number[]>((all, item, at) => {
           if (!at) return [0]
-          return [...all, item.at.ct - column.top < 5 ? all[at - 1] : all[at - 1] + 1]
+          const last = all[at - 1]
+          // P1 sometimes saves two fields at the same spot; the later one goes on the next line, not over the first.
+          const clash = column.list
+            .slice(0, at)
+            .some((other, index) => all[index] === last && overlaps(other.at, item.at))
+          return [...all, item.at.ct - column.top < 5 && !clash ? last : last + 1]
         }, [])
         return {
           width: scale(column.right - column.left),
@@ -58,7 +63,10 @@ export function arrange(fields: Field[], width: number): Row[] {
               field: item.field,
               width: scale(item.at.cr - item.at.ll),
               left: scale(item.at.ll - column.left),
-              top: scale(stacked ? item.at.ct - prev.at.cb : item.at.ct - column.top),
+              // A field moved down off another starts right under the line above.
+              top: scale(
+                stacked && item.at.ct - column.top < 5 ? 0 : stacked ? item.at.ct - prev.at.cb : item.at.ct - column.top,
+              ),
               label: scale(item.at.lr - item.at.ll),
               split: scale(item.at.cl - item.at.lr),
               line: lines[at],
@@ -109,4 +117,40 @@ function order<T>(list: T[], first: string, second: string) {
     return Number((box.at as Record<string, number>)[key])
   }
   return [...list].sort((a, b) => pick(a, first) - pick(b, first) || pick(a, second) - pick(b, second))
+}
+
+/**
+ * P1's designer sometimes saves two fields at the same spot, which P1 then draws one over the other. When the left
+ * of the page is free at that height, the first of them moves there, so both show side by side; otherwise they stay
+ * where they are and the later one goes on the next line.
+ */
+function spread(list: Item[]): Item[] {
+  const left = Math.min(...list.map((item) => item.at.ll))
+  return list.reduce<Item[]>((all, item) => {
+    const clash = all.findIndex((other) => Math.abs(other.at.ct - item.at.ct) < 5 && overlaps(other.at, item.at))
+    if (clash < 0) return [...all, item]
+    const other = all[clash]
+    const shift = other.at.ll - left
+    const moved = {
+      ...other.at,
+      ll: other.at.ll - shift,
+      lr: other.at.lr - shift,
+      cl: other.at.cl - shift,
+      cr: other.at.cr - shift,
+    }
+    // Only into empty room: nothing else may sit there, at that height.
+    const free =
+      shift > 0 &&
+      moved.cr <= item.at.cl &&
+      [...all, ...list].every(
+        (field) => field === other || field === item || !(touches(moved.ct, moved.cb, field.at.ct, field.at.cb) && overlaps(moved, field.at)),
+      )
+    if (!free) return [...all, item]
+    return [...all.map((field, at) => (at === clash ? { ...field, at: moved } : field)), item]
+  }, [])
+}
+
+/** Whether two fields share more than a sliver of width; a label's edge running under its neighbour doesn't count. */
+function overlaps(a: { ll: number; cr: number }, b: { ll: number; cr: number }) {
+  return Math.min(a.cr, b.cr) - Math.max(a.ll, b.ll) > 20
 }

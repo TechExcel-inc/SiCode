@@ -2,11 +2,22 @@ import DOMPurify from "dompurify"
 import { For, Show, createResource, type JSX } from "solid-js"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
+import type { Space } from "@/p1/api"
 import { content, events, history, versions } from "@/p1/pages"
 import { useP1 } from "@/p1/settings"
+import { P1Links } from "./p1-links"
 
-/** One of P1's own requirement pages: history (104), version (105), event (106), document content (125); links and the relationship map come later. */
-export function P1Page(props: { kind: number; project: number; id: number; folder: number }) {
+/** One of P1's own requirement pages: all links (107), history (104), version (105), event (106), document content (125); the relationship map comes later. */
+export function P1Page(props: {
+  kind: number
+  project: number
+  id: number
+  folder: number
+  space?: Space
+  head?: { title: string; state: string; kind: number }
+  /** Called once All Links changes the spec's links. */
+  onChanged?: () => void
+}) {
   const p1 = useP1()
   const language = useLanguage()
   const args = () => [p1.server(), p1.token(), props.project, props.id] as const
@@ -150,6 +161,8 @@ export function P1Page(props: { kind: number; project: number; id: number; folde
       </Wait>
     )
   }
+
+  if (props.kind === 107) return <P1Links project={props.project} id={props.id} space={props.space} head={props.head} onChanged={props.onChanged} />
 
   if (props.kind === 125) {
     const [data] = createResource(args, (a) => content(...a, language.locale()))

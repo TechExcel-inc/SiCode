@@ -110,12 +110,15 @@ export function readNotes(data: unknown): Note[] {
   return read(record(data) ? data.NoteItems : undefined)
 }
 
-export async function files(base: string, token: string, project: number, id: number, locale: string) {
+/**
+ * P1 keeps every module's files in the same place, told apart by a view type: 402 a requirement, 201 a test case.
+ */
+export async function files(base: string, token: string, project: number, id: number, locale: string, view = 402) {
   return readFiles(
     await call(base, token, "/DevSpecAPI/ReqAttachmentInfoList", locale, {
       ProjectID: project,
       ItemID: id,
-      ViewType: 402,
+      ViewType: view,
     }),
   )
 }
@@ -138,19 +141,28 @@ export async function fetchFile(
   file: Pick<Attachment, "id" | "version">,
   locale: string,
   thumb: boolean,
+  view = 402,
 ) {
   const path = thumb ? "ReqAttachmentImage" : "ReqAttachment"
-  const url = `${base}/DevSpecAPI/${path}?ProjectID=${project}&FileID=${file.id}&documentType=14&VersionID=${file.version}${thumb ? "&ImageSize=2" : "&ViewType=402"}&languageid=${lang(locale)}`
+  const url = `${base}/DevSpecAPI/${path}?ProjectID=${project}&FileID=${file.id}&documentType=14&VersionID=${file.version}${thumb ? "&ImageSize=2" : `&ViewType=${view}`}&languageid=${lang(locale)}`
   const res = await client()(url, { headers: { Authorization: `Bearer ${token}`, UserToken: token } })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return URL.createObjectURL(await res.blob())
 }
 
-/** Attaches a file to a requirement. */
-export async function upload(base: string, token: string, project: number, id: number, file: File, locale: string) {
+/** Attaches a file to a requirement, or with view type 201 to a test case, as P1's attachment box posts it. */
+export async function upload(
+  base: string,
+  token: string,
+  project: number,
+  id: number,
+  file: File,
+  locale: string,
+  view = 402,
+) {
   const form = new FormData()
   form.append("file", file, file.name)
-  const url = `${base}/DevSpecAPI/ReqAttachment?ProjectID=${project}&NoteID=1&FileName=&ItemID=${id}&ViewType=402&documentType=14&languageid=${lang(locale)}`
+  const url = `${base}/DevSpecAPI/ReqAttachment?ProjectID=${project}&NoteID=1&FileName=&ItemID=${id}&ViewType=${view}${view === 402 ? "&documentType=14" : ""}&languageid=${lang(locale)}`
   const res = await client()(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, UserToken: token },

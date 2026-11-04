@@ -102,6 +102,7 @@
 }
 .p1-ck .ck.ck-toolbar {
   border: 0;
+  background: var(--surface-base);
 }
 .p1-ck .ck-editor__editable {
   min-height: 16rem;

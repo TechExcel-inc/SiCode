@@ -25,6 +25,7 @@ import {
   type State,
   type Value,
 } from "@/p1/form"
+import type { Space } from "@/p1/api"
 import { useP1 } from "@/p1/settings"
 import { stories } from "@/p1/stories"
 import { arrange } from "@/p1/layout"
@@ -43,7 +44,11 @@ const empty: Value = { value: "", choice: "", html: "" }
 export function P1Item(props: {
   project: number
   folder: number
+  /** The project's requirement and test library spaces, which All Links searches to add links. */
+  space?: Space
   id?: number
+  /** P1's page to open on, such as 107 for All Links; the first page otherwise. */
+  tab?: number
   dock?: boolean
   onClose: () => void
   onSaved: (id: number) => void
@@ -127,6 +132,7 @@ export function P1Item(props: {
       if (!found) return
       setState({
         pages: found.pages,
+        page: Math.max(0, found.pages.findIndex((page) => page.parent === props.tab)),
         values: found.values,
         start: structuredClone(found.values),
         states: found.states,
@@ -473,7 +479,24 @@ export function P1Item(props: {
             when={page() && system.includes(page()!.parent) && !page()!.fields.length && props.id ? page() : undefined}
             fallback={form()}
           >
-            {(open) => <P1Page kind={open().parent} project={props.project} id={props.id!} folder={state.folder} />}
+            {(open) => <P1Page
+                kind={open().parent}
+                project={props.project}
+                id={props.id!}
+                folder={state.folder}
+                space={props.space}
+                // A link added or removed changes the list's link checks, as a save does.
+                onChanged={() => props.onSaved(props.id!)}
+                head={{
+                  title: value(1101).value,
+                  state: value(1114).value,
+                  // The spec's type by name, as P1's list numbers its icons.
+                  kind:
+                    { epic: 0, "epic document": 2, enhancement: 4, defect: 5, change: 6 }[
+                      value(1121).value.toLowerCase()
+                    ] ?? 1,
+                }}
+              />}
           </Show>
         </div>
       </Show>

@@ -54,7 +54,8 @@ export const system = [107, 104, 105, 106, 123, 125]
 /** One field as P1 describes it, with where the page designer put it when the description says. */
 function readField(field: Record<string, unknown>): Field[] {
   const id = Number(field.DataFieldID ?? field.FieldID)
-  const type = Number(field.FieldType)
+  // Some layouts name the type FieldTypeID, as P1's own forms read it; it's 0 when the layout leaves it out.
+  const type = Number(field.FieldType ?? field.FieldTypeID) || 0
   if (!id) return []
   const n = (key: string) => Number(field[key]) || 0
   const at = n("Ctrl_Pos_Right")
@@ -86,23 +87,37 @@ export function readLayout(pages: Page[], layouts: Record<number, unknown>): Pag
     if (!list.length) return page
     const fields = list.flatMap(readField).map((field) => {
       const own = page.fields.find((item) => item.id === field.id)
-      return { ...own, ...field, name: field.name || own?.name || "", must: !!own?.must || !!field.must }
+      return {
+        ...own,
+        ...field,
+        name: field.name || own?.name || "",
+        type: field.type || own?.type || 0,
+        must: !!own?.must || !!field.must,
+      }
     })
     return { ...page, fields }
   })
 }
 
 /** Each form page's admin layout, read once per project and page. */
-async function layouts(base: string, token: string, project: number, pages: Page[], locale: string) {
+export async function layouts(
+  base: string,
+  token: string,
+  project: number,
+  pages: Page[],
+  locale: string,
+  // P1's module type: 402 a requirement, 102 a test case.
+  type = 402,
+) {
   const found = await Promise.all(
     pages
       .filter((page) => page.fields.length)
       .map((page) =>
-        once(`${base}|layout|${project}|${page.id}`, () =>
+        once(`${base}|layout|${type}|${project}|${page.id}`, () =>
           call(
             base,
             token,
-            `/DevTrackApi/api/Admin/GetFieldsOnPage?projectId=${project}&pageId=${page.id}&moduleTypeId=402`,
+            `/DevTrackApi/api/Admin/GetFieldsOnPage?projectId=${project}&pageId=${page.id}&moduleTypeId=${type}`,
             locale,
           ),
         )

@@ -263,7 +263,7 @@ export function Petals() {
   )
 }
 
-/** Closes or opens the folder panel, as P1's: the list's lines with an arrow pointing the way the panel goes. */
+/** Opens or closes the folder panel: the list's lines with an arrow pointing left to open it and right to close it. */
 export function Collapse(props: { open: boolean }) {
   return (
     <svg
@@ -277,7 +277,7 @@ export function Collapse(props: { open: boolean }) {
       aria-hidden="true"
     >
       <path d="M7.5 3.5h6M7.5 8h6M7.5 12.5h6M2 3.5h2.5M2 12.5h2.5" />
-      <path d={props.open ? "M4.5 6L2.5 8l2 2" : "M2.5 6l2 2-2 2"} />
+      <path d={props.open ? "M2.5 6l2 2-2 2" : "M4.5 6L2.5 8l2 2"} />
     </svg>
   )
 }
@@ -298,6 +298,93 @@ export function Refresh(props: { spin?: boolean }) {
     >
       <path d="M13.25 8A5.25 5.25 0 1 1 11.6 4.2" />
       <path d="M12 1.75v2.75H9.25" />
+    </svg>
+  )
+}
+
+/** Team performance: a trophy in the team score's gold. */
+export function Trophy() {
+  return (
+    <svg
+      class="size-5 shrink-0 text-[#e2a83e]"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 3h8v5a4 4 0 0 1-8 0V3z" fill="currentColor" fill-opacity="0.18" />
+      <path d="M6 5H3.5v1.5A2.5 2.5 0 0 0 6 9M14 5h2.5v1.5A2.5 2.5 0 0 1 14 9M10 12v3M7 17h6" />
+    </svg>
+  )
+}
+
+/** A test case: a clipboard with a tick, green as P1 draws it. */
+export function TestIcon() {
+  return (
+    <svg class="size-6 shrink-0 p-0.5 text-icon-success-base" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.3" />
+      <path d="M5.5 2.5V1.5H10.5V2.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+      <path
+        d="M5.25 8.75L7.25 10.5L10.75 6.5"
+        stroke="currentColor"
+        stroke-width="1.3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** A test run: a green tick once closed, an orange clock while open, as P1 tells them apart. */
+export function RunIcon(props: { closed: boolean }) {
+  return (
+    <svg
+      class="size-6 shrink-0 p-1"
+      classList={{ "text-icon-success-base": props.closed, "text-icon-warning-base": !props.closed }}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.4" />
+      <path
+        d={props.closed ? "M5.5 8.25L7.25 10L10.5 6.25" : "M8 4.75V8L10.25 9.5"}
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** A knowledge item: an open book, blue. */
+export function BookIcon() {
+  return (
+    <svg class="size-6 shrink-0 p-0.5 text-icon-info-base" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 4.25C6.75 3.25 4.5 3 2.5 3.25V12.5C4.5 12.25 6.75 12.5 8 13.5C9.25 12.5 11.5 12.25 13.5 12.5V3.25C11.5 3 9.25 3.25 8 4.25Z"
+        stroke="currentColor"
+        stroke-width="1.3"
+        stroke-linejoin="round"
+      />
+      <path d="M8 4.25V13.5" stroke="currentColor" stroke-width="1.3" />
+    </svg>
+  )
+}
+
+/** Linking: two chain links, as P1's New & Link button. */
+export function LinkIcon() {
+  return (
+    <svg class="size-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M8.5 11.5L11.5 8.5M9.25 5.75L10.75 4.25C12.1 2.9 14.3 2.9 15.65 4.25C17 5.6 17 7.8 15.65 9.15L14.25 10.55M10.75 14.25L9.25 15.75C7.9 17.1 5.7 17.1 4.35 15.75C3 14.4 3 12.2 4.35 10.85L5.75 9.45"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+      />
     </svg>
   )
 }

@@ -13,10 +13,13 @@ const story = (id: number, name: string): Story => ({
   module: 0,
   area: "",
   points: 0,
+  type: 0,
   target: 2,
   spent: 1,
   remain: 1,
   finish: 50,
+  end: "",
+  status: "",
   tasks: [],
 })
 

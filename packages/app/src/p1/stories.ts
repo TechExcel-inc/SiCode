@@ -1,4 +1,5 @@
 import { call } from "./api"
+import { kind } from "./kinds"
 import { remove, save, sprint, type Choice, type Home, type Module } from "./points"
 
 /**
@@ -30,12 +31,24 @@ export type Story = {
   module: number
   area: string
   points: number
+  // Its type (1 Development … 5 Others, see `kinds`), or 0 while none is set.
+  type: number
   // Target time: the hours the story is planned to take, to one decimal.
   target: number
   spent: number
   remain: number
   finish: number
+  /** Its planned end date ("2026-11-04"), which places it on the weekly board; empty while it has none. */
+  end: string
+  /** Its status, as P1 names it ("In Progress"). */
+  status: string
   tasks: Task[]
+}
+
+/** A date's day, "2026-11-04", from P1's "2026-11-04T00:00:00" or "2026-11-04 00:00"; empty for none or P1's 0001. */
+export function day(value: unknown) {
+  const found = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return found && Number(found[1]) > 1900 ? `${found[1]}-${found[2]}-${found[3]}` : ""
 }
 
 /** Hours from P1's "1.5h", "90m" or a plain number. */
@@ -72,15 +85,54 @@ export function readStories(data: unknown): Story[] {
       module: Number(row.ImplementationModuleId) || 0,
       area: String(row.ImplementationModuleName ?? ""),
       points: Number(row.StoryPoints) || 0,
+      type: kind(row.StoryType) ? Number(row.StoryType) : 0,
       target: planned(row),
-      spent: hours(row.TimeSpent),
-      // Its tasks' time once any has some; related-module tasks start with none, so the story's own counts until then.
-      remain: tasks.some((task) => task.remain || task.spent)
-        ? tasks.reduce((sum, task) => sum + task.remain, 0)
-        : left(row.TimeRemain, planned(row), hours(row.TimeSpent)),
+      // Its tasks' time, unless the story was given more of its own.
+      spent: own(hours(row.TimeSpent), tasks, "spent"),
+      remain: own(left(row.TimeRemain, planned(row), hours(row.TimeSpent)), tasks, "remain"),
       finish: tasks.length ? rollup(tasks) : Number(row.FinishPercentage) || 0,
+      end: day(row.PlanedEndDate ?? row.PlanEndDate ?? row.EndDate),
+      status: String(row.CurrentStatusName ?? row.StatusName ?? row.StoryStatusName ?? row.Status ?? ""),
       tasks,
     }
+  })
+}
+
+/** A story's time spent or left: the sum of its tasks', or its own when it has no tasks or its own is more. */
+export function own(value: number, tasks: { spent: number; remain: number }[], key: "spent" | "remain") {
+  if (!tasks.length) return value
+  return Math.max(value, tasks.reduce((sum, task) => sum + task[key], 0))
+}
+
+/** % finish from time: what is spent of all there is (spent and left), or none when there is no time at all. */
+export function progress(spent: number, remain: number) {
+  return spent + remain > 0 ? Math.round((spent / (spent + remain)) * 100) : undefined
+}
+
+/**
+ * A spec's points and time from its stories: their target times, time spent and time left, added up, and its
+ * % finish from that time.
+ */
+export function total(list: { target: number; spent: number; remain: number }[]) {
+  const spent = list.reduce((sum, story) => sum + story.spent, 0)
+  const remain = list.reduce((sum, story) => sum + story.remain, 0)
+  return { points: list.reduce((sum, story) => sum + story.target, 0), spent, remain, finish: progress(spent, remain) }
+}
+
+/** A story owner's own time for a story, kept in SiCode, since P1 keeps none on stories. */
+export type Clock = { spent: number; remain: number }
+
+/**
+ * Stories with their owners' time laid over P1's: a story's own time where one was entered, never below its tasks'
+ * total, and its % finish from its time.
+ */
+export function mark<T extends Story>(list: T[], kept: Record<string, Clock | undefined>): T[] {
+  return list.map((story) => {
+    const own = kept[String(story.id)]
+    if (!own) return story
+    const spent = Math.max(own.spent, least(story, "spent"))
+    const remain = Math.max(own.remain, least(story, "remain"))
+    return { ...story, spent, remain, finish: progress(spent, remain) ?? story.finish }
   })
 }
 
@@ -145,11 +197,15 @@ export async function listed(base: string, token: string, project: number, spec:
 
 export async function stories(base: string, token: string, project: number, spec: number, locale: string) {
   const list = rows(await dev(base, token, "Story/ListBySpec", locale, { SpecProjectId: project, SpecItemId: spec }))
-  // The list leaves out each story's estimated time, so it comes from the story itself.
+  // The list leaves out each story's estimated time and may leave out its type, so they come from the story itself.
   const full = await Promise.all(
     list.map((row) =>
       dev(base, token, `Story/Get?projectId=${row.ProjectId}&storyId=${row.StoryItemId}`, locale)
-        .then((got) => ({ ...row, StoryEstimatedTime: record(got) ? got.StoryEstimatedTime : undefined }))
+        .then((got) => ({
+          ...row,
+          StoryEstimatedTime: record(got) ? got.StoryEstimatedTime : undefined,
+          StoryType: (record(got) ? got.StoryType : undefined) ?? row.StoryType,
+        }))
         .catch(() => row),
     ),
   )
@@ -182,7 +238,16 @@ async function exact(base: string, token: string, project: number, ids: number[]
 export async function create(
   base: string,
   token: string,
-  input: { project: number; spec: number; home: Home; name: string; owner: number; target: number; modules: Choice[] },
+  input: {
+    project: number
+    spec: number
+    home: Home
+    name: string
+    owner: number
+    target: number
+    type: number
+    modules: Choice[]
+  },
   locale: string,
 ) {
   const target = input.home.dev
@@ -192,7 +257,7 @@ export async function create(
     SpecProjectId: input.project,
     SpecItemId: input.spec,
     AssignToProjectId: target.project,
-    StoryCreation: { SubProjectId: sub, CurrentOwnerId: input.owner, ...aim(input.target) },
+    StoryCreation: { SubProjectId: sub, CurrentOwnerId: input.owner, StoryType: input.type, ...aim(input.target) },
     TaskCreations: [],
   })
   const story = (Array.isArray(data) ? data : []).filter(record).find((item) => Number(item.Option) === 1)
@@ -204,6 +269,7 @@ export async function create(
       ProjectId: target.project,
       StoryTitle: input.name,
       CurrentOwnerId: input.owner,
+      StoryType: input.type,
       ...aim(input.target),
     })
   await relate(
@@ -295,12 +361,22 @@ export async function add(
   await exact(base, token, input.story.project, made(data), Math.round(input.points * 60), locale)
 }
 
-/** Changes a story's name, owner or target time (from `aim`); its other values go along so P1 has the whole story. */
+/** Changes a story's name, owner, type or target time (from `aim`); its other values go along so P1 has the whole story. */
 export async function edit(
   base: string,
   token: string,
   story: Story,
-  next: { StoryTitle?: string; CurrentOwnerId?: number; StoryPoints?: number; StoryEstimatedTime?: number },
+  next: {
+    StoryTitle?: string
+    CurrentOwnerId?: number
+    StoryPoints?: number
+    StoryEstimatedTime?: number
+    StoryType?: number
+    TimeSpent?: number
+    TimeRemain?: number
+    // The planned end date, "2026-11-04", or "" to clear it.
+    PlanedEndDate?: string
+  },
   locale: string,
 ) {
   await dev(base, token, "Story/Update", locale, {
@@ -309,6 +385,7 @@ export async function edit(
     StoryTitle: story.name,
     CurrentOwnerId: story.owner,
     StoryPoints: story.points,
+    ...(story.type ? { StoryType: story.type } : {}),
     ...next,
   })
 }
@@ -326,6 +403,11 @@ export function spread(tasks: Task[], minutes: number) {
   return parts.map((part, index) =>
     index === parts.length - 1 ? minutes - parts.slice(0, -1).reduce((sum, x) => sum + x, 0) : part,
   )
+}
+
+/** The least a story's time spent or left can be: what its tasks add up to. */
+export function least(story: { tasks: { spent: number; remain: number }[] }, key: "spent" | "remain") {
+  return Math.round(story.tasks.reduce((sum, task) => sum + task[key], 0) * 10) / 10
 }
 
 /** Sets a story's time remaining through its tasks, since P1 keeps time on tasks. */

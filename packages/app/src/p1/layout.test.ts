@@ -53,4 +53,34 @@ describe("p1 layout", () => {
     )
     expect(rows[0].columns[0].items[0]).toMatchObject({ bare: true, label: 0, split: 0, width: 190 })
   })
+
+  test("puts a field saved on top of another on the next line instead of over it", () => {
+    const rows = arrange(
+      [
+        field(1166, 5, 510, 600, 610, 1000, 50, 80),
+        field(1167, 7, 510, 600, 610, 1000, 50, 80),
+        field(1169, 7, 10, 100, 110, 500, 50, 80),
+      ],
+      1010,
+    )
+    const items = rows.flatMap((row) => row.columns.flatMap((column) => column.items))
+    const line = (id: number) => items.find((item) => item.field.id === id)!.line
+    expect(line(1166)).not.toBe(line(1167))
+    expect(items.every((item) => item.top >= 0)).toBe(true)
+  })
+
+  test("moves the first of two fields saved at one spot into free room on the left", () => {
+    const rows = arrange(
+      [
+        field(1166, 5, 500, 640, 650, 1000, 20, 50),
+        field(1167, 7, 500, 640, 650, 1000, 20, 50),
+        field(1169, 7, 10, 140, 150, 480, 60, 90),
+      ],
+      1010,
+    )
+    const items = rows.flatMap((row) => row.columns.flatMap((column) => column.items))
+    const at = (id: number) => items.find((item) => item.field.id === id)!
+    expect(at(1166).line).toBe(at(1167).line)
+    expect(at(1166).left).toBeLessThan(at(1167).left)
+  })
 })

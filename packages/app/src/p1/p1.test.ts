@@ -129,6 +129,16 @@ describe("p1 api", () => {
         },
       }),
     ).toEqual({ project: 190, folder: 9128, name: "DevSuite 11" })
+    expect(
+      readSpace({
+        Data: {
+          P1ProjectDataValue: {
+            Requirement: { Enabled: true, PrimarySpace: { projectId: 190, spaceId: 9128, spaceName: "DevSuite 11" } },
+            TestLiberary: { Enabled: true, PrimarySpace: { projectId: 77, spaceId: 3, spaceName: "Tests" } },
+          },
+        },
+      })?.test,
+    ).toEqual({ project: 77, space: 3, name: "Tests" })
     expect(readSpace({ Data: { P1ProjectDataValue: { Requirement: { Enabled: false } } } })).toBeUndefined()
     const tree = {
       FolderNodes: [

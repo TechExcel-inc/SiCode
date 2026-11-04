@@ -2435,6 +2435,10 @@ export default function Layout(props: ParentProps) {
         mobile={mobile}
         onClick={() => sessionView.terminal.toggle()}
       />
+      {/* A view's own rail item, second from the bottom: P1 Work puts its team performance here. */}
+      <Show when={!mobile}>
+        <div id="rail-view" class="contents" />
+      </Show>
       <RailUsage mobile={mobile} />
     </>
   )

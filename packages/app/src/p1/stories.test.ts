@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { aim, areas, hours, readStories, rollup, spread, type Task } from "./stories"
+import { aim, areas, hours, least, mark, own, progress, readStories, rollup, spread, total, type Story, type Task } from "./stories"
 
 describe("p1 stories", () => {
   test("reads hours the way P1 writes them", () => {
@@ -148,5 +148,46 @@ describe("p1 stories", () => {
         { spent: 0, remain: 0, finish: 0 },
       ]),
     ).toBe(50)
+  })
+
+  test("takes a story's time from its tasks unless its own is more", () => {
+    const tasks = [
+      { spent: 1, remain: 2 },
+      { spent: 0.5, remain: 1 },
+    ]
+    expect(own(3, [], "spent")).toBe(3)
+    expect(own(0, tasks, "spent")).toBe(1.5)
+    expect(own(4, tasks, "spent")).toBe(4)
+    expect(own(2, tasks, "remain")).toBe(3)
+  })
+
+  test("adds a spec's points and time up from its stories", () => {
+    expect(
+      total([
+        { target: 4, spent: 2, remain: 1 },
+        { target: 2.5, spent: 0, remain: 2.5 },
+      ]),
+    ).toEqual({ points: 6.5, spent: 2, remain: 3.5, finish: 36 })
+    expect(total([])).toEqual({ points: 0, spent: 0, remain: 0, finish: undefined })
+  })
+
+  test("knows the least a story's time can be: its tasks' total", () => {
+    const story = { tasks: [{ spent: 1, remain: 3 }, { spent: 0.5, remain: 1 }] }
+    expect(least(story, "spent")).toBe(1.5)
+    expect(least(story, "remain")).toBe(4)
+  })
+
+  test("works % finish out from time", () => {
+    expect(progress(3, 1)).toBe(75)
+    expect(progress(0, 0)).toBeUndefined()
+  })
+
+  test("lays a story owner's own time over P1's, never below its tasks", () => {
+    const base = { id: 7, target: 2, spent: 0, remain: 2, finish: 0, tasks: [] as Task[] } as unknown as Story
+    const tasked = { ...base, id: 8, spent: 1, remain: 1, tasks: [{ spent: 1, remain: 1 }] } as unknown as Story
+    const [one, two, three] = mark([base, tasked, { ...base, id: 9 }], { "7": { spent: 3, remain: 1 }, "8": { spent: 0.5, remain: 4 } })
+    expect([one.spent, one.remain, one.finish]).toEqual([3, 1, 75])
+    expect([two.spent, two.remain, two.finish]).toEqual([1, 4, 20])
+    expect([three.spent, three.remain]).toEqual([0, 2])
   })
 })
