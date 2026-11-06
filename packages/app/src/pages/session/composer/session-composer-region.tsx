@@ -12,6 +12,7 @@ import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
+import { SessionQuestionCard } from "@/pages/session/composer/session-question-card"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
@@ -97,7 +98,7 @@ export function SessionComposerRegion(props: {
     const one = once()
     return one?.status === "open" && one.limit !== undefined && one.requests >= one.limit
   })
-  // A pending question stays usable: it is answered in the conversation or by typing a message.
+  // A question or permission request takes the input's place, so it can't scroll away or be missed.
   const showComposer = createMemo(() => (!props.state.permissionRequest() && !props.state.questionRequest()) || child())
 
   const previewPrompt = () =>
@@ -190,6 +191,14 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
         }}
       >
+        <Show when={props.state.questionRequest()} keyed>
+          {(request) => (
+            <div class="max-h-[60vh] overflow-y-auto -mx-1 px-1">
+              <SessionQuestionCard request={request} onSubmit={props.onResponseSubmit} />
+            </div>
+          )}
+        </Show>
+
         <Show when={props.state.permissionRequest()} keyed>
           {(request) => (
             <div>

@@ -210,6 +210,10 @@ export function cowork(token: string, tenant?: number, http: Http = eadHttp()) {
     recent: (input: { limit?: number; q?: string } = {}) => send<CoworkProject[]>("GET", `/projects/recent${query(input)}`),
     open: () => send<CoworkProject[]>("GET", "/projects/open"),
     project: (projectId: number) => send<CoworkProject>("GET", `/projects/${projectId}`),
+    /** The EAD product a project codes: linked, matched from its repository, or none. */
+    product: (projectId: number) => send<{ productId?: number; how: string }>("GET", `/projects/${projectId}/product`),
+    linkProduct: (projectId: number, productId: number | null) =>
+      send<{ productId?: number; how: string }>("PUT", `/projects/${projectId}/product`, { productId }),
     activity: (projectId: number, kind: "OPENED" | "CLOSED" | "WORKED") =>
       send<CoworkProject>("POST", `/projects/${projectId}/activity`, { kind }),
     sidebar: (projectId: number, open: boolean, sortOrder?: number) =>

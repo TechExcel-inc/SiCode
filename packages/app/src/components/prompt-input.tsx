@@ -36,6 +36,7 @@ import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useEad } from "@/ead/settings"
+import { CodeLocation } from "./prompt-input/code-location"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { promptEnabled, promptProbe } from "@/testing/prompt"
@@ -1645,6 +1646,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       />
                     </TooltipKeybind>
                   </div>
+                  <CodeLocation session={params.id} directory={sdk.directory} />
                 </Show>
               </div>
             </div>

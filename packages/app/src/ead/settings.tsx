@@ -1,11 +1,21 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createSignal, on, onCleanup, untrack } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
-import { persisted } from "@/utils/persist"
-import { formatSharedServerPrompt, loadPlans, loadProductSharedServer, renew, type ProductSharedServer } from "./api"
+import { Persist, persisted } from "@/utils/persist"
+import {
+  enableSharedServer,
+  loadPlans,
+  loadServerProducts,
+  loadSharedServers,
+  renew,
+  repoKey,
+  type RepoPlace,
+  type ServerProduct,
+  type SharedServer,
+} from "./api"
 import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
@@ -124,7 +134,8 @@ function normalizeApi(url: string) {
 export const { use: useEad, provider: EadProvider } = createSimpleContext({
   name: "Ead",
   init: () => {
-    bindEadHttp(usePlatform())
+    const platform = usePlatform()
+    bindEadHttp(platform)
     const sdk = useGlobalSDK()
     const sync = useGlobalSync()
     const [store, setStore, , ready] = persisted("ead.v1", createStore<State>({ ...empty }))
@@ -313,33 +324,85 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       return raw
     }
 
-    // Session-only: the Shared AI Coding Server the chosen product codes on, read again when the product or the
-    // sign-in changes, or when the user enables or disables a server.
-    const [shared, setShared] = createSignal<ProductSharedServer>()
-    const [sharedTick, setSharedTick] = createSignal(0)
-    createEffect(() => {
+    // Session-only: the account's products, the Shared Server each of their repos is on, and the servers. Read on
+    // first use, and again when the sign-in changes or a server or its repos are saved.
+    const [hub, setHub] = createStore({ products: undefined as ServerProduct[] | undefined, servers: [] as SharedServer[] })
+    let loading = false
+    const load = () => {
       const t = token()
-      const pid = store.productId ?? 0
-      sharedTick()
-      setShared(undefined)
-      if (!t || !(pid > 0)) return
-      const state = { live: true }
-      onCleanup(() => (state.live = false))
-      void loadProductSharedServer(t, pid)
-        .then((info) => state.live && setShared(info))
+      if (!t || loading) return
+      loading = true
+      void Promise.all([loadServerProducts(t).catch(() => [] as ServerProduct[]), loadSharedServers(t).catch(() => [] as SharedServer[])])
+        .then(([products, servers]) => {
+          if (token() === t) setHub({ products, servers })
+        })
+        .finally(() => (loading = false))
+    }
+    createEffect(on(token, () => setHub({ products: undefined, servers: [] })))
+    // Servers whose key SiCode already tried to put on this session, so a refusal isn't retried on every read.
+    const tried = new Set<number>()
+    // A repo on a Shared Server needs this user's own SSH key there: SiCode puts it on once, by itself.
+    const enable = (server: SharedServer) => {
+      const t = token()
+      if (server.enabled || !platform.sharedServerKey || tried.has(server.serverId) || !t) return
+      tried.add(server.serverId)
+      void platform
+        .sharedServerKey(server.serverId)
+        .then((key) => enableSharedServer(t, server.serverId, key.publicKey))
+        .then(() => {
+          if (token() !== t) return
+          setHub("products", undefined)
+          load()
+        })
         .catch(() => undefined)
-    })
+    }
+    /** Where a repo is developed: the first product (`prefer` first) whose schema has it, and its Shared Server. */
+    const place = (repo: string | undefined, prefer: number[] = []): RepoPlace | undefined => {
+      if (!repo) return
+      if (!hub.products) load()
+      const key = repoKey(repo)
+      const hits = (hub.products ?? []).filter((item) => item.repos.some((row) => repoKey(row.repository) === key))
+      const product = prefer.flatMap((id) => hits.filter((item) => item.productId === id))[0] ?? hits[0]
+      if (!product) return
+      const found =
+        product.repos.find((row) => repoKey(row.repository) === key && row.section === "CURRENT") ??
+        product.repos.find((row) => repoKey(row.repository) === key)!
+      const server = hub.servers.find((item) => item.serverId === found.serverId)
+      if (server) enable(server)
+      return { product, repo: found, server, servers: hub.servers }
+    }
+    // The Local Server or Shared Server choice: per session, and the last one per repo for new sessions. On the
+    // Shared Server unless chosen otherwise.
+    const [off, setOff] = createStore<Record<string, boolean>>({})
+    const [products, setProducts] = persisted(
+      Persist.global("shared-server-products", ["shared-server-products.v1"]),
+      createStore({ off: {} as Record<string, boolean> }),
+    )
+    const [last, setLast] = persisted(
+      Persist.global("shared-server-choice", ["shared-server-choice.v1"]),
+      createStore({ off: {} as Record<string, boolean> }),
+    )
 
     return {
       ready,
       muted: () => mute,
       token,
-      /** The chosen product's Shared AI Coding Server, or undefined when it does not use one. */
-      sharedServer: shared,
-      /** Read the product's Shared AI Coding Server again, e.g. after the user enabled it. */
-      refreshSharedServer: () => setSharedTick((n) => n + 1),
-      /** The block a chat message carries while EAD is open, telling the model about that server. */
-      sharedServerPrompt: () => formatSharedServerPrompt(shared()),
+      /** Where a repo (owner/repo) is developed: its product, and its Shared Server when it has one. */
+      place,
+      /** Read the products, their repos' servers and the servers again, e.g. after a server or its repos were saved. */
+      refreshSharedServer: () => {
+        setHub("products", undefined)
+        load()
+      },
+      /** Whether a session (or a new session's folder) works on its repo's Shared Server rather than the Local Server. */
+      remote: (key: string, repo?: string) => !(off[key] ?? (repo ? last.off[repoKey(repo)] : undefined) ?? false),
+      /** Whether remote coding is on for a product at all (on unless turned off); off means Local Server only. */
+      productRemote: (pid: number) => !products.off[String(pid)],
+      setProductRemote: (pid: number, on: boolean) => setProducts("off", String(pid), !on),
+      setRemote: (key: string, on: boolean, repo?: string) => {
+        setOff(key, !on)
+        if (repo) setLast("off", repoKey(repo), !on)
+      },
       productId: () => store.productId ?? 0,
       productName: () => store.productName ?? "",
       nodeId: () => store.nodeId ?? 0,

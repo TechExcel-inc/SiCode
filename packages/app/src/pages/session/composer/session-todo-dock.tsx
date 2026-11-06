@@ -11,7 +11,7 @@ import { stepDockMount } from "./step-dock-mount"
 /**
  * The task step box above the composer: the session's steps, drawn like the step box in a reply. While
  * the AI works the step in progress turns; once the turn ends with steps left undone the box stays and
- * says the session waits on the person, who can continue it with one click or dismiss the steps.
+ * says the session stopped, and the person can continue it with one click or dismiss the steps.
  */
 export function SessionTodoDock(props: {
   sessionID?: string
@@ -68,7 +68,7 @@ export function SessionTodoDock(props: {
         next={props.next}
         working={props.live}
         collapsed={store.collapsed}
-        note={props.live ? undefined : language.t("agent.status.waiting")}
+        note={props.live ? undefined : language.t("agent.status.stopped")}
         actions={
           <>
             <Show when={!props.live}>

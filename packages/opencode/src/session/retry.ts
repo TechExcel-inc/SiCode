@@ -1,6 +1,7 @@
 import type { NamedError } from "@opencode-ai/util/error"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
+import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 
 export namespace SessionRetry {
@@ -14,6 +15,7 @@ export namespace SessionRetry {
   export const RETRY_BACKOFF_FACTOR = 2
   export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
   export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
+  export const RETRY_MAX_STALLS = 3
 
   function cap(ms: number) {
     return Math.min(ms, RETRY_MAX_DELAY)
@@ -110,6 +112,9 @@ export namespace SessionRetry {
         const error = opts.parse(meta.input)
         const message = retryable(error)
         if (!message) return Cause.done(meta.attempt)
+        // Each stall costs minutes of silence, so show the error rather than wait forever.
+        const stalled = MessageV2.APIError.isInstance(error) && error.data.metadata?.code === ProviderError.STALLED
+        if (stalled && meta.attempt > RETRY_MAX_STALLS) return Cause.done(meta.attempt)
         return Effect.gen(function* () {
           const wait = delay(meta.attempt, MessageV2.APIError.isInstance(error) ? error : undefined)
           const now = yield* Clock.currentTimeMillis

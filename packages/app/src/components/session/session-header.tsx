@@ -1,3 +1,6 @@
+import { useCowork } from "@/context/cowork"
+import { openPilot } from "@/ead/bridge"
+import { queuePilot } from "@/ead/actions"
 import { AppIcon } from "@opencode-ai/ui/app-icon"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -272,12 +275,23 @@ export function SessionHeader() {
   // The code workspace, its file search and Open in belong to the code views; EAD, Design and P1 Work fill the bar
   // with their own.
   const code = createMemo(() => ["agent", "code"].includes(layout.nav.current()))
-  const centerMount = createMemo(() => (code() ? document.getElementById("opencode-titlebar-center") : undefined))
+  // EAD keeps the current project button: the product it shows is the current project repo's product.
+  const eadNav = createMemo(() => layout.nav.current() === "ead")
+  const centerMount = createMemo(() =>
+    code() || eadNav() ? document.getElementById("opencode-titlebar-center") : undefined,
+  )
   const rightMount = createMemo(() => document.getElementById("opencode-titlebar-right"))
-  // Design and EAD name what they work in, the open design or the EAD product; P1 Work fills the bar itself.
+  // Design names the open design and EAD the product beside the project; P1 Work fills the bar itself.
   const ead = useEad()
+  const cowork = useCowork()
+  // The product whose mind map the button opens: the EAD view's product, or the current project repo's product.
+  const mindmapProduct = createMemo(() => {
+    const found = ead.place(cowork.repoOf(home()?.worktree ?? projectDirectory()), [ead.productId()])
+    if (found) return { productId: found.product.productId, name: found.product.name }
+    return ead.productId() ? { productId: ead.productId(), name: ead.productName() } : undefined
+  })
   const viewMount = createMemo(() =>
-    ["design", "ead"].includes(layout.nav.current()) ? document.getElementById("opencode-titlebar-center") : undefined,
+    layout.nav.current() === "design" ? document.getElementById("opencode-titlebar-center") : undefined,
   )
   const view = createMemo(() =>
     layout.nav.current() === "design"
@@ -346,39 +360,61 @@ export function SessionHeader() {
                   <span class="min-w-0 truncate">{name()}</span>
                 </span>
               </Show>
-              <Button
-                type="button"
-                variant="ghost"
-                size="small"
-                class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default"
-                onClick={() => command.trigger("file.open")}
-                aria-label={language.t("session.header.searchFiles")}
-              >
-                <div class="flex min-w-0 flex-1 items-center overflow-visible">
-                  <span class="flex-1 min-w-0 text-12-regular text-text-weak truncate text-left">
-                    {/* The current project button beside search already names the project. */}
-                    {language.t("session.header.search.short")}
-                  </span>
-                </div>
-
-                <Show when={hotkey()}>
-                  {(keybind) => (
-                    <Keybind class="shrink-0 !border-0 !bg-transparent !shadow-none px-0 text-text-weaker">
-                      {keybind()}
-                    </Keybind>
-                  )}
-                </Show>
-              </Button>
-              <Tooltip placement="bottom" value={language.t("session.header.reload")}>
-                <IconButton
-                  icon="reset"
+              <Show when={eadNav() || layout.nav.current() === "agent"}>
+                {/* Opens the product's PFM mind map in EAD Pilot. */}
+                <button
+                  type="button"
+                  data-component="header-ead-mindmap"
+                  class="hidden md:flex max-w-[240px] min-w-0 h-7 px-2 items-center gap-1.5 rounded-md hover:bg-surface-raised-base-hover disabled:opacity-50"
+                  disabled={!mindmapProduct()}
+                  title={mindmapProduct()?.name || language.t("bar.ead.none")}
+                  onClick={() => {
+                    // The mind map is EAD Pilot's: it covers the window over whichever view is open.
+                    const product = mindmapProduct()
+                    if (product && product.productId !== ead.productId()) ead.setProduct(product.productId, product.name)
+                    queuePilot({ kind: "mindmap" })
+                    openPilot(layout.pluginPanel, () => ead.bumpPilot())
+                  }}
+                >
+                  <Icon name="ead" size="small" class="shrink-0 text-icon-weak" />
+                  <span class="min-w-0 truncate text-12-medium text-text-strong">{language.t("bar.ead.mindmap")}</span>
+                </button>
+              </Show>
+              <Show when={code()}>
+                <Button
+                  type="button"
                   variant="ghost"
-                  class="titlebar-icon hidden md:flex"
-                  data-action="header-reload"
-                  onClick={() => window.location.reload()}
-                  aria-label={language.t("session.header.reload")}
-                />
-              </Tooltip>
+                  size="small"
+                  class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default"
+                  onClick={() => command.trigger("file.open")}
+                  aria-label={language.t("session.header.searchFiles")}
+                >
+                  <div class="flex min-w-0 flex-1 items-center overflow-visible">
+                    <span class="flex-1 min-w-0 text-12-regular text-text-weak truncate text-left">
+                      {/* The current project button beside search already names the project. */}
+                      {language.t("session.header.search.short")}
+                    </span>
+                  </div>
+
+                  <Show when={hotkey()}>
+                    {(keybind) => (
+                      <Keybind class="shrink-0 !border-0 !bg-transparent !shadow-none px-0 text-text-weaker">
+                        {keybind()}
+                      </Keybind>
+                    )}
+                  </Show>
+                </Button>
+                <Tooltip placement="bottom" value={language.t("session.header.reload")}>
+                  <IconButton
+                    icon="reset"
+                    variant="ghost"
+                    class="titlebar-icon hidden md:flex"
+                    data-action="header-reload"
+                    onClick={() => window.location.reload()}
+                    aria-label={language.t("session.header.reload")}
+                  />
+                </Tooltip>
+              </Show>
             </div>
           </Portal>
         )}

@@ -51,6 +51,8 @@ export type BridgeHooks = {
   queueSetup?: () => void
   queueSetupSource?: () => void
   queueMindmap?: () => void
+  /** Pilot opened (true) or closed (false) a view that wants the whole window, such as the PFM mind map. */
+  fullWindow?: (open: boolean) => void
   queueCrawl?: () => void
   queueHelp?: (tipId: string) => void
   syncAuth?: () => void
@@ -61,6 +63,10 @@ export type BridgeHooks = {
   clipboard?: (requestId: string) => void
   writeClipboard?: (requestId: string, text: string) => void
   teamMembers?: (requestId: string, productId: number, token?: string) => void
+  /** Pilot asks whether a folder picker exists (pick false) or to show one (pick true). */
+  chooseFolder?: (requestId: string, pick: boolean) => void
+  /** Pilot saved a product's Shared AI Coding Server or the user's local folder. */
+  sharedChanged?: () => void
   inject?: (text: string, label: string, requestId?: string) => void
   injectAck?: (ack: { requestId: string; ok: boolean; submitted: boolean; message: string }) => void
   mapVisible?: () => void
@@ -146,7 +152,9 @@ export function buildPilotUrl(ctx: PilotContext) {
   return url.toString()
 }
 
-export function flagsFromAction(action: PilotAction | undefined): Pick<
+export function flagsFromAction(
+  action: PilotAction | undefined,
+): Pick<
   PilotContext,
   | "openAiPilot"
   | "openAiFind"
@@ -378,10 +386,7 @@ export function hostClipboardCommand(
   postToFrame(frame, { type: "hostClipboardCommand", command })
 }
 
-export function postOwnerState(
-  frame: HTMLIFrameElement | undefined,
-  state: Record<string, unknown>,
-) {
+export function postOwnerState(frame: HTMLIFrameElement | undefined, state: Record<string, unknown>) {
   postToFrame(frame, { type: "jobOwnerFilterState", ...state })
 }
 
@@ -551,6 +556,10 @@ export function replyTeamMembers(
     message: result.message,
     members: result.members,
   })
+}
+
+export function replyFolder(frame: HTMLIFrameElement | undefined, requestId: string, path: string) {
+  postToFrame(frame, { type: "chooseFolderResult", requestId, path })
 }
 
 export function isEadOrigin(origin: string) {
@@ -734,6 +743,11 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
+  if (type === "fullWindow") {
+    hooks.fullWindow?.(msg.open === true)
+    return true
+  }
+
   if (type === "openNavigatorPfmMindmap") {
     hooks.queueMindmap?.()
     return true
@@ -759,20 +773,12 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
-  if (
-    type === "setJobOwnerFilterEnabled" ||
-    type === "setJobOwnerFilterActive" ||
-    type === "applyJobOwnerFilter"
-  ) {
+  if (type === "setJobOwnerFilterEnabled" || type === "setJobOwnerFilterActive" || type === "applyJobOwnerFilter") {
     hooks.ownerFilter?.(msg)
     return true
   }
 
-  if (
-    type === "clearPfmNodeFilter" ||
-    type === "setPfmNodeFilterActive" ||
-    type === "pfmNodeFilterState"
-  ) {
+  if (type === "clearPfmNodeFilter" || type === "setPfmNodeFilterActive" || type === "pfmNodeFilterState") {
     hooks.pfmFilter?.(msg)
     return true
   }
@@ -784,6 +790,16 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
 
   if (type === "writeClipboardText") {
     hooks.writeClipboard?.(text(msg.requestId), typeof msg.text === "string" ? msg.text : "")
+    return true
+  }
+
+  if (type === "canChooseFolder" || type === "chooseFolder") {
+    hooks.chooseFolder?.(text(msg.requestId), type === "chooseFolder")
+    return true
+  }
+
+  if (type === "sharedAiCodingChanged") {
+    hooks.sharedChanged?.()
     return true
   }
 

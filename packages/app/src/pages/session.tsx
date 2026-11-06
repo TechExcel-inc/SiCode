@@ -1,3 +1,4 @@
+import { full } from "@/ead/full"
 import type { Project, UserMessage, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useMutation } from "@tanstack/solid-query"
@@ -56,7 +57,6 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/message-timeline"
-import { SessionQuestionCard } from "@/pages/session/composer/session-question-card"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -1912,6 +1912,9 @@ export default function Page() {
         <DesignView />
         <div classList={{ contents: eadView(), hidden: !eadView() }}>
           <EadMapPanel sizing={eadMapSizing} />
+        </div>
+        {/* The Pilot panel also shows outside the EAD view while its mind map covers the window. */}
+        <div classList={{ contents: eadView() || full(), hidden: !eadView() && !full() }}>
           <EadPilotPanel sizing={eadPilotSizing} />
         </div>
         <Show when={!isDesktop() && !!params.id}>
@@ -1965,15 +1968,6 @@ export default function Page() {
                 <Show when={messagesReady()}>
                   <MessageTimeline
                     hideHeader={designView()}
-                    footer={
-                      <Show when={composer.questionRequest()} keyed>
-                        {(request) => (
-                          <div class="w-full px-4 md:px-5">
-                            <SessionQuestionCard request={request} onSubmit={resumeScroll} />
-                          </div>
-                        )}
-                      </Show>
-                    }
                     mobileChanges={mobileChanges()}
                     mobileFallback={reviewContent({
                       diffStyle: "unified",

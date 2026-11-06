@@ -2,6 +2,7 @@ import z from "zod"
 import os from "os"
 import fuzzysort from "fuzzysort"
 import { Config } from "../config/config"
+import { ProviderError } from "./error"
 import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
 import { Log } from "../util/log"
@@ -69,6 +70,14 @@ export namespace Provider {
     return Number(match[1]) >= 5 && !modelID.startsWith("gpt-5-mini")
   }
 
+  // A silent stream never ends on its own (the Mac slept, a connection died), so EAD replies get a limit.
+  // Cloudflare in front of the gateway already drops a request after 100 seconds of silence.
+  const EAD_STALL = 120_000
+
+  function stall() {
+    return Object.assign(new Error("SSE read timed out"), { code: ProviderError.STALLED })
+  }
+
   function wrapSSE(res: Response, ms: number, ctl: AbortController) {
     if (typeof ms !== "number" || ms <= 0) return res
     if (!res.body) return res
@@ -79,9 +88,9 @@ export namespace Provider {
       async pull(ctrl) {
         const part = await new Promise<Awaited<ReturnType<typeof reader.read>>>((resolve, reject) => {
           const id = setTimeout(() => {
-            const err = new Error("SSE read timed out")
+            const err = stall()
             ctl.abort(err)
-            void reader.cancel(err)
+            reader.cancel(err).catch(() => {})
             reject(err)
           }, ms)
 
@@ -1450,7 +1459,7 @@ export namespace Provider {
             if (existing) return existing
 
             const customFetch = options["fetch"]
-            const chunkTimeout = options["chunkTimeout"]
+            const chunkTimeout = options["chunkTimeout"] ?? (String(model.providerID) === "ead" ? EAD_STALL : undefined)
             delete options["chunkTimeout"]
 
             options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
@@ -1489,11 +1498,13 @@ export namespace Provider {
               if (compatible && typeof opts.body === "string" && opts.method === "POST")
                 opts.body = GeminiSignature.outgoing(opts.body)
 
+              // The limit also covers the wait for the first response, before there is a stream to watch.
+              const wait = chunkAbortCtl ? setTimeout(() => chunkAbortCtl.abort(stall()), chunkTimeout) : undefined
               const sent = await fetchFn(input, {
                 ...opts,
                 // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
                 timeout: false,
-              })
+              }).finally(() => clearTimeout(wait))
               const res = compatible ? GeminiSignature.incoming(sent) : sent
 
               if (!chunkAbortCtl) return res

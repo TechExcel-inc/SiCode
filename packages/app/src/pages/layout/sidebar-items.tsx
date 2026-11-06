@@ -199,10 +199,13 @@ const SessionRow = (props: {
                   {language.t("agent.status.approval")}
                 </span>
               </Match>
-              <Match when={props.attention()?.kind === "waiting"}>
+              <Match when={props.attention()?.cause === "question"}>
                 <span class="shrink-0 px-1.5 rounded bg-surface-warning-weak text-text-on-warning-base">
-                  {language.t("agent.status.waiting")}
+                  {language.t("agent.status.answer")}
                 </span>
+              </Match>
+              <Match when={props.attention()?.cause === "steps"}>
+                <span class="shrink-0">{language.t("agent.status.stopped")}</span>
               </Match>
               <Match when={props.attention()?.kind === "stuck"}>
                 <span class="shrink-0 px-1.5 rounded bg-surface-critical-weak text-text-on-critical-base">

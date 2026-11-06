@@ -7,8 +7,7 @@ import { projectSwitch, sessionSuggestion } from "@/pages/session/composer/sessi
 import { SessionSuggestDock } from "@/pages/session/composer/session-suggest-dock"
 
 /**
- * A question the AI is waiting on, shown in the conversation right after the turn that asked it, so
- * the person can still read what led to it and keep using the input box: a typed message answers it.
+ * A question the AI is waiting on, shown where the input box sits until it is answered.
  */
 export function SessionQuestionCard(props: { request: QuestionRequest; onSubmit: () => void }) {
   const sync = useSync()

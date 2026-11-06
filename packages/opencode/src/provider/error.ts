@@ -4,6 +4,9 @@ import { iife } from "@/util/iife"
 import type { ProviderID } from "./schema"
 
 export namespace ProviderError {
+  // The error code when a model reply goes silent past its time limit.
+  export const STALLED = "ESTALLED"
+
   // Adapted from overflow detection patterns in:
   // https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/utils/overflow.ts
   const OVERFLOW_PATTERNS = [

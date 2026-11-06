@@ -24,8 +24,9 @@ import { setCursorPosition } from "./editor-dom"
 import { routable, routeFolder, routeTitle } from "./route"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionQuestionRequest, typedAnswers } from "@/pages/session/composer/session-request-tree"
-import { formatSystemPrompt } from "@/ead/api"
+import { formatSharedServerPrompt, formatSystemPrompt } from "@/ead/api"
 import { useEad } from "@/ead/settings"
+import { useCowork } from "@/context/cowork"
 
 type PendingPrompt = {
   abort: AbortController
@@ -234,6 +235,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const prompt = usePrompt()
   const layout = useLayout()
   const ead = useEad()
+  const cowork = useCowork()
   const language = useLanguage()
   const params = useParams()
   const server = useServer()
@@ -516,8 +518,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const agent = layout.nav.current() === "design" ? DESIGN_AGENT : currentAgent.name
     const context = prompt.context.items().slice()
     const nodeSystem = formatNodeSystemPrompt(input.currentNode())
-    // While EAD is open, the chosen product's Shared AI Coding Server goes with every message.
-    const sharedSystem = layout.nav.current() === "ead" ? ead.sharedServerPrompt() : undefined
+    // Where the session's repo is developed (its Shared Server or the Local Server, as chosen in the composer) and
+    // where its product's other repos are goes with every message.
+    const repo = cowork.repoOf(sessionDirectory)
+    const prefer = [layout.nav.current() === "ead" ? ead.productId() : 0, cowork.productOf(sessionDirectory) ?? 0]
+    const place = ead.place(repo, prefer)
+    const sharedSystem = formatSharedServerPrompt(
+      place,
+      !!place && ead.productRemote(place.product.productId) && ead.remote(session.id, repo),
+      sessionDirectory,
+    )
     const system = [nodeSystem, sharedSystem].filter(Boolean).join("\n\n") || undefined
     const draft: FollowupDraft = {
       sessionID: session.id,

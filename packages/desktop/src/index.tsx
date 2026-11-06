@@ -15,7 +15,7 @@ import {
   useCommand,
 } from "@opencode-ai/app"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { getCurrentWindow } from "@tauri-apps/api/window"
+import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window"
 import { invoke } from "@tauri-apps/api/core"
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link"
@@ -360,6 +360,12 @@ const createPlatform = (): Platform => {
           }
         })
         .catch(() => undefined)
+    },
+
+    attention: async () => {
+      const win = getCurrentWindow()
+      if (await win.isFocused().catch(() => document.hasFocus())) return
+      await win.requestUserAttention(UserAttentionType.Critical).catch(() => undefined)
     },
 
     fetch: (input, init) => {

@@ -1,3 +1,4 @@
+import { full, setFull } from "@/ead/full"
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -30,6 +31,7 @@ import {
   postPfmFilterState,
   replyClipboard,
   replyWriteClipboard,
+  replyFolder,
   replyTeamMembers,
   postCue,
   postFindApplied,
@@ -44,13 +46,34 @@ import {
   syncAuthStatus,
   type SourceOpts,
 } from "@/ead/bridge"
-import { matches, parseBody, parseCue, parseStep, progress, result, PROGRESS, RESULT, SIGNAL, watch } from "@/ead/step-signal"
+import {
+  matches,
+  parseBody,
+  parseCue,
+  parseStep,
+  progress,
+  result,
+  PROGRESS,
+  RESULT,
+  SIGNAL,
+  watch,
+} from "@/ead/step-signal"
 import { precheck } from "@/ead/precheck"
 import { sendChat } from "@/ead/composer"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { formatJobCounts, postJobResult, postJobsRefresh, postLifecycle, postTestsRefresh } from "@/ead/jobs"
 import { useEad } from "@/ead/settings"
-import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer, proxyOrigin, rewrite } from "@/ead/urls"
+import {
+  EAD_MAP_ID,
+  EAD_MAP_WIDTH,
+  EAD_PILOT_ID,
+  EAD_PILOT_MAX,
+  EAD_PILOT_MIN,
+  EAD_PILOT_WIDTH,
+  eadServer,
+  proxyOrigin,
+  rewrite,
+} from "@/ead/urls"
 
 const PING_MS = 30_000
 const STALE_MS = 120_000
@@ -470,6 +493,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         queueSetup: () => launch({ kind: "setup" }),
         queueSetupSource: () => launch({ kind: "setupSource" }),
         queueMindmap: () => launch({ kind: "mindmap" }),
+        fullWindow: (open) => setFull(open),
         queueCrawl: () => launch({ kind: "crawl" }),
         queueHelp: (tipId) => launch({ kind: "help", tipId }),
         syncAuth: () => {
@@ -536,6 +560,19 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               }),
             )
         },
+        chooseFolder: (requestId, pick) => {
+          // Without a picker (the web build) there is no answer, so Pilot shows the folder without Choose.
+          if (!platform.openDirectoryPickerDialog) return
+          if (!pick) {
+            replyFolder(el, requestId, "")
+            return
+          }
+          void platform
+            .openDirectoryPickerDialog({ title: language.t("ead.localRoot.choose") })
+            .then((picked) => replyFolder(el, requestId, Array.isArray(picked) ? (picked[0] ?? "") : (picked ?? "")))
+            .catch(() => replyFolder(el, requestId, ""))
+        },
+        sharedChanged: () => ead.refreshSharedServer(),
         teamMembers: (requestId, productId, token) => {
           const auth = token || ead.token()
           const pid = productId || ead.productId()
@@ -633,14 +670,14 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             postLifecycle(el, requestId, "request_received", "AI coding jobs request received by plugin.")
             postLifecycle(el, requestId, "dispatching", "Drafting AI coding jobs request in chat...")
             await chat(playbook)
-            postLifecycle(
-              el,
-              requestId,
-              "drafted",
-              "AI coding jobs request drafted in chat — review and submit.",
-            )
+            postLifecycle(el, requestId, "drafted", "AI coding jobs request drafted in chat — review and submit.")
             if (raw.executeReconcile !== true) {
-              postLifecycle(el, requestId, "execution_skipped", "AI coding jobs execution skipped (executeReconcile=false).")
+              postLifecycle(
+                el,
+                requestId,
+                "execution_skipped",
+                "AI coding jobs execution skipped (executeReconcile=false).",
+              )
               return
             }
             postLifecycle(el, requestId, "executing", "Executing AI coding jobs planning via API...")
@@ -814,7 +851,11 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               />
             </div>
           </div>
-          <div class="flex-1 min-h-0 overflow-hidden">
+          {/* While Pilot shows the mind map, its frame covers the whole window (same frame, so nothing reloads). */}
+          <div
+            class="overflow-hidden"
+            classList={{ "flex-1 min-h-0": !full(), "fixed inset-0 z-[60] bg-background-base": full() }}
+          >
             <Show when={alive() && !!shell()}>
               <iframe
                 ref={setFrame}

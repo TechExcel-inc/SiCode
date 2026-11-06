@@ -1,3 +1,4 @@
+import { full } from "@/ead/full"
 import {
   batch,
   createEffect,
@@ -505,12 +506,14 @@ export default function Layout(props: ParentProps) {
           }
           if (settings.notifications.permissions()) {
             void platform.notify(title, description, href)
+            void platform.attention?.()
           }
         }
 
         if (e.details.type === "question.asked") {
           if (settings.notifications.agent()) {
             void platform.notify(title, description, href)
+            void platform.attention?.()
           }
         }
 
@@ -2550,7 +2553,8 @@ export default function Layout(props: ParentProps) {
               classList={{
                 "absolute inset-0": true,
                 "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
-                "z-20": true,
+                "z-20": !full(),
+                "z-50": full(),
                 "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":
                   !state.sizing,
               }}
@@ -2560,7 +2564,9 @@ export default function Layout(props: ParentProps) {
             >
               <main
                 classList={{
-                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
+                  "size-full overflow-x-hidden flex flex-col items-start border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
+                  // Containment would keep the full-window EAD Pilot panel inside the page.
+                  "contain-strict": !full(),
                 }}
               >
                 <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>

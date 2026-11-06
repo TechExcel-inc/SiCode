@@ -680,6 +680,18 @@ export function TurnChecklist(props: {
   const folded = createMemo(() => foldable() && !opened())
   const collapsed = () => props.collapsed || folded()
   const counts = () => ({ done: String(progress().done), total: String(progress().total) })
+  const [list, setList] = createSignal<HTMLUListElement>()
+  const active = createMemo(() => props.steps.findIndex((step) => step.status === "in_progress"))
+
+  // A long list scrolls on its own, so keep the step in progress in view each time it moves on.
+  createEffect(() => {
+    const el = list()
+    const item = el?.children[active()]
+    if (!el || !item) return
+    const box = el.getBoundingClientRect()
+    const row = item.getBoundingClientRect()
+    el.scrollTop += row.top - box.top - (box.height - row.height) / 2
+  })
 
   return (
     <div
@@ -738,7 +750,7 @@ export function TurnChecklist(props: {
         </Show>
       </div>
       <Show when={!collapsed()}>
-        <ul data-slot="session-turn-checklist-steps">
+        <ul ref={setList} data-slot="session-turn-checklist-steps">
           <For each={props.steps}>
             {(step) => (
               <li data-slot="session-turn-checklist-step" data-status={step.status}>

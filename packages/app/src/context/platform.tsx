@@ -37,6 +37,9 @@ export type Platform = {
   /** Send a system notification (optional deep link) */
   notify(title: string, description?: string, href?: string): Promise<void>
 
+  /** Get the person's attention when the app isn't in front (bounces the Dock icon on desktop) */
+  attention?(): Promise<void>
+
   /** Open directory picker dialog (native on Tauri, server-backed on web) */
   openDirectoryPickerDialog?(opts?: OpenDirectoryPickerOptions): Promise<PickerPaths>
 

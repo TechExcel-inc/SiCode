@@ -77,6 +77,12 @@
           line-height: var(--line-height-x-large); /* 150% */
           letter-spacing: var(--letter-spacing-tight);
         }
+        [data-slot="dialog-tools"] {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-left: auto;
+        }
         /* [data-slot="dialog-close-button"] {} */
       }
 
@@ -127,6 +133,70 @@
       [data-slot="dialog-content"] {
         min-height: 0;
       }
+    }
+  }
+
+  &[data-resizable] [data-slot="dialog-content"] {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  [data-slot="dialog-grip"] {
+    position: absolute;
+    touch-action: none;
+
+    &[data-x="-1"] {
+      left: 0;
+      width: 12px;
+    }
+    &[data-x="1"] {
+      right: 0;
+      width: 12px;
+    }
+    &[data-y="-1"] {
+      top: 0;
+      height: 12px;
+    }
+    &[data-y="1"] {
+      bottom: 0;
+      height: 12px;
+    }
+    &[data-x="0"] {
+      left: 12px;
+      right: 12px;
+      height: 6px;
+      cursor: ns-resize;
+    }
+    &[data-y="0"] {
+      top: 12px;
+      bottom: 12px;
+      width: 6px;
+      cursor: ew-resize;
+    }
+    &[data-x="-1"][data-y="-1"],
+    &[data-x="1"][data-y="1"] {
+      cursor: nwse-resize;
+    }
+    &[data-x="-1"][data-y="1"],
+    &[data-x="1"][data-y="-1"] {
+      cursor: nesw-resize;
+    }
+    /* The bottom right corner shows that the dialog can be resized. */
+    &[data-x="1"][data-y="1"] {
+      right: 3px;
+      bottom: 3px;
+      background: linear-gradient(
+        135deg,
+        transparent 50%,
+        var(--text-weak) 50%,
+        var(--text-weak) 58%,
+        transparent 58%,
+        transparent 70%,
+        var(--text-weak) 70%,
+        var(--text-weak) 78%,
+        transparent 78%
+      );
     }
   }
 

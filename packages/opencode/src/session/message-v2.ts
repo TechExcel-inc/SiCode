@@ -972,6 +972,15 @@ export namespace MessageV2 {
           },
           { cause: e },
         ).toObject()
+      case (e as SystemError)?.code === ProviderError.STALLED:
+        return new MessageV2.APIError(
+          {
+            message: "The model stopped responding",
+            isRetryable: true,
+            metadata: { code: ProviderError.STALLED },
+          },
+          { cause: e },
+        ).toObject()
       case (e as SystemError)?.code === "ECONNRESET":
         return new MessageV2.APIError(
           {

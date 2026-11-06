@@ -5,6 +5,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
+import { useCowork } from "@/context/cowork"
 import type { Sizing } from "@/pages/session/helpers"
 import { resizeEadPanel } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -663,6 +664,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const language = useLanguage()
   const ead = useEad()
   const sdk = useSDK()
+  const cowork = useCowork()
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const http = () => eadHttp()
   const lang = () => ead.language()
@@ -717,7 +719,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [oq, setOq] = createSignal("")
   const [pulse, setPulse] = createSignal(0)
   const [overlay, setOverlay] = createSignal(false)
-  const [editOpen, setEditOpen] = createSignal(false)
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
   let pulseTimer: ReturnType<typeof setTimeout> | undefined
@@ -727,7 +728,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setPipelineTick((n) => n + 1)
   }
 
-  const menuOpen = () => !!menu() || dynMenu() > 0 || editOpen()
+  const menuOpen = () => !!menu() || dynMenu() > 0
 
   const pfmBadgeCounts = createMemo(() => {
     const mode = ead.badge()
@@ -1737,17 +1738,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   const askEdit = () => {
     closeMenus()
-    setEditOpen(true)
+    launch({ kind: "editProduct" })
   }
 
   const askProfile = () => {
     closeMenus()
     launch({ kind: "profile" })
-  }
-
-  const confirmEdit = () => {
-    setEditOpen(false)
-    launch({ kind: "editProduct" })
   }
 
   const loadOwnerMembers = async () => {
@@ -1850,6 +1846,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setPq("")
     void refresh()
   }
+
+  // The product follows the current project repo: when the chosen product doesn't have the repo, switch to the one
+  // that does (the product Pilot links to the project first).
+  createEffect(() => {
+    const found = ead.place(cowork.repoOf(sdk.directory), [ead.productId(), cowork.productOf(sdk.directory) ?? 0])
+    if (!found || found.product.productId === ead.productId()) return
+    untrack(() => pickProduct({ productId: found.product.productId, name: found.product.name }))
+  })
 
   const planName = (item: Plan) => {
     const extra = item.model.trim() || item.suffix.trim()
@@ -3074,24 +3078,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         onClick={submitPlan}
                       >
                         {tx("eadCodingPlanSubmit")}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={editOpen()}>
-                <div class="project-cute-popup-backdrop" onClick={() => setEditOpen(false)}>
-                  <div class="project-cute-popup" onClick={(e) => e.stopPropagation()}>
-                    <span class="project-cute-popup-badge">EAD</span>
-                    <p class="project-cute-popup-title">{tx("editTitle")}</p>
-                    <p class="project-cute-popup-text">{tx("editMessage")}</p>
-                    <div class="project-cute-popup-actions">
-                      <button type="button" class="context-btn" onClick={() => setEditOpen(false)}>
-                        {tx("cancel")}
-                      </button>
-                      <button type="button" class="context-btn primary" onClick={confirmEdit}>
-                        {tx("continue")}
                       </button>
                     </div>
                   </div>

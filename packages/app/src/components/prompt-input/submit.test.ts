@@ -209,7 +209,18 @@ beforeAll(async () => {
 
   mock.module("@/ead/settings", () => ({
     useEad: () => ({
-      sharedServerPrompt: () => undefined,
+      place: () => undefined,
+      productId: () => 0,
+      remote: () => true,
+      productRemote: () => true,
+      setRemote: () => {},
+    }),
+  }))
+
+  mock.module("@/context/cowork", () => ({
+    useCowork: () => ({
+      productOf: () => undefined,
+      repoOf: () => undefined,
     }),
   }))
 

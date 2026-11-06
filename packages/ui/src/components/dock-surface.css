@@ -21,3 +21,42 @@
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
+
+/* A question or permission request waits on the person: it is the one thing on screen that moves. */
+[data-component="dock-prompt"] {
+  border-radius: 12px;
+  animation: dock-prompt-attention 1600ms ease-in-out infinite;
+}
+
+@keyframes dock-prompt-attention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--icon-warning-base);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--icon-warning-base),
+      0 0 16px 2px color-mix(in srgb, var(--icon-warning-base) 45%, transparent);
+  }
+}
+
+:root:has([data-component="dock-prompt"]) [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+  animation: none;
+  opacity: 0;
+}
+
+:root:has([data-component="dock-prompt"]) [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
+  opacity: 1;
+}
+
+:root:has([data-component="dock-prompt"]) [data-component="spinner"] *,
+:root:has([data-component="dock-prompt"]) [data-slot="session-turn-step-icon"] * {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="dock-prompt"] {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--icon-warning-base);
+  }
+}

@@ -1,3 +1,4 @@
+import { STACK_LABELS } from "./stack-types"
 import { eadHttp } from "./http"
 import { applyTopLevel, VIRTUAL_MOVED, type Raw } from "./top-level"
 import { eadApi } from "./urls"
@@ -194,21 +195,14 @@ export function productRole(product: Product) {
   return "plain" as const
 }
 
-function asNode(
-  raw: unknown,
-  meta?: { dynId?: number; dynName?: string },
-  under = false,
-): PfmNode | undefined {
+function asNode(raw: unknown, meta?: { dynId?: number; dynName?: string }, under = false): PfmNode | undefined {
   if (!raw || typeof raw !== "object") return
   const row = raw as Record<string, unknown>
   const id = Number(row.nodeId ?? row.id ?? 0)
   if (!Number.isFinite(id) || id === 0) return
   if (id < 0 && id !== VIRTUAL_MOVED) return
   const kids = Array.isArray(row.children) ? row.children : []
-  const dyn =
-    row.isDynamicTopLevel === true ||
-    row.isDynamicTopLevel === 1 ||
-    (!!meta?.dynId && meta.dynId === id)
+  const dyn = row.isDynamicTopLevel === true || row.isDynamicTopLevel === 1 || (!!meta?.dynId && meta.dynId === id)
   const sub = Number(row.subSchemaId)
   const wt = typeof row.workType === "string" ? row.workType : undefined
   const rawCommon = Number(row.ifCommonStatus)
@@ -275,7 +269,9 @@ export function formatContextMarkdown(ctx: ContextPayload, fallback: { nodeId: n
     `- Entity ID: ${ctx.eadEntityId ?? node.id ?? "-"}`,
     `- Title: ${ctx.eadEntityName || node.title || title}`,
     `- Workflow key: ${node.nodeKey || "-"}`,
-    node.note?.trim() ? ["", "### Workflow spec", node.note.trim()].join("\n") : "_No EAD workflow spec documented yet._",
+    node.note?.trim()
+      ? ["", "### Workflow spec", node.note.trim()].join("\n")
+      : "_No EAD workflow spec documented yet._",
     "",
     "## Warnings",
     warnings.length ? warnings.map((w) => `- ${w}`).join("\n") : "- None",
@@ -284,7 +280,9 @@ export function formatContextMarkdown(ctx: ContextPayload, fallback: { nodeId: n
     ctx.aiPrompt?.trim() || "_No saved AI Prompt Info for this node._",
     "",
     "## EAD Script",
-    ctx.eadScript?.trim() ? ["```text", ctx.eadScript.trim(), "```"].join("\n") : "_No saved EAD Script for this node._",
+    ctx.eadScript?.trim()
+      ? ["```text", ctx.eadScript.trim(), "```"].join("\n")
+      : "_No saved EAD Script for this node._",
     "",
     "## AI API Context",
     ctx.aiApi?.trim() || "_No saved AI API context for this node._",
@@ -325,7 +323,9 @@ export function formatSystemPrompt(input: { name: string; eadScript?: string; ai
   const script = input.eadScript?.trim()
   const prompt = input.aiPrompt?.trim()
   if (!script && !prompt && !input.markdown?.trim()) {
-    return [`<pfm-node-context>`, `You are currently working on the PFM node: ${name}`, `</pfm-node-context>`].join("\n")
+    return [`<pfm-node-context>`, `You are currently working on the PFM node: ${name}`, `</pfm-node-context>`].join(
+      "\n",
+    )
   }
   return [
     `<pfm-node-context>`,
@@ -361,11 +361,9 @@ export async function login(identifier: string, password: string, http: Http = e
 
 /** Trades a login token (even one up to 30 days expired) for a fresh one. */
 export async function renew(token: string, http: Http = eadHttp()) {
-  const res = await http(`${eadApi()}/auth/session/renew`, { method: "POST", headers: headers(token) }).catch(
-    (err) => {
-      throw new Error(err instanceof Error ? err.message : "Load failed")
-    },
-  )
+  const res = await http(`${eadApi()}/auth/session/renew`, { method: "POST", headers: headers(token) }).catch((err) => {
+    throw new Error(err instanceof Error ? err.message : "Load failed")
+  })
   const data = (await res.json().catch(() => undefined)) as AuthResult | undefined
   if (!res.ok || !data?.success || !data.token) {
     throw new Error(data?.message || `Renew failed (HTTP ${res.status})`)
@@ -397,12 +395,7 @@ export async function loadSubSchemas(token: string, mapId: number, http: Http = 
   })
 }
 
-export async function loadActiveMap(
-  token: string,
-  productId: number,
-  http: Http = eadHttp(),
-  subSchemaId?: number,
-) {
+export async function loadActiveMap(token: string, productId: number, http: Http = eadHttp(), subSchemaId?: number) {
   const q = subSchemaId && subSchemaId > 0 ? `?subSchemaId=${subSchemaId}` : ""
   const map = (await call(http, `/pfm-maps/product/${productId}/active${q}`, token)) as MapPayload & {
     supportSubSchemas?: boolean | number
@@ -414,8 +407,7 @@ export async function loadActiveMap(
   const dynId = Number(map.dynamicTopLevelNodeId ?? 0)
   const support = map.supportSubSchemas === true || map.supportSubSchemas === 1
   const schemas = support && Number.isFinite(mapId) && mapId > 0 ? await loadSubSchemas(token, mapId, http) : []
-  const dynFromSchema =
-    subSchemaId && subSchemaId > 0 ? schemas.find((s) => s.id === subSchemaId)?.name : undefined
+  const dynFromSchema = subSchemaId && subSchemaId > 0 ? schemas.find((s) => s.id === subSchemaId)?.name : undefined
   const dynName = String(map.dynamicTopLevelDisplayName || dynFromSchema || "").trim()
   const types = (Array.isArray(map.subSchemaTypes) ? map.subSchemaTypes : [])
     .map((row) => {
@@ -493,7 +485,8 @@ export async function loadLinkedBundle(
     linkedFilePaths?: string[]
   }
   const nodes = Array.isArray(data.nodes) ? data.nodes : []
-  const pathCounts = data.eadCountByNodePath && typeof data.eadCountByNodePath === "object" ? data.eadCountByNodePath : {}
+  const pathCounts =
+    data.eadCountByNodePath && typeof data.eadCountByNodePath === "object" ? data.eadCountByNodePath : {}
   const eadCountByNodeId: Record<string, number> = {}
   for (const row of nodes) {
     const id = Number(row.nodeId)
@@ -537,7 +530,9 @@ export async function loadLinkedBundle(
     openJobCountByNodeId,
     openTestCaseCountByNodeId,
     expandByDefaultPaths: Array.isArray(data.expandByDefaultPaths) ? data.expandByDefaultPaths : [],
-    linkedFilePaths: Array.isArray(data.linkedFilePaths) ? data.linkedFilePaths.filter((p) => typeof p === "string") : [],
+    linkedFilePaths: Array.isArray(data.linkedFilePaths)
+      ? data.linkedFilePaths.filter((p) => typeof p === "string")
+      : [],
   }
 }
 
@@ -648,9 +643,9 @@ export function parseFiles(raw: string | null | undefined) {
 
 export async function loadLinkPaths(token: string, nodeId: number, http: Http = eadHttp()) {
   if (!(nodeId > 0)) return [] as string[]
-  const node = (await call(http, `/nodes/${nodeId}`, token).catch(() => null)) as
-    | { sourceCodeFiles?: string | null }
-    | null
+  const node = (await call(http, `/nodes/${nodeId}`, token).catch(() => null)) as {
+    sourceCodeFiles?: string | null
+  } | null
   return parseFiles(node?.sourceCodeFiles)
 }
 
@@ -823,9 +818,7 @@ export async function loadPfmEadCounts(token: string, nodeIds: number[], http: H
 export async function loadPfmJobCounts(token: string, nodeIds: number[], http: Http = eadHttp()) {
   const ids = [...new Set(nodeIds.filter((id) => id > 0))]
   if (!ids.length) return {} as Record<string, number>
-  const data = await call(http, `/v1/ai-coding-jobs/node-summary?pfmNodeIds=${ids.join(",")}`, token).catch(
-    () => null,
-  )
+  const data = await call(http, `/v1/ai-coding-jobs/node-summary?pfmNodeIds=${ids.join(",")}`, token).catch(() => null)
   const out: Record<string, number> = {}
   if (!Array.isArray(data)) return out
   for (const row of data) {
@@ -841,11 +834,9 @@ export async function loadPfmTestCounts(token: string, nodeIds: number[], http: 
   const ids = [...new Set(nodeIds.filter((id) => id > 0))]
   const out: Record<string, number> = {}
   for (const part of chunk(ids, 200)) {
-    const data = await call(
-      http,
-      `/ai-test-cases/pfm-node-open-counts?pfmNodeIds=${part.join(",")}`,
-      token,
-    ).catch(() => null)
+    const data = await call(http, `/ai-test-cases/pfm-node-open-counts?pfmNodeIds=${part.join(",")}`, token).catch(
+      () => null,
+    )
     if (!data || typeof data !== "object") continue
     for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
       const n = Number(value)
@@ -855,12 +846,7 @@ export async function loadPfmTestCounts(token: string, nodeIds: number[], http: 
   return out
 }
 
-export async function suggestProduct(
-  token: string,
-  products: Product[],
-  folder: string,
-  http: Http = eadHttp(),
-) {
+export async function suggestProduct(token: string, products: Product[], folder: string, http: Http = eadHttp()) {
   const name = folder.trim().toLowerCase()
   if (!name || !products.length) return
   for (const product of products) {
@@ -873,8 +859,12 @@ export async function suggestProduct(
     const repos = (schema.linkedRepos ?? schema.linked_repos) as Array<Record<string, unknown>> | undefined
     if (!Array.isArray(repos)) continue
     for (const repo of repos) {
-      const short = String(repo.shortName || "").trim().toLowerCase()
-      const vcs = String(repo.vcsRepo || "").trim().toLowerCase()
+      const short = String(repo.shortName || "")
+        .trim()
+        .toLowerCase()
+      const vcs = String(repo.vcsRepo || "")
+        .trim()
+        .toLowerCase()
       const base = vcs.split("/").filter(Boolean).pop() || ""
       const hitShort = short && (name === short || name.includes(short) || short.includes(name))
       const hitBase = base && (name === base || name.includes(base) || base.includes(name))
@@ -919,7 +909,11 @@ export type SourceSchema = {
   candidates: number[]
 }
 
-export async function loadSourceSchema(token: string, productId: number, http: Http = eadHttp()): Promise<SourceSchema | undefined> {
+export async function loadSourceSchema(
+  token: string,
+  productId: number,
+  http: Http = eadHttp(),
+): Promise<SourceSchema | undefined> {
   const res = await http(`${eadApi()}/products/${productId}/source-code-schema`, {
     headers: headers(token),
   }).catch((err) => {
@@ -1192,9 +1186,9 @@ export async function loadRunPrefs(
     contextType: "ead_run",
     contextId: String(schemaId),
   })
-  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch(() => null)) as
-    | { value?: string | RunPref }
-    | null
+  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch(() => null)) as {
+    value?: string | RunPref
+  } | null
   if (!data) return null
   const raw = typeof data.value === "string" ? (JSON.parse(data.value) as unknown) : data.value
   if (!raw || typeof raw !== "object") return null
@@ -1239,9 +1233,9 @@ export async function loadSourceExpanded(
     contextType: "ead_run",
     contextId: String(schemaId),
   })
-  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch(() => null)) as
-    | { value?: string | string[] }
-    | null
+  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch(() => null)) as {
+    value?: string | string[]
+  } | null
   if (!data) return null
   const raw = typeof data.value === "string" ? (JSON.parse(data.value) as unknown) : data.value
   if (!Array.isArray(raw)) return null
@@ -1291,11 +1285,7 @@ async function authPost(path: string, body: Record<string, unknown>, http: Http)
   return { ok: res.ok, data }
 }
 
-export async function sendCode(
-  target: string,
-  intent: "signup" | "reset" = "signup",
-  http: Http = eadHttp(),
-) {
+export async function sendCode(target: string, intent: "signup" | "reset" = "signup", http: Http = eadHttp()) {
   const trimmed = target.trim()
   if (!trimmed) throw new Error("Please enter email or phone.")
   const kind = authKind(trimmed)
@@ -1359,10 +1349,7 @@ export async function signup(
   return data.token
 }
 
-export async function resetPassword(
-  input: { target: string; code: string; password: string },
-  http: Http = eadHttp(),
-) {
+export async function resetPassword(input: { target: string; code: string; password: string }, http: Http = eadHttp()) {
   const target = input.target.trim()
   const code = input.code.trim()
   if (!target || !code || !input.password) {
@@ -1397,10 +1384,12 @@ export async function loadTeamMembers(token: string, productId: number, http: Ht
   })
 }
 
-/** A Shared AI Coding Server the account Superadmin registered in EAD Pilot. */
+/** A Shared Server the account Superadmin registered in EAD Pilot. */
 export type SharedServer = {
   serverId: number
   name: string
+  /** Short name for tags, e.g. "JB Dev". */
+  shortName: string
   os: "windows" | "mac"
   sshHost: string
   sshPort: number
@@ -1420,6 +1409,7 @@ function asSharedServer(row: Record<string, unknown>): SharedServer | undefined 
   return {
     serverId,
     name: String(row.name ?? ""),
+    shortName: String(row.shortName ?? row.name ?? "").slice(0, 12),
     os: row.os === "mac" ? "mac" : "windows",
     sshHost: String(row.sshHost ?? ""),
     sshPort: Number(row.sshPort) || 22,
@@ -1439,9 +1429,16 @@ export async function loadSharedServers(token: string, tenantId?: number, http: 
 }
 
 // Enabling signs in to the server, so a refusal carries a message worth showing as it is.
-async function sharedServerAction(http: Http, path: string, token: string, tenantId?: number, body?: unknown) {
+async function sharedServerAction(
+  http: Http,
+  path: string,
+  token: string,
+  tenantId?: number,
+  body?: unknown,
+  method = "POST",
+) {
   const res = await http(`${eadApi()}${path}`, {
-    method: "POST",
+    method,
     headers: { ...headers(token), ...tenantHeaders(tenantId), "Content-Type": "application/json" },
     body: JSON.stringify(body ?? {}),
   }).catch((err) => {
@@ -1450,15 +1447,58 @@ async function sharedServerAction(http: Http, path: string, token: string, tenan
   if (res.status === 401) throw new Error("AUTH_EXPIRED")
   const data = (await readJson(res).catch(() => null)) as Record<string, unknown> | null
   if (!res.ok) {
-    const message = data && typeof data.message === "string" && data.message.trim() ? data.message : `HTTP ${res.status}`
+    const message =
+      data && typeof data.message === "string" && data.message.trim() ? data.message : `HTTP ${res.status}`
     throw new Error(message)
   }
   return data ? asSharedServer(data) : undefined
 }
 
 /** Puts this user's public key on the server; EAD Pilot signs in with the saved password. */
-export function enableSharedServer(token: string, serverId: number, publicKey: string, tenantId?: number, http: Http = eadHttp()) {
+export function enableSharedServer(
+  token: string,
+  serverId: number,
+  publicKey: string,
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
   return sharedServerAction(http, `/shared-ai-coding-servers/${serverId}/enable`, token, tenantId, { publicKey })
+}
+
+/** A server as an account Superadmin saves it; a blank password keeps the saved one. */
+export type SharedServerInput = {
+  name: string
+  shortName: string
+  os: "windows" | "mac"
+  sshHost: string
+  sshPort: number
+  sshLogin: string
+  password: string
+  rootFolder: string
+}
+
+/** Whether this user may add, edit and delete the account's servers (an account admin); only an explicit no says no. */
+export async function sharedServerAccess(token: string, tenantId?: number, http: Http = eadHttp()) {
+  const data = (await call(http, "/shared-ai-coding-servers/access", token, {
+    headers: tenantHeaders(tenantId),
+  })) as Record<string, unknown> | null
+  return data?.canManage !== false
+}
+
+export function saveSharedServer(
+  token: string,
+  input: SharedServerInput,
+  serverId?: number,
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
+  return serverId
+    ? sharedServerAction(http, `/shared-ai-coding-servers/${serverId}`, token, tenantId, input, "PUT")
+    : sharedServerAction(http, "/shared-ai-coding-servers", token, tenantId, input)
+}
+
+export async function deleteSharedServer(token: string, serverId: number, tenantId?: number, http: Http = eadHttp()) {
+  await sharedServerAction(http, `/shared-ai-coding-servers/${serverId}`, token, tenantId, undefined, "DELETE")
 }
 
 /** Takes this user's key off the server. */
@@ -1466,24 +1506,169 @@ export function disableSharedServer(token: string, serverId: number, tenantId?: 
   return sharedServerAction(http, `/shared-ai-coding-servers/${serverId}/disable`, token, tenantId)
 }
 
-/** The Shared AI Coding Server an EAD product codes on, as the product's settings in EAD Pilot choose it. */
-export type ProductSharedServer = {
-  scope: "backend" | "frontend" | "both"
-  /** Undefined when the product names a server this account no longer has. */
-  server?: SharedServer
+/** A repo of a product's Source Code Schema, and the Shared Server it is developed and built on, if any. */
+export type ServerRepo = {
+  definitionId: number
+  name: string
+  role: string
+  /** The repo definition's source code type, and its server-end type when it holds both ends; "" when unset. */
+  sourceCodeType: string
+  serverSourceCodeType: string
+  /** owner/repo, as Pilot spells it; compare with repoKey. */
+  repository: string
+  branch: string
+  section: "LEGACY" | "CURRENT"
+  /** Undefined when the repo is on the Local Server. */
+  serverId?: number
+  /** The repo's folder on its Shared Server. */
+  folder: string
 }
 
-/** Undefined when the product does not use a shared server. */
-export async function loadProductSharedServer(token: string, productId: number, http: Http = eadHttp()) {
-  if (!(productId > 0)) return
-  const product = (await call(http, `/products/${productId}`, token)) as Record<string, unknown> | null
-  if (!product || product.sharedAiCodingEnabled !== true) return
-  const serverId = Number(product.sharedAiCodingServerId)
-  if (!(serverId > 0)) return
-  const scope = product.sharedAiCodingScope === "frontend" || product.sharedAiCodingScope === "both" ? product.sharedAiCodingScope : "backend"
-  const tenantId = Number(product.tenantId) || undefined
-  const servers = await loadSharedServers(token, tenantId, http)
-  return { scope, server: servers.find((row) => row.serverId === serverId) } satisfies ProductSharedServer
+/** Which ends of the product a repo holds, from its role (FRONT_END_ONLY, SERVER_END_ONLY, FRONT_AND_SERVER_END). */
+export function repoEnd(role: string) {
+  const value = role.toUpperCase()
+  if (value.includes("AND") || (value.includes("FRONT") && value.includes("SERVER"))) return "both"
+  if (value.startsWith("SERVER")) return "server"
+  if (value.startsWith("FRONT")) return "front"
+  return "both"
+}
+
+// The schema editor's label for a stack code, e.g. "Vue 3 + TypeScript"; codes without one show as they are.
+const stack = (code: string) => (code ? (STACK_LABELS[code] ?? code) : "")
+
+/** The repo's source code type: the front end's, the server end's, or "front / server" for a repo with both. */
+export function repoSourceType(repo: Pick<ServerRepo, "role" | "sourceCodeType" | "serverSourceCodeType">) {
+  const end = repoEnd(repo.role)
+  const front = stack(repo.sourceCodeType)
+  const server = stack(repo.serverSourceCodeType)
+  if (end === "both") return [front, server].filter(Boolean).join(" / ")
+  if (end === "server") return server || front
+  return front
+}
+
+/** A product with a Source Code Schema, and where each of its repos is developed. */
+export type ServerProduct = { productId: number; name: string; repos: ServerRepo[] }
+
+/** owner/repo in lower case, from a GitHub URL or owner/repo. */
+export function repoKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^(https?:\/\/|git@)[^/:]+[/:]/, "")
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "")
+}
+
+function asServerProducts(data: unknown): ServerProduct[] {
+  if (!Array.isArray(data)) return []
+  return data.flatMap((row) => {
+    const item = row && typeof row === "object" ? (row as Record<string, unknown>) : undefined
+    const productId = Number(item?.productId)
+    if (!item || !(productId > 0)) return []
+    const repos = (Array.isArray(item.repos) ? item.repos : []).flatMap((raw) => {
+      const repo = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
+      const definitionId = Number(repo?.definitionId)
+      if (!repo || !(definitionId > 0)) return []
+      const serverId = Number(repo.serverId)
+      return [
+        {
+          definitionId,
+          name: String(repo.name ?? ""),
+          role: String(repo.role ?? ""),
+          sourceCodeType: String(repo.sourceCodeType ?? ""),
+          serverSourceCodeType: String(repo.serverSourceCodeType ?? ""),
+          repository: String(repo.repository ?? "").trim(),
+          branch: String(repo.branch ?? ""),
+          section: repo.section === "LEGACY" ? "LEGACY" : "CURRENT",
+          serverId: serverId > 0 ? serverId : undefined,
+          folder: String(repo.folder ?? ""),
+        } satisfies ServerRepo,
+      ]
+    })
+    return [{ productId, name: String(item.name ?? ""), repos }]
+  })
+}
+
+/** The account's products with their repos and the Shared Server each repo is on. */
+export async function loadServerProducts(token: string, tenantId?: number, http: Http = eadHttp()) {
+  return asServerProducts(
+    await call(http, "/shared-ai-coding-servers/products", token, { headers: tenantHeaders(tenantId) }),
+  )
+}
+
+/** This person's view of the Shared Coding Servers dialog: which servers are expanded, and its size. */
+export type ServerView = { open: Record<string, boolean>; width: number; height: number }
+
+const serverView = "sicode_shared_servers_view"
+
+/** The saved view, or null when this person has none yet. Throws when EAD Pilot can't say, unlike a missing one. */
+export async function loadServerView(token: string, userId: number, tenantId: number, http: Http = eadHttp()) {
+  const q = new URLSearchParams({
+    userId: String(userId),
+    tenantId: String(tenantId),
+    settingKey: serverView,
+    contextType: "sicode",
+    contextId: "shared_servers",
+  })
+  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch((err) => {
+    if (err instanceof Error && err.message === "HTTP 404") return null
+    throw err
+  })) as { value?: string } | null
+  if (!data?.value) return null
+  return JSON.parse(data.value) as Partial<ServerView>
+}
+
+export async function saveServerView(
+  token: string,
+  userId: number,
+  tenantId: number,
+  view: ServerView,
+  http: Http = eadHttp(),
+) {
+  await call(http, "/settings/save", token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      tenantId,
+      settingKey: serverView,
+      settingValue: view,
+      contextType: "sicode",
+      contextId: "shared_servers",
+    }),
+  })
+}
+
+/** Sets the repos a Shared Server develops and builds (admins only); returns the products again. */
+export async function saveServerRepos(
+  token: string,
+  serverId: number,
+  repos: { productId: number; definitionId: number; folder: string }[],
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
+  const res = await http(`${eadApi()}/shared-ai-coding-servers/${serverId}/repos`, {
+    method: "PUT",
+    headers: { ...headers(token), ...tenantHeaders(tenantId), "Content-Type": "application/json" },
+    body: JSON.stringify({ repos }),
+  })
+  if (res.status === 401) throw new Error("AUTH_EXPIRED")
+  const data = await readJson(res).catch(() => null)
+  if (!res.ok) {
+    const message = data && typeof data === "object" && typeof (data as Record<string, unknown>).message === "string"
+    throw new Error(message ? String((data as Record<string, unknown>).message) : `HTTP ${res.status}`)
+  }
+  return asServerProducts(data)
+}
+
+/** Where a session's repo is developed: its product, the repo, and its Shared Server when it has one. */
+export type RepoPlace = {
+  product: ServerProduct
+  repo: ServerRepo
+  /** Set when the repo is on a Shared Server this account still has. */
+  server?: SharedServer
+  /** Every server of the account, to name where the product's other repos are. */
+  servers: SharedServer[]
 }
 
 /** Where SiCode keeps the private key it made when the user enabled the server (desktop shared_server_key). */
@@ -1493,43 +1678,74 @@ export function sharedServerKeyPath(serverId: number) {
 
 // The words here stay clear of EadTools' trigger words in opencode/src/session/ead-tools.ts, so this block alone does
 // not load the EAD Pilot tools.
-export function formatSharedServerPrompt(info: ProductSharedServer | undefined) {
-  if (!info) return
-  const server = info.server
+/**
+ * The block a chat message carries when the session's repo belongs to a product that develops repos on a Shared
+ * Server: where this repo is worked on (`remote` false = the user chose the Local Server) and where the others are.
+ */
+export function formatSharedServerPrompt(place: RepoPlace | undefined, remote: boolean, here: string) {
+  if (!place) return
+  const others = place.product.repos.filter((repo) => repo !== place.repo)
+  if (!place.repo.serverId && !others.some((repo) => repo.serverId)) return
+  const where = (repo: ServerRepo) => {
+    const server = place.servers.find((item) => item.serverId === repo.serverId)
+    return server
+      ? `on the Shared Server ${server.shortName}, in ${repo.folder}`
+      : "on the Local Server (its own project)"
+  }
+  const kind = (repo: ServerRepo) =>
+    [
+      { front: "front end", server: "server end", both: "front and server end" }[repoEnd(repo.role)],
+      repoSourceType(repo),
+    ]
+      .filter(Boolean)
+      .join(", ")
+  const list = others.map(
+    (repo) =>
+      `- ${repo.name || repo.repository} (${repo.repository}, ${repo.section === "LEGACY" ? "legacy" : "current"}, ${kind(repo)}): ${where(repo)}`,
+  )
+  const intro = `This project is the repo ${place.repo.repository} ("${place.repo.name}", ${kind(place.repo)}) of the product "${place.product.name}".`
+  const rest = list.length ? [`The product's other repos:`, ...list] : []
+  const server = place.server
+  if (!place.repo.serverId || !remote) {
+    return [
+      `<shared-ai-coding-server>`,
+      `${intro} Work on it here, on the Local Server, in ${here}.`,
+      ...rest,
+      `</shared-ai-coding-server>`,
+    ].join("\n")
+  }
   if (!server) {
     return [
       `<shared-ai-coding-server>`,
-      `This product is set to code on a Shared AI Coding Server that no longer exists in EAD Pilot. Tell the user to choose another server in the product's settings before work that needs it.`,
+      `${intro} It is set to be developed on a Shared Server that no longer exists in EAD Pilot. Tell the user to ask an account admin to check Shared Servers before work that needs it.`,
+      ...rest,
       `</shared-ai-coding-server>`,
     ].join("\n")
   }
   if (!server.enabled) {
     return [
       `<shared-ai-coding-server>`,
-      `This product codes on the Shared AI Coding Server "${server.name}" (${server.sshHost}), but this user has not enabled it yet, so there is no key to reach it.`,
-      `Before work that needs that computer, tell the user to open the account menu at the top right of SiCode and choose Enable next to "${server.name}" under Shared AI Coding Server.`,
+      `${intro} It is developed on the Shared Server "${server.name}" (${server.sshHost}), but this user's SSH key isn't on it yet, so there is no way to reach it.`,
+      `SiCode adds the key by itself. Before work that needs that computer, tell the user it couldn't be set up, or to ask an account admin to check "${server.name}" in Shared Servers.`,
+      ...rest,
       `</shared-ai-coding-server>`,
     ].join("\n")
   }
   const windows = server.os === "windows"
-  const ssh = `ssh -i ${sharedServerKeyPath(server.serverId)} -p ${server.sshPort} -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${server.sshLogin}@${server.sshHost}`
-  const scope =
-    info.scope === "both"
-      ? "All of this product's code, back end and front end, is on that computer."
-      : info.scope === "frontend"
-        ? "This product's front-end code is on that computer; its back-end code is in the local folder."
-        : "This product's back-end code is on that computer; its front-end code is in the local folder."
+  const key = sharedServerKeyPath(server.serverId)
+  const ssh = `ssh -i ${key} -p ${server.sshPort} -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${server.sshLogin}@${server.sshHost}`
+  const folder = place.repo.folder || server.rootFolder
   return [
     `<shared-ai-coding-server>`,
-    `This product codes on a shared remote ${windows ? "Windows" : "Mac"} computer, "${server.name}". ${scope}`,
-    `Root folder on that computer: ${server.rootFolder}. The code is under it; do not change anything outside it.`,
+    `${intro} It is developed and built on the Shared Server ${server.shortName}, the remote ${windows ? "Windows" : "Mac"} computer "${server.name}", in ${folder}. Work there, not in the local folder; do not change anything outside ${server.rootFolder}.`,
     `Run every command there through ssh with the user's own key, one command per call:`,
     `  ${ssh} "<command>"`,
     windows
-      ? `The remote shell is cmd.exe. For PowerShell, run: powershell -NoProfile -Command "<script>". Paths use backslashes, e.g. ${server.rootFolder}\\...`
+      ? `The remote shell is cmd.exe. For PowerShell, run: powershell -NoProfile -Command "<script>". Paths use backslashes.`
       : `The remote shell is the login shell (zsh on a Mac).`,
-    `Read files with ssh (${windows ? "type, or Get-Content" : "cat"}); to edit, copy the file here, change it, and copy it back with scp -i ${sharedServerKeyPath(server.serverId)} -P ${server.sshPort}. Build, run and test on that computer, not locally, for the code that lives there.`,
+    `Read files with ssh (${windows ? "type, or Get-Content" : "cat"}); to edit, copy the file here, change it, and copy it back with scp -i ${key} -P ${server.sshPort}. Build, run and test on that computer.`,
     `Other people use the same computer and the same login; leave their files and running programs alone.`,
+    ...rest,
     `</shared-ai-coding-server>`,
   ].join("\n")
 }

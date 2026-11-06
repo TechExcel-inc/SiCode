@@ -91,6 +91,10 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       /** Related projects per Pilot project id. */
       related: {} as Record<number, CoworkRelated[]>,
       github: undefined as boolean | undefined,
+      /** The EAD product each Pilot project codes (0 = none), read once per project. */
+      products: {} as Record<number, number>,
+      /** Each Pilot project's repository as owner/repo ("" = unknown), read once per project. */
+      repos: {} as Record<number, string>,
     })
 
     // Root folder of a directory: the local project whose worktree or sandboxes include it.
@@ -104,6 +108,44 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
     const projectOf = (dir: string | undefined) => {
       if (!dir) return
       return store.links[workspaceKey(dir)]?.projectId ?? store.links[workspaceKey(rootOf(dir))]?.projectId
+    }
+    const asking = new Set<number>()
+    /** The EAD product a folder's project codes, read from EAD Pilot once; undefined while unknown or without one. */
+    const productOf = (dir: string | undefined) => {
+      const id = projectOf(dir)
+      const client = api()
+      if (!id || !client) return
+      if (!(id in store.products) && !asking.has(id)) {
+        asking.add(id)
+        void client
+          .product(id)
+          .then((found) => setStore("products", id, found.productId ?? 0))
+          .catch(() => undefined)
+          .finally(() => asking.delete(id))
+      }
+      return store.products[id] || undefined
+    }
+    /** The repository (owner/repo) a folder's project checks out; undefined while unknown. */
+    const repoOf = (dir: string | undefined) => {
+      const id = projectOf(dir)
+      const client = api()
+      if (!id || !client) return
+      if (!(id in store.repos) && !asking.has(-id)) {
+        asking.add(-id)
+        void client
+          .project(id)
+          .then((found) => setStore("repos", id, found.repoOwner && found.repoName ? `${found.repoOwner}/${found.repoName}` : ""))
+          .catch(() => undefined)
+          .finally(() => asking.delete(-id))
+      }
+      return store.repos[id] || undefined
+    }
+    const linkProduct = async (dir: string, productId: number | null) => {
+      const id = projectOf(dir)
+      const client = api()
+      if (!id || !client) return
+      const found = await client.linkProduct(id, productId)
+      setStore("products", id, found.productId ?? 0)
     }
     const folderOf = (projectId: number) =>
       Object.values(store.links).find((link) => link.projectId === projectId)?.directory
@@ -322,6 +364,9 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       connect,
       link,
       projectOf,
+      productOf,
+      repoOf,
+      linkProduct,
       folderOf,
       /**
        * Projects for the pickers, most recently used first: the person's EAD Pilot projects, then the

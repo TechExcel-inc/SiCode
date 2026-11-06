@@ -92,16 +92,19 @@ export const ActiveSessions = (props: {
                       class="shrink-0 px-1.5 rounded"
                       classList={{
                         "bg-surface-info-weak text-text-on-info-base": item.state === "working",
-                        "bg-surface-warning-weak text-text-on-warning-base": item.state === "waiting",
+                        "bg-surface-warning-weak text-text-on-warning-base":
+                          item.state === "waiting" && item.attention.cause !== "steps",
                         "bg-surface-critical-weak text-text-on-critical-base": item.state === "stuck",
                       }}
                     >
                       {language.t(
                         item.state === "working"
                           ? "agent.status.working"
-                          : item.state === "stuck"
+                          : item.state === "stuck" || item.attention.cause === "steps"
                             ? "agent.status.stopped"
-                            : "agent.status.waiting",
+                            : item.attention.cause === "permission"
+                              ? "agent.status.approval"
+                              : "agent.status.answer",
                       )}
                     </span>
                     <Show when={item.state !== "working"}>
