@@ -339,6 +339,12 @@ export function formatSystemPrompt(input: { name: string; eadScript?: string; ai
     .join("\n")
 }
 
+/**
+ * Tells EAD Pilot (eadfm.com) that a sign-in comes from SiCode, so its server makes the person a
+ * member of Kloud's SiCode subsystem rather than the EAD Pilot one.
+ */
+const CLIENT_HEADER = { "X-EAD-Client": "sicode" }
+
 export async function login(identifier: string, password: string, http: Http = eadHttp()) {
   const body = {
     loginMethod: "password",
@@ -347,7 +353,7 @@ export async function login(identifier: string, password: string, http: Http = e
   }
   const res = await http(`${eadApi()}/auth/login`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...CLIENT_HEADER },
     body: JSON.stringify(body),
   }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
@@ -361,7 +367,10 @@ export async function login(identifier: string, password: string, http: Http = e
 
 /** Trades a login token (even one up to 30 days expired) for a fresh one. */
 export async function renew(token: string, http: Http = eadHttp()) {
-  const res = await http(`${eadApi()}/auth/session/renew`, { method: "POST", headers: headers(token) }).catch((err) => {
+  const res = await http(`${eadApi()}/auth/session/renew`, {
+    method: "POST",
+    headers: { ...headers(token), ...CLIENT_HEADER },
+  }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
   const data = (await res.json().catch(() => undefined)) as AuthResult | undefined
@@ -1273,7 +1282,7 @@ export function authKind(target: string): "email" | "phone" {
 async function authPost(path: string, body: Record<string, unknown>, http: Http) {
   const res = await http(`${eadApi()}${path}`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...CLIENT_HEADER },
     body: JSON.stringify(body),
   }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")

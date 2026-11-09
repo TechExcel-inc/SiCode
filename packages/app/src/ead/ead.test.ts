@@ -40,7 +40,7 @@ import {
   cue,
   underFolder,
 } from "./source-tree"
-import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlans, planLabel, planName, renew } from "./api"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlans, planLabel, planName, renew, login } from "./api"
 import { apply, drop, gateway, match, PLAN, spec } from "./plan"
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
@@ -203,17 +203,28 @@ describe("ead auth", () => {
 
   test("renew posts the old token and returns the new one", async () => {
     applyEnv("production")
-    const seen: { url: string; method?: string; auth?: string }[] = []
+    const seen: { url: string; method?: string; auth?: string; client?: string }[] = []
     const ok = (async (url: string, init?: RequestInit) => {
-      seen.push({
-        url,
-        method: init?.method,
-        auth: (init?.headers as Record<string, string> | undefined)?.Authorization,
-      })
+      const headers = init?.headers as Record<string, string> | undefined
+      seen.push({ url, method: init?.method, auth: headers?.Authorization, client: headers?.["X-EAD-Client"] })
       return new Response(JSON.stringify({ success: true, token: "fresh", user: { username: "u" } }))
     }) as typeof fetch
     expect(await renew("stale", ok)).toBe("fresh")
-    expect(seen).toEqual([{ url: `${eadApi()}/auth/session/renew`, method: "POST", auth: "Bearer stale" }])
+    // X-EAD-Client: EAD Pilot joins SiCode sign-ins to Kloud's SiCode subsystem
+    expect(seen).toEqual([
+      { url: `${eadApi()}/auth/session/renew`, method: "POST", auth: "Bearer stale", client: "sicode" },
+    ])
+  })
+
+  test("login says it comes from SiCode", async () => {
+    applyEnv("production")
+    let client: string | undefined
+    const ok = (async (_url: string, init?: RequestInit) => {
+      client = (init?.headers as Record<string, string> | undefined)?.["X-EAD-Client"]
+      return new Response(JSON.stringify({ success: true, token: "t" }))
+    }) as typeof fetch
+    expect(await login("pat@example.com", "pw", ok)).toBe("t")
+    expect(client).toBe("sicode")
   })
 
   test("renew fails when Pilot refuses the login", async () => {
