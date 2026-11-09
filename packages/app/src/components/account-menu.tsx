@@ -8,6 +8,7 @@ import { useEad } from "@/ead/settings"
 import { me } from "@/ead/api"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSharedServers } from "./dialog-shared-servers"
+import { DialogP1Integration } from "./dialog-p1-integration"
 import { useP1 } from "@/p1/settings"
 import { kloud } from "@/p1/kloud"
 import { clearKloudToken } from "@/ead/kloud-sign-in"
@@ -141,17 +142,15 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
             </div>
           </Show>
 
-          {/* P1 is shown only once signed in (from P1 Work), with no Sign out: it signs out with SiCode. */}
-          <Show when={p1In()}>
-            <DropdownMenu.Separator />
-            <div class={label}>P1</div>
-            <div class={line}>
-              <span class="min-w-0 flex flex-col">
-                <span class="truncate text-text-strong">{p1.name()}</span>
-                <span class="truncate text-12-regular text-text-weak">{host()}</span>
-              </span>
-            </div>
-          </Show>
+          {/* P1 integrations are Kloud's (set up by a Kloud admin with a P1 admin). P1 signs in from P1 Work and
+              signs out with SiCode, so it has no Sign in or Sign out here. */}
+          <DropdownMenu.Separator />
+          <DropdownMenu.Item
+            data-action="account-p1-integration"
+            onSelect={() => dialog.show(() => <DialogP1Integration />)}
+          >
+            <DropdownMenu.ItemLabel>{language.t("p1.integration.menu")}</DropdownMenu.ItemLabel>
+          </DropdownMenu.Item>
 
           <Show when={ead.token()}>
             <DropdownMenu.Separator />
