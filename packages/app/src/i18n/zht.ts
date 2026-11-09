@@ -879,6 +879,7 @@ export const dict = {
   "p1.empty.requirements": "沒有需求",
   "p1.loading": "正在載入…",
   "p1.login.server": "伺服器",
+  "p1.login.newServer": "新的 P1 伺服器…",
   "p1.login.user": "使用者名稱",
   "p1.login.password": "密碼",
   "p1.login.submit": "登入",

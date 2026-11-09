@@ -998,6 +998,7 @@ export const dict = {
   "p1.empty.requirements": "No requirements",
   "p1.loading": "Loading…",
   "p1.login.server": "Server",
+  "p1.login.newServer": "New P1 server…",
   "p1.login.user": "Username",
   "p1.login.password": "Password",
   "p1.login.submit": "Sign in",

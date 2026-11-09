@@ -140,22 +140,17 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
               <span class="text-text-weak">{language.t("account.kloudSso")}</span>
             </div>
           </Show>
-          <DropdownMenu.Separator />
 
-          <div class={label}>P1</div>
+          {/* P1 is shown only once signed in (from P1 Work), with no Sign out: it signs out with SiCode. */}
           <Show when={p1In()}>
+            <DropdownMenu.Separator />
+            <div class={label}>P1</div>
             <div class={line}>
               <span class="min-w-0 flex flex-col">
                 <span class="truncate text-text-strong">{p1.name()}</span>
                 <span class="truncate text-12-regular text-text-weak">{host()}</span>
               </span>
             </div>
-          </Show>
-          {/* P1 signs out with SiCode. Until P1 signs on through Kloud, it still has its own Sign in. */}
-          <Show when={!p1In()}>
-            <DropdownMenu.Item data-action="account-p1-sign-in" onSelect={props.onP1}>
-              <DropdownMenu.ItemLabel>{language.t("account.signIn")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
           </Show>
 
           <Show when={ead.token()}>

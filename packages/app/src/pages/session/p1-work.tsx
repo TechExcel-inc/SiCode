@@ -30,6 +30,9 @@ import {
   type Space,
 } from "@/p1/api"
 import { useP1 } from "@/p1/settings"
+import { kloudP1Servers, type P1Server } from "@/p1/servers"
+import { kloudToken } from "@/ead/kloud-sign-in"
+import { eadHttp } from "@/ead/http"
 import { P1Item } from "./p1-item"
 import { P1Folder } from "./p1-folder"
 import { P1Columns } from "./p1-columns"
@@ -257,6 +260,8 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
     err: "",
     busy: false,
     edit: false,
+    // P1 servers the person's Kloud companies are integrated with (Kloud predefines them)
+    servers: [] as P1Server[],
     loading: false,
     projects: [] as Project[],
     // The folder tree: each folder by id, its loaded subfolders, which are open, and the top of the tree.
@@ -1099,6 +1104,21 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
     if (group) regroup(row.id, group.key)
   }
 
+  // Offer the P1 servers Kloud knows for this person instead of a blank address.
+  void kloudP1Servers(kloudToken(), eadHttp()).then((list) => {
+    setState("servers", list)
+    if (list.length > 0 && !state.server && !p1.server()) setState("server", list[0].url)
+  })
+  // Servers match by host (Kloud may record http:// for a server signed in to over https); the address the
+  // person last signed in to wins.
+  const serverChoices = createMemo(() => {
+    const current = p1.server()
+    const host = (url: string) => url.replace(/^https?:\/\//i, "").toLowerCase()
+    const list = state.servers.map((item) => (current && host(item.url) === host(current) ? { ...item, url: current } : item))
+    const known = list.some((item) => item.url === current)
+    return current && !known ? [{ url: current, name: "P1", company: "" }, ...list] : list
+  })
+
   const sign = async () => {
     const user = state.user.trim()
     const host = origin(state.server || p1.server())
@@ -1839,7 +1859,31 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
                     void sign()
                   }}
                 >
-                  <Show when={state.edit || !p1.server()}>
+                  <Show when={!state.edit && state.servers.length > 0}>
+                    <label class="flex flex-col gap-1.5">
+                      <span class="text-12-regular text-text-weak">{language.t("p1.login.server")}</span>
+                      <select
+                        class={field}
+                        name="server"
+                        value={state.server || p1.server()}
+                        onChange={(event) => {
+                          const value = event.currentTarget.value
+                          if (value === "__new") setState({ edit: true, server: "" })
+                          else setState("server", value)
+                        }}
+                      >
+                        <For each={serverChoices()}>
+                          {(item) => (
+                            <option value={item.url}>
+                              {item.company ? `${item.company} · ${item.url.replace(/^https?:\/\//, "")}` : item.url}
+                            </option>
+                          )}
+                        </For>
+                        <option value="__new">{language.t("p1.login.newServer")}</option>
+                      </select>
+                    </label>
+                  </Show>
+                  <Show when={state.servers.length === 0 && (state.edit || !p1.server())}>
                     <label class="flex flex-col gap-1.5">
                       <span class="text-12-regular text-text-weak">{language.t("p1.login.server")}</span>
                       <input
@@ -1851,7 +1895,19 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
                       />
                     </label>
                   </Show>
-                  <Show when={!state.edit && p1.server()}>
+                  <Show when={state.edit && state.servers.length > 0}>
+                    <label class="flex flex-col gap-1.5">
+                      <span class="text-12-regular text-text-weak">{language.t("p1.login.newServer")}</span>
+                      <input
+                        class={field}
+                        name="server"
+                        value={state.server}
+                        placeholder="https://"
+                        onInput={(event) => setState("server", event.currentTarget.value)}
+                      />
+                    </label>
+                  </Show>
+                  <Show when={state.servers.length === 0 && !state.edit && p1.server()}>
                     <div class="flex items-center justify-between gap-2">
                       <span class="min-w-0 truncate text-12-regular text-text-weak">{p1.server()}</span>
                       <button
