@@ -671,6 +671,7 @@ export const dict = {
   "bar.ead.none": "未选择 EAD 产品",
   "account.ead": "EAD Pilot",
   "account.signIn": "登录",
+  "account.kloudSso": "已通过 Kloud 登录",
   "account.kloud.checking": "检查中…",
   "account.kloud.linked": "已通过 P1 关联",
   "account.kloud.none": "未关联",

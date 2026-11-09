@@ -778,6 +778,7 @@ export const dict = {
   "bar.ead.none": "No EAD product chosen",
   "account.ead": "EAD Pilot",
   "account.signIn": "Sign in",
+  "account.kloudSso": "Signed in through Kloud",
   "account.kloud.checking": "Checking…",
   "account.kloud.linked": "Linked through P1",
   "account.kloud.none": "Not linked",

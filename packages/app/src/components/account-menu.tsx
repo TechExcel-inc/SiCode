@@ -10,6 +10,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSharedServers } from "./dialog-shared-servers"
 import { useP1 } from "@/p1/settings"
 import { kloud } from "@/p1/kloud"
+import { clearKloudToken } from "@/ead/kloud-sign-in"
 import { HELP_URL } from "./about-popover"
 import { status } from "./status-popover"
 import { useServer } from "@/context/server"
@@ -76,6 +77,12 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
   const build = import.meta.env.VITE_KLOUD_BUILD || "dev"
   const label = "px-2 pt-2 pb-1 text-11-medium text-text-weaker"
   const line = "px-2 py-1 flex items-center justify-between gap-3 text-13-regular"
+  /** SiCode's one Sign out: the Kloud session, and EAD Pilot and P1 with it. */
+  const signOut = () => {
+    clearKloudToken()
+    p1.clear()
+    ead.signOut()
+  }
 
   return (
     <DropdownMenu placement="bottom-end" gutter={6}>
@@ -128,9 +135,10 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
               </DropdownMenu.Item>
             }
           >
-            <DropdownMenu.Item data-action="account-ead-sign-out" onSelect={() => ead.signOut()}>
-              <DropdownMenu.ItemLabel>{language.t("rail.account.signOut")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
+            {/* Single sign-on: EAD Pilot follows the Kloud sign-in; SiCode's one Sign out is at the bottom. */}
+            <div class={`${line} justify-start`} data-slot="account-ead-sso">
+              <span class="text-text-weak">{language.t("account.kloudSso")}</span>
+            </div>
           </Show>
           <DropdownMenu.Separator />
 
@@ -143,16 +151,10 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
               </span>
             </div>
           </Show>
-          <Show
-            when={p1In()}
-            fallback={
-              <DropdownMenu.Item data-action="account-p1-sign-in" onSelect={props.onP1}>
-                <DropdownMenu.ItemLabel>{language.t("account.signIn")}</DropdownMenu.ItemLabel>
-              </DropdownMenu.Item>
-            }
-          >
-            <DropdownMenu.Item data-action="account-p1-sign-out" onSelect={() => p1.clear()}>
-              <DropdownMenu.ItemLabel>{language.t("rail.account.signOut")}</DropdownMenu.ItemLabel>
+          {/* P1 signs out with SiCode. Until P1 signs on through Kloud, it still has its own Sign in. */}
+          <Show when={!p1In()}>
+            <DropdownMenu.Item data-action="account-p1-sign-in" onSelect={props.onP1}>
+              <DropdownMenu.ItemLabel>{language.t("account.signIn")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
           </Show>
 
@@ -213,6 +215,11 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
           <DropdownMenu.Item data-action="account-help" onSelect={() => platform.openLink(HELP_URL)}>
             <DropdownMenu.ItemLabel>{language.t("about.help")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
+          <Show when={ead.token()}>
+            <DropdownMenu.Item data-action="account-sign-out" onSelect={signOut}>
+              <DropdownMenu.ItemLabel>{language.t("rail.account.signOut")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </Show>
           <DropdownMenu.Separator />
           <div class="px-2 py-1.5 text-11-regular text-text-weaker select-text" data-slot="account-about">
             {language.t("about.title")} {platform.version ?? "dev"} · {language.t("about.build")} {build}

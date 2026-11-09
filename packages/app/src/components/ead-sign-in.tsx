@@ -7,10 +7,12 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useServer } from "@/context/server"
-import { login, resetPassword, sendCode, signup, verifyCode } from "@/ead/api"
+import { usePlatform } from "@/context/platform"
+import { resetPassword, sendCode, signup, verifyCode } from "@/ead/api"
 import { looksLikeProviderApiKey } from "@/ead/auth"
 import { ensureEadMcp } from "@/ead/ensure-mcp"
 import { eadHttp } from "@/ead/http"
+import { KLOUD_WEB, signInWithKloud } from "@/ead/kloud-sign-in"
 import { t } from "@/ead/i18n"
 import { useEad } from "@/ead/settings"
 import { decode64 } from "@/utils/base64"
@@ -100,6 +102,7 @@ export function EadSignInCard(props: {
   message?: string
 }) {
   const ead = useEad()
+  const platform = usePlatform()
   const http = () => eadHttp()
   const lang = () => ead.language()
   const tx = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(lang(), key, vars)
@@ -146,7 +149,9 @@ export function EadSignInCard(props: {
     setBusy(true)
     setErr("")
     try {
-      await done(await login(name, secret, http()))
+      // The Kloud master account; EAD Pilot signs on through it.
+      const { eadToken } = await signInWithKloud(name, secret, http())
+      await done(eadToken)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -257,7 +262,8 @@ export function EadSignInCard(props: {
         </div>
         <Show when={tab() === "signin"}>
           <form class="auth-form" autocomplete="on" onSubmit={submitLogin}>
-            <p class="auth-title">{tx("signIn")}</p>
+            <p class="auth-title">{tx("signInKloud")}</p>
+            <p class="auth-hint">{tx("signInKloudHint")}</p>
             <div class="auth-label-row">
               <label class="auth-label">{tx("idPlaceholder")}</label>
             </div>
@@ -274,7 +280,7 @@ export function EadSignInCard(props: {
             />
             <div class="auth-label-row">
               <label class="auth-label">{tx("password")}</label>
-              <button type="button" class="auth-link" onClick={() => setTab("forgot")}>
+              <button type="button" class="auth-link" onClick={() => platform.openLink(`${KLOUD_WEB}/forgetPassworld`)}>
                 {tx("forgot")}
               </button>
             </div>
@@ -291,18 +297,9 @@ export function EadSignInCard(props: {
               {tx("signIn")}
             </button>
           </form>
-          <div class="auth-divider">{tx("orContinue")}</div>
-          <div class="auth-oauth">
-            <button type="button" onClick={() => soon("Google")}>
-              {tx("google")}
-            </button>
-            <button type="button" onClick={() => soon("GitHub")}>
-              {tx("github")}
-            </button>
-          </div>
           <p class="auth-muted" style={{ "margin-top": "16px", "margin-bottom": 0 }}>
             {tx("noAccount")}{" "}
-            <button type="button" class="auth-link" onClick={() => setTab("signup-start")}>
+            <button type="button" class="auth-link" onClick={() => platform.openLink(`${KLOUD_WEB}/register`)}>
               {tx("signUp")}
             </button>
           </p>
