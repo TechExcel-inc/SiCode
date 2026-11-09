@@ -6,6 +6,7 @@ import { Process } from "../util/process"
 import z from "zod"
 import { mergeDeep, pipe, unique } from "remeda"
 import { Global } from "../global"
+import { playwright } from "../mcp/playwright"
 import { Brand } from "../brand"
 import fsNode from "fs/promises"
 import { NamedError } from "@opencode-ai/util/error"
@@ -1556,6 +1557,11 @@ export namespace Config {
           }
 
           if (!result.username) result.username = os.userInfo().username
+
+          // The user's own entry wins, including { enabled: false }.
+          if (Flag.OPENCODE_CLIENT === "desktop" && !result.mcp?.playwright) {
+            result.mcp = { ...result.mcp, playwright: playwright() }
+          }
 
           if (result.autoshare === true && !result.share) {
             result.share = "auto"

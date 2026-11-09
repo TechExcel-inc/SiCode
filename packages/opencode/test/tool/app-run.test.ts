@@ -29,7 +29,7 @@ describe("run commands", () => {
     await Instance.provide({
       directory: tmp.path,
       fn: async () => {
-        expect(runCommands()).toEqual([])
+        expect(runCommands()[0]).toContain("no saved run commands")
         await Project.update({ projectID: project.id, commands: { dev: "bun dev", port: 4444, build: "bun run build" } })
         const [text] = runCommands()
         expect(text).toContain("dev server (port 4444), build")

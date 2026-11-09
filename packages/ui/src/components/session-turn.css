@@ -458,6 +458,34 @@
     cursor: pointer;
   }
 
+  [data-slot="turn-actions-fold-images"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  [data-slot="turn-actions-fold-image"],
+  [data-slot="turn-actions-fold-more"] {
+    width: 96px;
+    height: 64px;
+    padding: 0;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--surface-weak);
+    color: var(--text-weak);
+    cursor: pointer;
+  }
+
+  [data-slot="turn-actions-fold-image"] img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
   [data-slot="turn-actions-fold-list"] {
     display: flex;
     flex-direction: column;

@@ -1,9 +1,9 @@
 Runs the app with the commands the user saved for this project (Edit project → Run). It runs only those commands.
 
 - dev: starts the dev server, or reuses the one already running, and waits until it answers; returns its address. Use it before you look at a change in the browser.
-- build: builds the app in the background (for example the desktop app). You get a message with the result when it ends.
+- build: builds the app in the background (for example the desktop app). You get a message with the result when it ends. Quit a running copy of a desktop app first.
 - install: puts the new build in place and opens it, in the background.
 - deploy: deploys the app to its server with the saved deploy command, in the background. Use it whenever the user asks to deploy; do not deploy by hand over SSH.
 - stop: stops the dev server.
 
-When a command is not saved, it says so; ask the user to add it in Edit project → Run instead of guessing.
+When a command is not saved, it shows the user what the project's files suggest and asks once to save it, so call it rather than guessing a command. If nothing can be suggested it says so; then ask the user to add it in Edit project → Run.

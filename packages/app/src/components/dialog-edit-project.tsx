@@ -1,4 +1,4 @@
-import { suggestRun } from "@/utils/run-suggest"
+import { suggestFrom } from "@/utils/run-suggest"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -87,25 +87,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
         .read({ directory: props.project.worktree, path })
         .then((res) => (res.data as { content?: string } | undefined)?.content ?? "")
         .catch(() => "")
-    const tauri = ["src-tauri", "packages/desktop/src-tauri"]
-    const [launch, pkg, ...rest] = await Promise.all(
-      [
-        ".claude/launch.json",
-        "package.json",
-        "bun.lock",
-        "bun.lockb",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        ...tauri.map((dir) => `${dir}/tauri.conf.json`),
-      ].map(file),
-    )
-    const configs = rest.slice(4)
-    const found = suggestRun({
-      launch,
-      pkg,
-      locks: ["bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock"].filter((_, index) => !!rest[index]),
-      tauri: configs.flatMap((config, index) => (config ? [{ config, dir: tauri[index] }] : []))[0],
-    })
+    const found = await suggestFrom(file)
     setStore({
       suggesting: false,
       dev: store.dev || found.dev || "",

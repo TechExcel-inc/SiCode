@@ -6,6 +6,8 @@ import {
   currentAction,
   elapsedParts,
   foldActions,
+  actionCounts,
+  actionImages,
   isFoldedAction,
   latestChecklist,
   runningHelpers,
@@ -171,6 +173,27 @@ describe("checklistFolds", () => {
     expect(checklistFolds([done, { content: "c", status: "pending" }], false)).toBe(false)
     expect(checklistFolds([done, { content: "c", status: "in_progress" }], false)).toBe(false)
     expect(checklistFolds([], false)).toBe(false)
+  })
+})
+
+describe("actionCounts", () => {
+  test("separates shell commands from other tools", () => {
+    expect(actionCounts([tool("bash", "completed"), tool("read", "completed"), tool("grep", "running"), text("hi")])).toEqual({
+      commands: 1,
+      tools: 2,
+    })
+  })
+})
+
+describe("actionImages", () => {
+  test("keeps finished calls' images only", () => {
+    const image = { mime: "image/png", url: "data:image/png;base64,a" }
+    const parts = [
+      tool("playwright_browser_take_screenshot", "completed", {}, { attachments: [image, { mime: "application/pdf", url: "x" }] }),
+      tool("playwright_browser_take_screenshot", "running", {}, { attachments: [image] }),
+      tool("read", "completed"),
+    ]
+    expect(actionImages(parts)).toEqual([image] as never)
   })
 })
 

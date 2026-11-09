@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { suggestRun } from "./run-suggest"
 
 describe("suggestRun", () => {
+  test("keeps a script's full path, and skips one that is temporary or gone", () => {
+    const launch = (exe: string) => JSON.stringify({ configurations: [{ runtimeExecutable: exe, runtimeArgs: ["web"], port: 3203 }] })
+    const pkg = JSON.stringify({ scripts: { dev: "next dev -p 3201" } })
+    expect(suggestRun({ launch: launch("/Users/me/app/dev.sh"), pkg, locks: [] }).dev).toBe("/Users/me/app/dev.sh web")
+    expect(suggestRun({ launch: launch("scripts/dev.sh"), pkg, locks: [] }).dev).toBe("scripts/dev.sh web")
+    expect(suggestRun({ launch: launch("/private/tmp/claude/dev.sh"), pkg, locks: [] })).toMatchObject({ dev: "npm run dev", port: 3201 })
+    expect(suggestRun({ launch: launch("/Users/me/app/dev.sh"), pkg, locks: [], exists: () => false })).toMatchObject({ dev: "npm run dev", port: 3201 })
+  })
+
   test("uses the dev server the project already runs for previews", () => {
     const launch = JSON.stringify({
       configurations: [

@@ -3,7 +3,7 @@ import path from "path"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
-import { commits, others, stepGuidance, SystemPrompt, verification, visuals } from "../../src/session/system"
+import { commits, looking, others, stepGuidance, SystemPrompt, verification, visuals } from "../../src/session/system"
 import { Project } from "../../src/project/project"
 import { provideInstance, tmpdir } from "../fixture/fixture"
 
@@ -107,6 +107,18 @@ description: ${description}
     expect(text).toContain("run the tests that cover the change")
     expect(text).toContain("say exactly what was not checked")
     expect(text).toContain('Never write "fixed", "works" or "done" without a test result')
+    expect(text).toContain("quit any copy of it that is running")
+    expect(text).toContain("A type check alone is not a test")
+    expect(text).toContain("git diff --stat")
+  })
+})
+
+describe("looking", () => {
+  test("only the desktop app has the local browser", () => {
+    expect(looking("desktop")[0]).toContain("playwright_browser_navigate")
+    expect(looking("desktop")[0]).toContain("press every button and link")
+    expect(looking("desktop")[0]).toContain("name each difference")
+    expect(looking("cli")).toEqual([])
   })
 })
 

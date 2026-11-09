@@ -58,7 +58,7 @@ import { TextShimmer } from "./text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
-import { foldActions, isFoldedAction } from "./session-turn-activity"
+import { actionCounts, actionImages, foldActions, isFoldedAction } from "./session-turn-activity"
 import { animate } from "motion"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
@@ -589,10 +589,10 @@ function foldParts(parts: { messageID: string; part: PartType }[]) {
   })
 }
 
-function groupSize(group: PartGroup): number {
-  if (group.type === "part") return 1
-  if (group.type === "context") return group.refs.length
-  return group.groups.reduce((sum, item) => sum + groupSize(item), 0)
+function groupRefs(group: PartGroup): PartRef[] {
+  if (group.type === "part") return [group.ref]
+  if (group.type === "context") return group.refs
+  return group.groups.flatMap(groupRefs)
 }
 
 function index<T extends { id: string }>(items: readonly T[]) {
@@ -686,8 +686,16 @@ export function AssistantParts(props: {
               ),
             )
 
+            const folded = createMemo(() =>
+              groups()
+                .flatMap(groupRefs)
+                .flatMap((ref) => part().get(ref.messageID)?.get(ref.partID) ?? []),
+            )
+            const counts = createMemo(() => actionCounts(folded()))
+            const images = createMemo(() => actionImages(folded()))
+
             return (
-              <ActionsFold count={groups().reduce((sum, group) => sum + groupSize(group), 0)} busy={busy()}>
+              <ActionsFold commands={counts().commands} tools={counts().tools} images={images()} busy={busy()}>
                 <Index each={groups()}>{(group) => renderEntry(group, nestedLast)}</Index>
               </ActionsFold>
             )
@@ -751,14 +759,27 @@ export function AssistantParts(props: {
 }
 
 /** One line per turn standing for all of its folded tool calls; expands to the usual per-tool rows. */
-function ActionsFold(props: ParentProps<{ count: number; busy?: boolean }>) {
+function ActionsFold(
+  props: ParentProps<{ commands: number; tools: number; images: { mime: string; url: string }[]; busy?: boolean }>,
+) {
   const i18n = useI18n()
+  const dialog = useDialog()
   const [open, setOpen] = createSignal(false)
-  const label = createMemo(() =>
-    i18n.t(props.count === 1 ? "ui.sessionTurn.actions.one" : "ui.sessionTurn.actions.other", {
-      count: String(props.count),
-    }),
-  )
+  const [all, setAll] = createSignal(false)
+  const alt = () => i18n.t("ui.sessionTurn.actions.screenshot")
+  const shown = createMemo(() => (all() ? props.images : props.images.slice(0, 3)))
+  const label = createMemo(() => {
+    const commands = i18n.t(props.commands === 1 ? "ui.sessionTurn.actions.command" : "ui.sessionTurn.actions.commands", {
+      count: String(props.commands),
+    })
+    if (!props.tools) return commands
+    const count = { count: String(props.tools) }
+    if (!props.commands) return i18n.t(props.tools === 1 ? "ui.sessionTurn.actions.tool" : "ui.sessionTurn.actions.tools", count)
+    return i18n.t("ui.sessionTurn.actions.both", {
+      commands,
+      tools: i18n.t(props.tools === 1 ? "ui.sessionTurn.actions.toolNext" : "ui.sessionTurn.actions.toolsNext", count),
+    })
+  })
 
   return (
     <div data-component="turn-actions-fold" class="turn-actions-fold">
@@ -775,6 +796,27 @@ function ActionsFold(props: ParentProps<{ count: number; busy?: boolean }>) {
           <div data-slot="turn-actions-fold-list">{props.children}</div>
         </Collapsible.Content>
       </Collapsible>
+      <Show when={props.images.length > 0}>
+        <div data-slot="turn-actions-fold-images">
+          <For each={shown()}>
+            {(file) => (
+              <button
+                type="button"
+                data-slot="turn-actions-fold-image"
+                aria-label={alt()}
+                onClick={() => dialog.show(() => <ImagePreview src={file.url} alt={alt()} />)}
+              >
+                <img src={file.url} alt={alt()} draggable={false} />
+              </button>
+            )}
+          </For>
+          <Show when={props.images.length > shown().length}>
+            <button type="button" data-slot="turn-actions-fold-more" onClick={() => setAll(true)}>
+              +{props.images.length - shown().length}
+            </button>
+          </Show>
+        </div>
+      </Show>
     </div>
   )
 }

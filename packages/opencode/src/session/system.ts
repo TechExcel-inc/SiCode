@@ -89,10 +89,29 @@ export function verification() {
     [
       `Check your work before you say it is done:`,
       `  - After changing code, run the tests that cover the change with the project's own test command: one targeted test file for a small change, the full suite before a commit. Run the project's type check too when it has one.`,
+      `  - When you add or change behaviour and the project has a test setup, add or update a test for it and run it. A type check alone is not a test: if you ran no tests, say "No tests run" and why.`,
       `  - Report the result in one line ("Tests: 24 passed", or the failing test and its error). If a check fails, fix it or say so; do not end with "done" while a check fails.`,
       `  - When something cannot be checked (no tests cover it, it needs a sign-in, or it is a visible change you cannot look at), say exactly what was not checked instead of claiming it works.`,
       `  - Keep checks in proportion: do not run a long suite for a one-line text change.`,
+      `Before you commit, read git diff --stat. If it is much larger than what you changed (for example a formatter rewrote a whole file), undo the unrelated part or tell the user, so the commit holds only this task's change.`,
       `Never write "fixed", "works" or "done" without a test result or another check behind it.`,
+      `Before you rebuild or reinstall a desktop app, quit any copy of it that is running from the build's output folder or the install location, because replacing its files while it runs crashes it. Quit it normally, never with a forced kill, and if the user may be using it, ask first.`,
+    ].join("\n"),
+  ]
+}
+
+/** The desktop app gives the agent a local browser (Playwright MCP) to look at what it changed. */
+export function looking(client: string) {
+  if (client !== "desktop") return []
+  return [
+    [
+      `When a change is visible on a web page and the playwright_ tools are available, look at it before you say it is done:`,
+      `  - Start the app with app_run, then open the page with playwright_browser_navigate and read it with playwright_browser_snapshot.`,
+      `  - Looking is not enough: press every button and link you added or changed, type into its fields, and confirm each one does what it should. Then check playwright_browser_console_messages for errors, and take one playwright_browser_take_screenshot of the result. The user sees it as a thumbnail.`,
+      `  - If the user gave a design image, compare the page with it and name each difference, including anything you added that the image does not show.`,
+      `  - If you find a problem, fix it and look again. Report in a few lines: the page you checked, what you pressed and what happened, and what you did not press or check ("Checked on screen on /dev/preview: Save shows Saved. Not checked: inside a real meeting"). Do not write "Verified" for something you only looked at.`,
+      `  - Skip this for logic that tests already cover. This browser opens only local addresses, and requests to other sites from the page are blocked, so parts of a page that need them may not load: say so instead of treating that as a bug.`,
+      `  - If you cannot read images, rely on the snapshot text, and say you did not judge how it looks. If it cannot be checked (it needs a sign-in, or it is a native desktop window), say what was not checked.`,
     ].join("\n"),
   ]
 }
@@ -123,7 +142,11 @@ export function runCommands() {
     saved.install ? "install and reopen" : "",
     saved.deploy ? "deploy" : "",
   ].filter(Boolean)
-  if (list.length === 0) return []
+  if (list.length === 0) {
+    return [
+      `This project has no saved run commands yet. To start or build the app, call the app_run tool instead of guessing commands: it suggests them from the project's files and asks the user once.`,
+    ]
+  }
   return [
     `This project has saved run commands: ${list.join(", ")}. Use the app_run tool to run them instead of guessing commands: dev before you look at a change in the browser, build and install when the user wants the app rebuilt, deploy when the user wants it deployed (never deploy by hand over SSH).`,
   ]
@@ -177,6 +200,7 @@ export namespace SystemPrompt {
             ...visuals(Flag.OPENCODE_CLIENT),
             ...stepGuidance(Flag.OPENCODE_CLIENT),
             ...verification(),
+            ...looking(Flag.OPENCODE_CLIENT),
             ...commits(Flag.OPENCODE_CLIENT, project.vcs === "git"),
             ...runCommands(),
           ]

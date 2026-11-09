@@ -75,12 +75,28 @@ export function checklistFolds(list: readonly TurnStep[], working: boolean) {
   return list.every((step) => step.status === "completed" || step.status === "cancelled")
 }
 
-/** True for a tool call that is folded into the turn's single "N actions" line. */
+/** True for a tool call that is folded into the turn's single actions line. */
 export function isFoldedAction(part: PartType) {
   if (part.type !== "tool") return false
   if (CHECKLIST_TOOLS.has(part.tool)) return false
   if (KEPT_TOOLS.has(part.tool)) return false
   return true
+}
+
+/** Shell commands and other tools among a turn's folded calls, for "Ran 3 commands, used 6 tools". */
+export function actionCounts(parts: readonly PartType[]) {
+  const tools = parts.filter((part) => part.type === "tool")
+  const commands = tools.filter((part) => part.tool === "bash").length
+  return { commands, tools: tools.length - commands }
+}
+
+/** Screenshots the turn's folded calls returned, oldest first. */
+export function actionImages(parts: readonly PartType[]) {
+  return parts.flatMap((part) =>
+    part.type === "tool" && part.state.status === "completed"
+      ? (part.state.attachments ?? []).filter((file) => file.mime.startsWith("image/"))
+      : [],
+  )
 }
 
 export type Folded<T> = { type: "item"; item: T } | { type: "actions"; items: T[] }
