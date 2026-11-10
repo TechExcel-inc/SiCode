@@ -1,3 +1,4 @@
+import * as path from "path"
 import { GlobalBus } from "@/bus/global"
 import { disposeInstance } from "@/effect/instance-registry"
 import { Filesystem } from "@/util/filesystem"
@@ -95,6 +96,14 @@ export const Instance = {
     // Skip worktree check in this case to preserve external_directory permissions.
     if (Instance.worktree === "/") return false
     return Filesystem.contains(instance.worktree, filepath)
+  },
+  /**
+   * A file's path as edit permission rules see it, such as "design/a.html": relative to the worktree, or to
+   * the directory when there is no git repo (worktree "/" would give "Project/app/design/a.html" and no
+   * rule like "design/*" would ever match).
+   */
+  relative(filepath: string) {
+    return path.relative(Instance.worktree === "/" ? Instance.directory : Instance.worktree, filepath)
   },
   /**
    * Captures the current instance ALS context and returns a wrapper that
