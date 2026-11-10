@@ -18,6 +18,17 @@ describe("SiCode signs in with the Kloud master account", () => {
     expect(atob(url.searchParams.get("password")!)).toBe(String.fromCharCode(...new TextEncoder().encode("pässword")))
   })
 
+  test("Kloud login always sends a body, so the desktop app's request has a Content-Length", async () => {
+    let init: RequestInit | undefined
+    const http = (async (_url: string, next?: RequestInit) => {
+      init = next
+      return new Response(JSON.stringify({ RetCode: 0, RetData: { UserToken: "kloud-token" } }))
+    }) as typeof fetch
+    await kloudLogin("pat", "secret", http)
+    expect(init?.method).toBe("POST")
+    expect(init?.body).toBe("{}")
+  })
+
   test("a wrong password shows Kloud's own message", async () => {
     const http = (async (_url: string) =>
       new Response(JSON.stringify({ RetCode: -2003, ErrorMessage: "Invalid user name or password." }))) as typeof fetch

@@ -45,9 +45,12 @@ export async function kloudLogin(identifier: string, password: string, http: Htt
     DeviceType: "1",
     DeviceName: base64("EAD SiCode"),
   })
+  // The account goes in the query. The body is only there so the request carries a Content-Length: the
+  // desktop app's HTTP client sends none for a POST without a body, and Kloud's server then answers 411.
   const res = await http(`${api}/Login?${query.toString()}`, {
     method: "POST",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: "{}",
   }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
