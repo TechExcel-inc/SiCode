@@ -427,6 +427,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     // The agent reads the doc from disk, so save what the user typed first.
+    if (layout.nav.current() === "design") await design.hold?.()
     if (layout.nav.current() === "design") await design.flush?.()
 
     input.addToHistory(currentPrompt, mode)

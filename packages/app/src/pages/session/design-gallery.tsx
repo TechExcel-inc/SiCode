@@ -11,8 +11,10 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { ago } from "@/pages/layout/helpers"
+import { LAYOUT, blank, frame, named, parse } from "./design-format"
+import { fonts } from "./design-fonts"
 
-export type Kind = "markdown" | "image" | "pdf" | "html" | "docx"
+export type Kind = "markdown" | "image" | "pdf" | "html" | "docx" | "design"
 
 // What "Make something new" offers: each creates a file of that type in design/ and opens it.
 export const TYPES = [
@@ -34,6 +36,14 @@ export const TYPES = [
       `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">\n  <rect width="1200" height="800" fill="#ffffff"/>\n</svg>\n`,
   },
   {
+    // Several screens on a canvas: a folder with canvas.json and one HTML page per screen.
+    id: "ui",
+    label: "design.type.ui",
+    untitled: "design.untitled.ui",
+    ext: "design",
+    content: (name: string) => blank(name),
+  },
+  {
     id: "page",
     label: "design.type.page",
     untitled: "design.untitled.page",
@@ -47,6 +57,7 @@ export type Type = (typeof TYPES)[number]
 
 // Filter tabs, shown only when the project has files of that kind.
 const FILTERS = [
+  { id: "design", label: "design.filter.design", kinds: ["design"] },
   { id: "markdown", label: "design.filter.markdown", kinds: ["markdown"] },
   { id: "html", label: "design.filter.html", kinds: ["html"] },
   { id: "image", label: "design.filter.image", kinds: ["image"] },
@@ -65,6 +76,8 @@ export function Gallery(props: {
   kind: (path: string) => Kind | undefined
   title: (path: string) => string
   load: (path: string) => Promise<FileContent | undefined>
+  // The screen files in a design folder.
+  screens: (path: string) => Promise<string[]>
   onOpen: (path: string) => void
   onCreate: (type: Type) => void
   onRename: (path: string, name: string) => void
@@ -195,7 +208,7 @@ export function Gallery(props: {
 
         <section class="flex flex-col gap-3">
           <div class="text-14-medium text-text-strong">{language.t("design.make")}</div>
-          <div class="grid grid-cols-3 gap-4">
+          <div class="grid grid-cols-4 gap-4">
             <For each={TYPES}>
               {(type) => (
                 <button
@@ -301,6 +314,7 @@ export function Gallery(props: {
                           kind={props.kind(path)}
                           stamp={layout.design.time(sdk.directory, path)?.edited}
                           load={props.load}
+                          screens={props.screens}
                         />
                       </button>
                       <div class="flex items-start gap-2 min-w-0">
@@ -323,7 +337,7 @@ export function Gallery(props: {
                     data-component="design-row"
                     class="h-12 px-2 flex items-center gap-3 border-b border-border-weaker-base min-w-0"
                   >
-                    <FileIcon node={{ path, type: "file" }} class="shrink-0 size-4" />
+                    <FileIcon node={{ path, type: props.kind(path) === "design" ? "directory" : "file" }} class="shrink-0 size-4" />
                     <div class="flex-1 min-w-0">{name(path)}</div>
                     <div class="w-48 shrink-0">{info(path)}</div>
                     {menu(path)}
@@ -344,8 +358,16 @@ function Thumb(props: {
   kind: Kind | undefined
   stamp: number | undefined
   load: (path: string) => Promise<FileContent | undefined>
+  screens: (path: string) => Promise<string[]>
 }) {
-  const [state, setState] = createStore({ file: undefined as FileContent | undefined, scale: 0.35 })
+  const language = useLanguage()
+  const [state, setState] = createStore({
+    file: undefined as FileContent | undefined,
+    scale: 0.35,
+    // A design: its first screen, ready for the frame, and how many screens it has.
+    doc: undefined as string | undefined,
+    count: 0,
+  })
   let box: HTMLDivElement | undefined
   let page: HTMLDivElement | undefined
   let gone = false
@@ -363,6 +385,10 @@ function Thumb(props: {
       () => [props.path, props.stamp] as const,
       ([path]) => {
         if (props.kind === "pdf" || props.kind === "docx" || !props.kind) return
+        if (props.kind === "design") {
+          void first(path)
+          return
+        }
         void props.load(path).then((file) => {
           if (gone) return
           setState("file", file)
@@ -381,6 +407,16 @@ function Thumb(props: {
       },
     ),
   )
+
+  const first = async (path: string) => {
+    const [layout, files] = await Promise.all([props.load(`${path}/${LAYOUT}`), props.screens(path)])
+    const canvas = parse(layout?.content, files, named(path))
+    const name = canvas.order.find((item) => files.includes(item))
+    const html = name ? (await props.load(`${path}/${name}`))?.content : undefined
+    const font = html ? await fonts(html) : ""
+    if (gone) return
+    setState({ count: canvas.order.length, doc: html ? frame(html, { mode: "static", fonts: font }) : undefined })
+  }
 
   const image = createMemo(() => {
     const file = state.file
@@ -404,6 +440,37 @@ function Thumb(props: {
             style={{ width: `${PAGE}px`, transform: `scale(${state.scale})` }}
           >
             <div ref={page} class="vditor-reset" />
+          </div>
+        </Match>
+        <Match when={props.kind === "design"}>
+          <div class="absolute inset-0 bg-surface-base">
+            <Show when={state.doc}>
+              {(doc) => (
+                <iframe
+                  sandbox=""
+                  srcdoc={doc()}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  class="absolute top-0 left-0 origin-top-left border-0"
+                  style={{
+                    width: `${PAGE * 2}px`,
+                    height: `${PAGE * 1.5}px`,
+                    transform: `scale(${state.scale / 2})`,
+                    background: "#fff",
+                  }}
+                />
+              )}
+            </Show>
+            <Show when={state.count > 0}>
+              <span
+                data-slot="design-thumb-count"
+                class="absolute top-2 right-2 h-5 px-1.5 rounded-md bg-background-strong border border-border-weaker-base text-11-medium text-text-base flex items-center"
+              >
+                {state.count === 1
+                  ? language.t("design.card.screen")
+                  : language.t("design.card.screens", { count: String(state.count) })}
+              </span>
+            </Show>
           </div>
         </Match>
         <Match when={props.kind === "html" && state.file?.content}>
@@ -448,6 +515,12 @@ function Art(props: { type: Type["id"] }) {
           <rect x="26" y="8" width="68" height="56" rx="4" />
           <circle cx="44" cy="26" r="6" />
           <path d="M26 56L48 38L62 50L72 42L94 60" stroke-linejoin="round" />
+        </Match>
+        <Match when={props.type === "ui"}>
+          <rect x="10" y="14" width="44" height="44" rx="3" />
+          <rect x="66" y="14" width="44" height="44" rx="3" />
+          <path d="M10 22H54M66 22H110M18 32H40M18 40H46M74 32H102M74 40H96" stroke-linecap="round" />
+          <path d="M56 36H64" stroke-linecap="round" stroke-dasharray="2 3" />
         </Match>
         <Match when={props.type === "page"}>
           <rect x="20" y="8" width="80" height="56" rx="4" />

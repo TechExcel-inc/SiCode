@@ -155,3 +155,49 @@
   font-size: 16px;
   color: var(--text-strong);
 }
+
+/* GrapesJS chrome in SiCode's own colors, light and dark. */
+[data-component="design-editor-gjs"] {
+  --gjs-primary-color: var(--background-base);
+  --gjs-secondary-color: var(--text-base);
+  --gjs-tertiary-color: var(--surface-base);
+  --gjs-quaternary-color: var(--text-interactive-base);
+  --gjs-font-color: var(--text-base);
+  --gjs-font-color-active: var(--text-strong);
+  --gjs-main-dark-color: var(--border-weaker-base);
+  --gjs-secondary-dark-color: var(--border-weak-base);
+  --gjs-main-light-color: var(--surface-base);
+  --gjs-secondary-light-color: var(--text-weak);
+  --gjs-soft-light-color: var(--surface-base-hover);
+  --gjs-light-border: var(--border-weak-base);
+  --gjs-arrow-color: var(--text-weak);
+  --gjs-dark-text-shadow: none;
+  --gjs-color-highlight: var(--text-interactive-base);
+  --gjs-main-font: var(--font-family-sans);
+  --gjs-font-size: 0.75rem;
+}
+
+[data-component="design-editor-gjs"] .gjs-one-bg {
+  background-color: var(--background-base);
+}
+
+[data-component="design-editor-gjs"] .gjs-two-color {
+  color: var(--text-base);
+}
+
+[data-component="design-editor-gjs"] .gjs-three-bg {
+  background-color: var(--surface-base);
+  color: var(--text-strong);
+}
+
+[data-component="design-editor-gjs"] .gjs-four-color,
+[data-component="design-editor-gjs"] .gjs-four-color-h:hover {
+  color: var(--text-interactive-base);
+}
+
+[data-component="design-editor-gjs"] .gjs-cv-canvas {
+  width: 100%;
+  height: 100%;
+  top: 0;
+  background-color: var(--background-weak);
+}

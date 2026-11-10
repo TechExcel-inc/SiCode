@@ -14,6 +14,7 @@ import { TaskTool } from "./task"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { DesignReviewTool, EAD_PROVIDER } from "./design-review"
+import { DesignShotTool } from "./design-shot"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
@@ -74,6 +75,8 @@ export namespace ToolRegistry {
     readonly tools: (model: {
       providerID: ProviderID
       modelID: ModelID
+      /** The model accepts images (`capabilities.input.image`); tools that return pictures are offered only then. */
+      image?: boolean
       agent: Agent.Info
     }) => Effect.Effect<Tool.Def[]>
   }
@@ -121,6 +124,7 @@ export namespace ToolRegistry {
       const plan = yield* PlanExitTool
       const webfetch = yield* WebFetchTool
       const designReview = yield* DesignReviewTool
+      const designShot = yield* DesignShotTool
       const websearch = yield* WebSearchTool
       const bash = yield* BashTool
       const jobtool = yield* JobTool
@@ -203,6 +207,7 @@ export namespace ToolRegistry {
             task: Tool.init(task),
             fetch: Tool.init(webfetch),
             designReview: Tool.init(designReview),
+            designShot: Tool.init(designShot),
             todo: Tool.init(todo),
             search: Tool.init(websearch),
             code: Tool.init(codesearch),
@@ -236,6 +241,7 @@ export namespace ToolRegistry {
               tool.task,
               tool.fetch,
               ...(questionEnabled ? [tool.designReview] : []),
+              tool.designShot,
               tool.todo,
               tool.search,
               tool.code,
@@ -297,6 +303,8 @@ export namespace ToolRegistry {
         const filtered = (yield* all()).filter((tool) => {
           // Visual design review runs on EAD Pilot, so it is offered only to sessions on an EAD Pilot plan.
           if (tool.id === DesignReviewTool.id) return input.providerID === EAD_PROVIDER
+          // Looking at a drawn screen only helps a model that can see the pictures.
+          if (tool.id === DesignShotTool.id) return input.image === true
           if (tool.id === CodeSearchTool.id || tool.id === WebSearchTool.id) {
             return input.providerID === ProviderID.opencode || Flag.OPENCODE_ENABLE_EXA
           }

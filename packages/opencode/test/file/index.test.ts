@@ -119,6 +119,32 @@ describe("file/index Filesystem patterns", () => {
         },
       })
     })
+
+    test("removes a whole .design folder but no other folder", async () => {
+      await using tmp = await tmpdir()
+      await fs.mkdir(path.join(tmp.path, "design", "Req.design", "assets"), { recursive: true })
+      await fs.writeFile(path.join(tmp.path, "design", "Req.design", "canvas.json"), "{}")
+      await fs.writeFile(path.join(tmp.path, "design", "Req.design", "List.html"), "<!doctype html>")
+      await fs.writeFile(path.join(tmp.path, "design", "Req.design", "assets", "a.png"), "")
+      await fs.mkdir(path.join(tmp.path, "design", "api"))
+      await fs.writeFile(path.join(tmp.path, "design", "api", "plan.md"), "# Plan\n")
+      await fs.mkdir(path.join(tmp.path, "empty"))
+
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          await expect(remove("design/api")).rejects.toThrow()
+          await expect(remove("empty")).rejects.toThrow()
+          expect(await Filesystem.exists(path.join(tmp.path, "design", "api", "plan.md"))).toBe(true)
+          expect(await Filesystem.exists(path.join(tmp.path, "empty"))).toBe(true)
+          await expect(remove("../Other.design")).rejects.toThrow()
+          await expect(remove(".")).rejects.toThrow()
+          await remove("design/Req.design")
+          expect(await Filesystem.exists(path.join(tmp.path, "design", "Req.design"))).toBe(false)
+          expect(await Filesystem.exists(path.join(tmp.path, "design", "api", "plan.md"))).toBe(true)
+        },
+      })
+    })
   })
 
   describe("read() - binary content", () => {

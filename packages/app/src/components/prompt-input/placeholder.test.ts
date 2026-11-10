@@ -50,6 +50,9 @@ describe("promptPlaceholder", () => {
         t,
       }),
     ).toBe("design.chat.image.placeholder")
+    const base = { mode: "normal" as const, commentCount: 0, example: "example", suggest: true, design: true, t }
+    expect(promptPlaceholder({ ...base, empty: true })).toBe("design.chat.screens.placeholder")
+    expect(promptPlaceholder({ ...base, empty: true, editing: true })).toBe("design.chat.editing.placeholder")
   })
 
   test("returns simple placeholder when suggestions disabled", () => {

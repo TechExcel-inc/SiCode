@@ -531,7 +531,10 @@ export namespace File {
         const full = path.join(Instance.directory, file)
         if (!Instance.containsPath(full) || full === Instance.directory)
           throw new Error("Access denied: path escapes project directory")
-        yield* appFs.remove(full).pipe(Effect.orDie)
+        // A UI design is a folder of screens, so `*.design` folders are removed whole; any other folder is refused.
+        const dir = (yield* appFs.stat(full).pipe(Effect.orDie)).type === "Directory"
+        if (dir && !path.basename(full).endsWith(".design")) throw new Error(`${file} is a folder`)
+        yield* appFs.remove(full, { recursive: dir }).pipe(Effect.orDie)
       })
 
       const read: Interface["read"] = Effect.fn("File.read")(function* (file: string) {

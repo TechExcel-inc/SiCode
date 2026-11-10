@@ -739,6 +739,11 @@ test("design agent writes only design docs and has no shell", async () => {
       expect(rule("edit", "design/plan.md")).toBe("allow")
       expect(rule("edit", "design/api/data-model.md")).toBe("allow")
       expect(rule("edit", "wiki/old.md")).toBe("allow")
+      expect(rule("edit", "design/Req.design/List.html")).toBe("allow")
+      expect(rule("edit", "design/Req.design/canvas.json")).toBe("allow")
+      expect(rule("edit", "design/Req.design/assets/a.png")).toBe("allow")
+      expect(rule("edit", "src/x.html")).toBe("deny")
+      expect(rule("design_shot", "design/Req.design/List.html")).toBe("allow")
       expect(rule("edit", "src/index.ts")).toBe("deny")
       expect(rule("edit", "designs/plan.md")).toBe("deny")
       expect(rule("edit", "../outside/design/plan.md")).toBe("deny")
@@ -748,10 +753,9 @@ test("design agent writes only design docs and has no shell", async () => {
       expect(rule("task", "general")).toBe("deny")
       expect(rule("webfetch", "*")).toBe("deny")
       expect(rule("external_directory", "/etc/*")).toBe("deny")
-      expect([...Permission.disabled(["bash", "task", "write", "edit", "read"], design!.permission)].sort()).toEqual([
-        "bash",
-        "task",
-      ])
+      expect(
+        [...Permission.disabled(["bash", "task", "write", "edit", "read", "design_shot"], design!.permission)].sort(),
+      ).toEqual(["bash", "task"])
     },
   })
 })

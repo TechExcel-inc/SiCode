@@ -353,6 +353,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     promptPlaceholder({
       design: design(),
       blank: design() && drawing.blank,
+      empty: design() && drawing.empty,
+      editing: design() && drawing.editing,
       mode: store.mode,
       commentCount: commentCount(),
       example: suggest() ? language.t(EXAMPLES[store.placeholder]) : "",

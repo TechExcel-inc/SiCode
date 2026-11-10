@@ -1,0 +1,9 @@
+Look at a screen of a UI design the way the Design tab shows it.
+
+Pass the path of one screen file in a design folder, such as `design/Requirements.design/List.html`. The page is drawn in a browser on this computer at the frame size `canvas.json` gives the screen (1440 x 980 when it has none); a web page that fills the window (`"fluid": true`) is also drawn 390 px wide, the way a phone shows it. You get the pictures back.
+
+- Call it after you write or change a screen, then fix what you see: overlapping or clipped text, poor contrast, uneven spacing, things that do not line up, a layout that breaks at phone width.
+- Do at most two rounds of fixes per screen.
+- Pass `width` only to look at one other window width.
+- The page loads nothing from the network, just as in the Design tab; images must come from the design's `assets/` folder.
+- When it says the check was skipped, carry on without it.

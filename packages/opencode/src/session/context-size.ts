@@ -132,7 +132,12 @@ export namespace ContextSize {
     const customAgents = customAgentList.reduce((sum, item) => sum + item.tokens, 0)
 
     // Built-in tools, without the skill and agent lists counted above.
-    const builtin = yield* registry.tools({ modelID: ModelID.make(model.api.id), providerID: model.providerID, agent })
+    const builtin = yield* registry.tools({
+      modelID: ModelID.make(model.api.id),
+      providerID: model.providerID,
+      image: model.capabilities.input.image,
+      agent,
+    })
     const blockedBuiltin = disabled(builtin.map((item) => item.id))
     const toolTokens = builtin
       .filter((item) => !off(item.id, blockedBuiltin))

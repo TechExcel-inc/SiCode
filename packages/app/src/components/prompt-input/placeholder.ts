@@ -5,6 +5,8 @@ type PromptPlaceholderInput = {
   suggest: boolean
   design?: boolean
   blank?: boolean
+  empty?: boolean
+  editing?: boolean
   t: (key: string, params?: Record<string, string>) => string
 }
 
@@ -12,6 +14,8 @@ export function promptPlaceholder(input: PromptPlaceholderInput) {
   if (input.mode === "shell") return input.t("prompt.placeholder.shell")
   if (input.commentCount > 1) return input.t("prompt.placeholder.summarizeComments")
   if (input.commentCount === 1) return input.t("prompt.placeholder.summarizeComment")
+  if (input.design && input.editing) return input.t("design.chat.editing.placeholder")
+  if (input.design && input.empty) return input.t("design.chat.screens.placeholder")
   if (input.design && input.blank) return input.t("design.chat.image.placeholder")
   if (input.design) return input.t("design.chat.placeholder")
   if (!input.suggest) return input.t("prompt.placeholder.simple")

@@ -21,6 +21,8 @@ import { useSync } from "@/context/sync"
 import { design, setDesign } from "./design-state"
 import { Gallery, type Type } from "./design-gallery"
 import { useSessionKey } from "./session-layout"
+import { DesignCanvas } from "./design-canvas"
+import { LAYOUT } from "./design-format"
 import "vditor/dist/index.css"
 import "./design.css"
 
@@ -49,13 +51,17 @@ const KINDS = {
   docx: "docx",
 } as const
 
-type Kind = (typeof KINDS)[keyof typeof KINDS]
+type Kind = (typeof KINDS)[keyof typeof KINDS] | "design"
 
-const kind = (path: string): Kind | undefined => KINDS[path.split(".").pop()?.toLowerCase() as keyof typeof KINDS]
+// A folder ending in .design is one UI design: canvas.json and one HTML page per screen.
+const folder = (path: string) => /\.design\/?$/i.test(path)
+
+const kind = (path: string): Kind | undefined =>
+  folder(path) ? "design" : KINDS[path.split(".").pop()?.toLowerCase() as keyof typeof KINDS]
 
 const root = (path: string) => (path.startsWith(LEGACY + "/") ? LEGACY : ROOT)
 
-const title = (path: string) => path.slice(root(path).length + 1).replace(/\.(md|markdown)$/i, "")
+const title = (path: string) => path.slice(root(path).length + 1).replace(/\.(md|markdown|design)$/i, "")
 
 const slug = (name: string) =>
   name
@@ -65,8 +71,13 @@ const slug = (name: string) =>
 
 const page = (file: string, dir: string) => {
   const value = file.replace(/\\/g, "/")
-  const rel = value.startsWith(dir + "/") ? value.slice(dir.length + 1) : value
+  // Windows directories come with backslashes; compare both sides with forward slashes.
+  const base = dir.replace(/\\/g, "/").replace(/\/+$/, "")
+  const rel = value.startsWith(base + "/") ? value.slice(base.length + 1) : value
   if (!rel.startsWith(ROOT + "/") && !rel.startsWith(LEGACY + "/")) return
+  // Any file inside a design belongs to the design.
+  const design = rel.match(/^(.*?\.design)(\/|$)/i)?.[1]
+  if (design) return design
   if (!kind(rel)) return
   return rel
 }
@@ -134,6 +145,14 @@ export function useDesignLinks() {
   }
   onMount(() => {
     const stop = sdk.event.listen((event) => {
+      // A screen added to or removed from a design outside the app (a shell, another editor) still
+      // refreshes its card; a plain change does not, so panning the canvas is not an edit.
+      const detail = event.details as { type: string; properties?: { file?: unknown; event?: unknown } }
+      if (detail.type === "file.watcher.updated" && detail.properties?.event !== "change") {
+        const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, sdk.directory) : undefined
+        if (file && kind(file) === "design") layout.design.touch(sdk.directory, file, "edited")
+        return
+      }
       if (event.details.type !== "file.edited") return
       const id = event.details.properties.sessionID
       const file = page(event.details.properties.file, sdk.directory)
@@ -168,10 +187,14 @@ export function DesignChatEmpty() {
   return (
     <div class="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
       <div class="text-14-medium text-text-strong">
-        {language.t(design.blank ? "design.chat.image.title" : "design.chat.empty.title")}
+        {language.t(
+          design.empty ? "design.chat.screens.title" : design.blank ? "design.chat.image.title" : "design.chat.empty.title",
+        )}
       </div>
       <div class="text-13-regular text-text-weak max-w-xs">
-        {language.t(design.blank ? "design.chat.image.body" : "design.chat.empty.body")}
+        {language.t(
+          design.empty ? "design.chat.screens.body" : design.blank ? "design.chat.image.body" : "design.chat.empty.body",
+        )}
       </div>
     </div>
   )
@@ -205,6 +228,14 @@ function Design() {
     loading: false,
     // The doc as it was before the AI's latest round of edits, for one-click undo.
     undo: undefined as string | undefined,
+    // A design: its files before the AI's latest turn, and which of them that turn changed or added.
+    snap: undefined as Record<string, string> | undefined,
+    changed: [] as string[],
+    // Bumped after this view rewrites a design's files, so the canvas reads them again.
+    stamp: 0,
+    // The design's selected screen and how many screens it has.
+    screen: "",
+    screens: -1,
   })
   let host: HTMLDivElement | undefined
   let editor: Vditor | undefined
@@ -225,12 +256,42 @@ function Design() {
       .then((res) => res.data ?? [])
       .catch(() => [])
     const nested = await Promise.all(
-      nodes.filter((node) => node.type === "directory" && !node.ignored).map((node) => walk(node.path)),
+      nodes
+        .filter((node) => node.type === "directory" && !node.ignored && !folder(node.name))
+        .map((node) => walk(node.path)),
     )
     return [
+      // A design is keyed by its folder with forward slashes, the way file events name it.
+      ...nodes
+        .filter((node) => node.type === "directory" && folder(node.name))
+        .map((node) => node.path.replace(/\\/g, "/")),
       ...nodes.filter((node) => node.type === "file" && kind(node.name)).map((node) => node.path),
       ...nested.flat(),
     ].sort((a, b) => a.localeCompare(b))
+  }
+
+  // Every file in a design folder, relative to it.
+  const files = async (dir: string, base = dir): Promise<string[]> => {
+    const nodes = await sdk.client.file
+      .list({ path: dir })
+      .then((res) => res.data ?? [])
+      .catch(() => [])
+    const nested = await Promise.all(
+      nodes.filter((node) => node.type === "directory").map((node) => files(node.path, base)),
+    )
+    return [
+      ...nodes
+        .filter((node) => node.type === "file")
+        .map((node) => node.path.replace(/\\/g, "/").slice(base.length + 1)),
+      ...nested.flat(),
+    ]
+  }
+
+  // The text files of a design, for undoing the AI's change to it.
+  const snapshot = async (dir: string) => {
+    const names = (await files(dir)).filter((name) => /\.(html?|json|css|js|svg|md|txt)$/i.test(name))
+    const entries = await Promise.all(names.map(async (name) => [name, (await read(`${dir}/${name}`)) ?? ""] as const))
+    return Object.fromEntries(entries)
   }
 
   // Polled; the list only changes (and re-renders) when the files on disk do.
@@ -281,7 +342,7 @@ function Design() {
   // Prompt context belongs to the session on screen, so attach the open doc again whenever either changes.
   createEffect(
     on(
-      () => [state.active, params.id] as const,
+      () => [state.active, params.id, state.screen] as const,
       ([path]) => {
         if (path) attach(path)
       },
@@ -367,6 +428,7 @@ function Design() {
   const check = async () => {
     const path = state.active
     if (!path || state.status === "saving") return
+    if (kind(path) === "design") return
     if (!editable()) return preview(path)
     const disk = await read(path)
     if (disk === undefined || same(disk, last) || state.active !== path) return
@@ -382,8 +444,21 @@ function Design() {
   }
 
   const revert = async () => {
-    const prev = state.undo
     const path = state.active
+    if (kind(path) === "design") {
+      const snap = state.snap
+      if (!snap) return
+      await Promise.all(
+        state.changed.map((name) =>
+          name in snap
+            ? sdk.client.file.write({ path: `${path}/${name}`, content: snap[name] })
+            : sdk.client.file.remove({ path: `${path}/${name}` }),
+        ),
+      ).catch(() => undefined)
+      setState({ snap: undefined, changed: [], status: "saved", stamp: state.stamp + 1 })
+      return
+    }
+    const prev = state.undo
     if (prev === undefined || !path) return
     await sdk.client.file.write({ path, content: prev })
     if (state.active !== path) return
@@ -401,6 +476,22 @@ function Design() {
   createEffect(
     on(busy, (value) => {
       if (value) void flush()
+      // A design: snapshot its files when the AI starts, and see what its turn changed when it stops.
+      const path = state.active
+      if (kind(path) !== "design") return
+      if (value) {
+        void snapshot(path).then((snap) => state.active === path && setState({ snap, changed: [] }))
+        return
+      }
+      const before = state.snap
+      if (!before) return
+      void snapshot(path).then((after) => {
+        if (state.active !== path) return
+        const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+          (name) => before[name] !== after[name],
+        )
+        setState({ changed, snap: changed.length ? before : undefined })
+      })
     }),
   )
 
@@ -417,6 +508,7 @@ function Design() {
       doc: editable() ? state.active : "",
       title: state.active ? title(state.active) : "",
       blank: blank(),
+      empty: kind(state.active) === "design" && state.screens === 0,
     }),
   )
 
@@ -433,12 +525,21 @@ function Design() {
   }
 
   const attach = (path: string) => {
-    prompt.context
-      .items()
-      .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory) && item.path !== path)
-      .forEach((item) => prompt.context.remove(item.key))
+    // A design is attached as its layout plus the selected screen, so "this screen" needs no guessing.
     // Word files mean nothing to the agent as raw bytes.
-    if (kind(path) !== "docx") prompt.context.add({ type: "file", path })
+    const want =
+      kind(path) === "design"
+        ? [`${path}/${LAYOUT}`, ...(state.screen ? [`${path}/${state.screen}`] : [])]
+        : kind(path) === "docx"
+          ? []
+          : [path]
+    const items = () => prompt.context.items().filter((item) => item.type === "file" && !item.selection)
+    items()
+      .filter((item) => page(item.path, sdk.directory) && !want.includes(item.path))
+      .forEach((item) => prompt.context.remove(item.key))
+    want
+      .filter((file) => !items().some((item) => item.path === file))
+      .forEach((file) => prompt.context.add({ type: "file", path: file }))
   }
 
   const schedule = () => {
@@ -453,6 +554,22 @@ function Design() {
     if (timer !== undefined) window.clearTimeout(timer)
     await save()
     layout.design.open(sdk.directory, path)
+    if (kind(path) === "design") {
+      setState({
+        active: path,
+        status: "idle",
+        conflict: false,
+        file: undefined,
+        loading: false,
+        undo: undefined,
+        snap: undefined,
+        changed: [],
+        screen: "",
+        screens: -1,
+      })
+      void chat(path)
+      return
+    }
     if (kind(path) !== "markdown") {
       setState({ active: path, status: "idle", conflict: false, file: undefined, loading: true, undo: undefined })
       void chat(path)
@@ -492,7 +609,17 @@ function Design() {
   // Back to the gallery; the doc's typing is saved and it is no longer attached to the chat.
   const close = async () => {
     await flush()
-    setState({ active: "", file: undefined, undo: undefined, conflict: false, status: "idle" })
+    setState({
+      active: "",
+      file: undefined,
+      undo: undefined,
+      conflict: false,
+      status: "idle",
+      snap: undefined,
+      changed: [],
+      screen: "",
+      screens: -1,
+    })
     prompt.context
       .items()
       .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory))
@@ -502,12 +629,13 @@ function Design() {
   const create = async (type: Type) => {
     const name = untitled(type)
     const path = `${ROOT}/${name}.${type.ext}`
-    await sdk.client.file.write({ path, content: type.content(name) })
+    // A UI design is a folder; writing its layout creates it.
+    await sdk.client.file.write({ path: type.id === "ui" ? `${path}/${LAYOUT}` : path, content: type.content(name) })
     fresh = type.ext === "md"
     await list()
     await open(path)
-    if (type.id !== "image") return
-    // A new image is designed by describing it: show the chat and put the cursor in its request box.
+    if (type.id !== "image" && type.id !== "ui") return
+    // A new image or UI design is made by describing it: show the chat and put the cursor in its request box.
     if (!layout.code.chat()) layout.code.toggle()
     window.setTimeout(() => document.querySelector<HTMLElement>('[data-component="prompt-input"]')?.focus(), 300)
   }
@@ -649,6 +777,7 @@ function Design() {
 
   const status = createMemo(() => {
     if (busy()) return language.t("design.status.ai")
+    if (kind(state.active) === "design") return state.status === "saved" ? language.t("design.status.saved") : ""
     if (!editable()) return language.t("design.readonly")
     if (state.status === "saving") return language.t("design.status.saving")
     if (state.status === "saved") return language.t("design.status.saved")
@@ -670,6 +799,7 @@ function Design() {
           kind={kind}
           title={title}
           load={load}
+          screens={(path) => files(path)}
           onOpen={(path) => void open(path)}
           onCreate={(type) => void create(type)}
           onRename={(path, name) => void rename(path, name)}
@@ -704,7 +834,7 @@ function Design() {
             >
               {status()}
             </span>
-            <Show when={state.undo !== undefined && !busy()}>
+            <Show when={(state.undo !== undefined || state.changed.length > 0) && !busy()}>
               <Button size="small" variant="secondary" data-action="design-undo-ai" onClick={() => void revert()}>
                 {language.t("design.undo")}
               </Button>
@@ -752,7 +882,19 @@ function Design() {
               </Button>
             </div>
           </Show>
-          <Show when={!editable()}>
+          <Show when={kind(state.active) === "design"}>
+            <DesignCanvas
+              path={state.active}
+              busy={busy()}
+              stamp={state.stamp}
+              load={load}
+              files={(path) => files(path)}
+              onSelect={(name) => setState("screen", name)}
+              onCount={(count) => setState("screens", count)}
+              onEdit={() => setState({ snap: undefined, changed: [] })}
+            />
+          </Show>
+          <Show when={!editable() && kind(state.active) !== "design"}>
             <div class="flex-1 min-h-0 overflow-y-auto">
               <Show when={state.file} fallback={<Show when={!state.loading}>{<Empty />}</Show>}>
                 {(item) => <Preview path={state.active} file={item()} />}

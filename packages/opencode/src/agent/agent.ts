@@ -174,6 +174,7 @@ export namespace Agent {
                   list: "allow",
                   todowrite: "allow",
                   question: "allow",
+                  design_shot: "allow",
                   edit: {
                     "*": "deny",
                     "design/*": "allow",
