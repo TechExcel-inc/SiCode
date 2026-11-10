@@ -88,6 +88,49 @@ export const SessionRoutes = lazy(() =>
       },
     )
     .post(
+      "/:sessionID/one-time/start",
+      describeRoute({
+        summary: "Start a one-time model",
+        description: "Run this session on a one-session model for a few requests, keeping its conversation.",
+        operationId: "session.oneTime.start",
+        responses: {
+          200: {
+            description: "The session",
+            content: { "application/json": { schema: resolver(Session.Info) } },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator("param", z.object({ sessionID: SessionID.zod })),
+      validator("json", SessionOneTime.StartInput.omit({ sessionID: true })),
+      async (c) => {
+        const session = await AppRuntime.runPromise(
+          SessionOneTime.start({ sessionID: c.req.valid("param").sessionID, ...c.req.valid("json") }),
+        )
+        return c.json(session)
+      },
+    )
+    .post(
+      "/:sessionID/one-time/finish",
+      describeRoute({
+        summary: "Finish a one-time model",
+        description: "Return this session to its regular model.",
+        operationId: "session.oneTime.finish",
+        responses: {
+          200: {
+            description: "The session",
+            content: { "application/json": { schema: resolver(Session.Info) } },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator("param", z.object({ sessionID: SessionID.zod })),
+      async (c) => {
+        const session = await AppRuntime.runPromise(SessionOneTime.finish(c.req.valid("param").sessionID))
+        return c.json(session)
+      },
+    )
+    .post(
       "/:sessionID/one-time/done",
       describeRoute({
         summary: "Finish one-time session",

@@ -8,7 +8,8 @@ import { Provider } from "@/provider/provider"
 import { Agent } from "@/agent/agent"
 
 /**
- * One-session-only models: a session opened for a single special-service model.
+ * One-session-only models: a session running on a single special-service model, either the
+ * session itself for a few requests (`start`) or, for older sessions, one of its own (`open`).
  * The model is stored on the session and wins over every other model choice
  * (composer pick, agent model, command model), so the server holds the lock.
  */
@@ -93,6 +94,41 @@ export namespace SessionOneTime {
         time: { opened: Date.now() },
       },
     })
+  })
+
+  export const StartInput = z.object({
+    sessionID: SessionID.zod,
+    model: Session.OneTime.shape.model,
+  })
+  export type StartInput = z.output<typeof StartInput>
+
+  /** Runs this session on a one-session model for a few requests, with the conversation so far as its context. */
+  export const start = Effect.fn("SessionOneTime.start")(function* (input: StartInput) {
+    const sessions = yield* Session.Service
+    const provider = yield* Provider.Service
+    const model = yield* provider.getModel(input.model.providerID, input.model.modelID)
+    const session = yield* sessions.get(input.sessionID)
+    if (session.oneTime && !session.oneTime.inPlace) throw new Error(`Session ${session.id} is a one-time session`)
+    const next: Session.OneTime = {
+      model: input.model,
+      inPlace: true,
+      status: "open",
+      requests: 0,
+      limit: model.oneSession?.limit,
+      allowance: model.oneSession?.limit,
+      time: { opened: Date.now() },
+    }
+    yield* sessions.setOneTime({ sessionID: session.id, oneTime: next })
+    return { ...session, oneTime: next }
+  })
+
+  /** Back to the session's regular model. */
+  export const finish = Effect.fn("SessionOneTime.finish")(function* (sessionID: SessionID) {
+    const sessions = yield* Session.Service
+    const session = yield* sessions.get(sessionID)
+    if (!session.oneTime?.inPlace) throw new Error(`Session ${session.id} has no one-time model running`)
+    yield* sessions.setOneTime({ sessionID, oneTime: null })
+    return { ...session, oneTime: undefined }
   })
 
   export const DoneInput = z.object({

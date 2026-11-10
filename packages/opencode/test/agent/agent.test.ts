@@ -755,3 +755,30 @@ test("design agent writes only design docs and has no shell", async () => {
     },
   })
 })
+
+test("lookup agent only reads and never asks", async () => {
+  await using tmp = await tmpdir({
+    // A user config that allows everything cannot widen the lookup agent, and nothing it could do asks.
+    config: { permission: { bash: "allow", edit: "allow", task: "allow", question: "allow" } },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const lookup = await load(tmp.path, (svc) => svc.get("lookup"))
+      expect(lookup?.hidden).toBe(true)
+      expect(lookup?.steps).toBe(10)
+      const rule = (permission: string, pattern: string) =>
+        Permission.evaluate(permission, pattern, lookup!.permission).action
+      expect(rule("read", "deploy.sh")).toBe("allow")
+      expect(rule("read", ".env")).toBe("deny")
+      expect(rule("read", "config/.env.production")).toBe("deny")
+      expect(rule("read", ".env.example")).toBe("allow")
+      expect(rule("grep", "*")).toBe("allow")
+      expect(rule("glob", "*")).toBe("allow")
+      expect(rule("list", "*")).toBe("allow")
+      for (const permission of ["edit", "bash", "task", "question", "webfetch", "todowrite"])
+        expect(rule(permission, "*")).toBe("deny")
+      expect(rule("external_directory", "/etc/*")).toBe("deny")
+    },
+  })
+})

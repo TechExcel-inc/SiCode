@@ -2,6 +2,7 @@ import { createMemo, Show } from "solid-js"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { KeepView } from "./keep-view"
 import { P1Work } from "./p1-work"
 import { useAsk } from "./p1-ask"
 
@@ -17,13 +18,16 @@ export function RailPlaceholder() {
   const ask = useAsk()
   const item = createMemo(() => {
     const nav = layout.nav.current()
-    if (nav === "work" || nav === "spec" || nav === "task") return soon[nav]
+    if (nav === "spec" || nav === "task") return soon[nav]
   })
 
   return (
-    <Show when={item()}>
-      {(entry) => (
-        <Show when={layout.nav.current() === "work"} fallback={
+    <>
+      <KeepView nav="work">
+        <P1Work ask={ask} />
+      </KeepView>
+      <Show when={item()}>
+        {(entry) => (
           <div
             data-component="rail-placeholder"
             class="absolute inset-0 z-40 bg-background-base flex flex-col items-center justify-center gap-3 px-6 text-center"
@@ -36,10 +40,8 @@ export function RailPlaceholder() {
             </div>
             <div class="text-14-regular text-text-weak max-w-md">{language.t(entry().body)}</div>
           </div>
-        }>
-          <P1Work ask={ask} />
-        </Show>
-      )}
-    </Show>
+        )}
+      </Show>
+    </>
   )
 }

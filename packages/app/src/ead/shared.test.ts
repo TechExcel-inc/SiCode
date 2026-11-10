@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { formatSharedServerPrompt, repoEnd, repoKey, repoSourceType, type RepoPlace, type ServerProduct } from "./api"
+import {
+  findRepoFolders,
+  loadPublishTargets,
+  formatSharedServerPrompt,
+  remoteDevServerAiHelp,
+  reorderSharedServers,
+  repoEnd,
+  repoKey,
+  repoPlace,
+  repoSourceType,
+  type RepoPlace,
+  type ServerProduct,
+} from "./api"
 import { handlePluginMessage } from "./bridge"
 
 const server = {
@@ -10,13 +22,26 @@ const server = {
   sshHost: "108.175.14.99",
   sshPort: 50525,
   sshLogin: "administrator",
+  authMethod: "password" as const,
+  hasKey: false,
   rootFolder: "C:\\TX",
+  note: "",
+  useCoding: true,
+  publishRole: "none" as const,
+  sshEnabled: true,
+  remoteControl: false,
+  remotePort: 3389,
+  canViewPassword: false,
   enabled: true,
+  lastUser: "",
+  lastAt: 0,
 }
 
 const product: ServerProduct = {
   productId: 12,
   name: "P1 Admin 12",
+  servers: [],
+  publish: [],
   repos: [
     {
       definitionId: 1,
@@ -49,6 +74,7 @@ const at = (index: number): RepoPlace => ({
   repo: product.repos[index],
   server: index === 0 ? server : undefined,
   servers: [server],
+  publish: [],
 })
 
 describe("shared server instructions", () => {
@@ -60,6 +86,43 @@ describe("shared server instructions", () => {
     expect(text).toContain(
       "- Web (techexcel/p1_vp12, current, front end, React): on the Local Server (its own project)",
     )
+  })
+
+  test("publishing names each destination, and remote coding off counts as local", () => {
+    const place = (coding: boolean, publish: ServerProduct["publish"]) =>
+      repoPlace(
+        { ...product, servers: [{ serverId: 1, remoteCoding: coding }], publish },
+        "techexcel/p1_admin_api_12",
+        [server],
+      )
+    const none = formatSharedServerPrompt(place(true, []), true, "/x")!
+    expect(none).toContain('No testing destination is set for "P1 Admin 12"')
+    expect(none).toContain('No production destination is set for "P1 Admin 12"')
+    const own = formatSharedServerPrompt(
+      place(true, [{ environment: "testing", side: "frontend", serverId: 1, folder: "C:\\site", url: "https://test" }]),
+      true,
+      "/x",
+    )!
+    expect(own).toContain(
+      'The front end of "P1 Admin 12" publishes for testing to the Shared Server JB Dev (the computer it\'s coded on), in the folder C:\\site. Check it at https://test afterward.',
+    )
+    expect(own).toContain("confirm with the user before every production publish")
+    const local = formatSharedServerPrompt(
+      place(false, [{ environment: "production", side: "backend", serverId: 1, folder: "C:\\site", url: "" }]),
+      true,
+      "/Users/dev/api",
+    )!
+    expect(local).toContain("Work on it here, on the Local Server, in /Users/dev/api.")
+    expect(local).toContain("The server end of \"P1 Admin 12\" publishes for production to the Shared Server JB Dev, in the folder C:\\site.")
+    expect(local).toContain("ssh -i ~/.ssh/sicode_ead_s1_ed25519 -p 50525")
+    const service = formatSharedServerPrompt(
+      place(false, [{ environment: "testing", side: "backend", serverId: 1, folder: "KloudJavaServer", url: "" }]),
+      true,
+      "/x",
+    )!
+    expect(service).toContain("publishes for testing to the Shared Server JB Dev, as the service KloudJavaServer.")
+    expect(place(false, [])?.server).toBeUndefined()
+    expect(formatSharedServerPrompt(place(false, []), true, "/x")).toBeUndefined()
   })
 
   test("choosing the Local Server keeps the work in the project's folder", () => {
@@ -77,7 +140,7 @@ describe("shared server instructions", () => {
 
   test("nothing is added for a product without Shared Servers", () => {
     const local = { ...product, repos: product.repos.map((repo) => ({ ...repo, serverId: undefined })) }
-    expect(formatSharedServerPrompt({ product: local, repo: local.repos[0], servers: [] }, true, "/x")).toBeUndefined()
+    expect(formatSharedServerPrompt({ product: local, repo: local.repos[0], servers: [], publish: [] }, true, "/x")).toBeUndefined()
     expect(formatSharedServerPrompt(undefined, true, "/x")).toBeUndefined()
   })
 
@@ -120,5 +183,81 @@ describe("full window bridge", () => {
     expect(handlePluginMessage({ type: "fullWindow", open: true }, hooks)).toBe(true)
     expect(handlePluginMessage({ type: "fullWindow", open: false }, hooks)).toBe(true)
     expect(calls).toEqual([true, false])
+  })
+})
+
+describe("shared server order and folder search", () => {
+  test("reordering sends the whole list, first to last", async () => {
+    const sent: { url: string; method?: string; body?: string }[] = []
+    const http = (async (url: string, init?: RequestInit) => {
+      sent.push({ url, method: init?.method, body: String(init?.body) })
+      return new Response(JSON.stringify({ ok: true }))
+    }) as unknown as typeof fetch
+    await reorderSharedServers("t", [3, 1, 2], 7, http)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].url.endsWith("/shared-ai-coding-servers/order")).toBe(true)
+    expect(sent[0].method).toBe("PUT")
+    expect(JSON.parse(sent[0].body!)).toEqual({ serverIds: [3, 1, 2] })
+  })
+
+  test("a folder search keeps matched folders and the checkouts it saw", async () => {
+    const http = (async () =>
+      new Response(
+        JSON.stringify({
+          matches: { "12": "C:\\TX\\KloudMeet", "13": "", "14": 5 },
+          checkouts: [{ folder: "C:\\TX\\KloudMeet", remote: "https://github.com/acme/KloudMeet.git", branch: "main" }, { bad: 1 }],
+          candidates: { "15": ["C:\\A\\Web", "D:\\B\\Web"], "16": "x" },
+          searched: ["C:\\TX", 4],
+        }),
+      )) as unknown as typeof fetch
+    const result = await findRepoFolders("t", 4, 9, 7, http)
+    expect(result.matches).toEqual({ "12": "C:\\TX\\KloudMeet" })
+    expect(result.checkouts).toEqual([{ folder: "C:\\TX\\KloudMeet", remote: "https://github.com/acme/KloudMeet.git", branch: "main" }])
+    expect(result.candidates).toEqual({ "15": ["C:\\A\\Web", "D:\\B\\Web"] })
+    expect(result.searched).toEqual(["C:\\TX"])
+  })
+
+  test("publish targets keep only well-formed sites, services and containers", async () => {
+    const http = (async () =>
+      new Response(
+        JSON.stringify([
+          { kind: "site", name: "KloudSync", folder: "C:\\inetpub\\KloudSync", urls: ["https://kloud.cn", 3], detail: "IIS" },
+          { kind: "service", name: "KloudJava", folder: "C:\\Kloud", urls: [], detail: "service running" },
+          { kind: "printer", name: "x" },
+          { kind: "site" },
+        ]),
+      )) as unknown as typeof fetch
+    const list = await loadPublishTargets("t", 4, 7, http)
+    expect(list).toEqual([
+      { kind: "site", name: "KloudSync", folder: "C:\\inetpub\\KloudSync", urls: ["https://kloud.cn"], detail: "IIS" },
+      { kind: "service", name: "KloudJava", folder: "C:\\Kloud", urls: [], detail: "service running" },
+    ])
+  })
+
+  test("a failed search says what the server said", async () => {
+    const http = (async () =>
+      new Response(JSON.stringify({ message: "The server refused the saved login and password." }), {
+        status: 422,
+      })) as unknown as typeof fetch
+    await expect(findRepoFolders("t", 4, 9, 7, http)).rejects.toThrow("refused the saved login")
+  })
+})
+
+describe("remote dev server AI help", () => {
+  test("keeps only form fields with valid values, never a password", async () => {
+    let body = ""
+    const http = (async (_url: string, init?: RequestInit) => {
+      body = String(init?.body)
+      return new Response(
+        JSON.stringify({
+          fields: { name: "Meet.Kloud.Cn", os: "beos", sshPort: 10022, useCoding: "yes", password: "x", publishRole: "testing" },
+          reply: "Filled in the name, port and publishing.",
+        }),
+      )
+    }) as unknown as typeof fetch
+    const result = await remoteDevServerAiHelp("t", "SiMeet testing server", { name: "Old" }, 7, http)
+    expect(JSON.parse(body)).toEqual({ prompt: "SiMeet testing server", form: { name: "Old" } })
+    expect(result.fields).toEqual({ name: "Meet.Kloud.Cn", sshPort: 10022, publishRole: "testing" })
+    expect(result.reply).toBe("Filled in the name, port and publishing.")
   })
 })

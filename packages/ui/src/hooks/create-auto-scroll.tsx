@@ -12,6 +12,7 @@ export interface AutoScrollOptions {
 
 export function createAutoScroll(options: AutoScrollOptions) {
   let settling = false
+  let input = 0
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let autoTimer: ReturnType<typeof setTimeout> | undefined
   let auto: { top: number; time: number } | undefined
@@ -111,6 +112,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const handleWheel = (e: WheelEvent) => {
+    mark()
     if (e.deltaY >= 0) return
     // If the user is scrolling within a nested scrollable region (tool output,
     // code block, etc), don't treat it as leaving the "follow bottom" mode.
@@ -120,6 +122,11 @@ export function createAutoScroll(options: AutoScrollOptions) {
     const nested = target?.closest("[data-scrollable]")
     if (el && nested && nested !== el) return
     stop()
+  }
+
+  const moved = () => Date.now() - input < 1000
+  const mark = () => {
+    input = Date.now()
   }
 
   const handleScroll = () => {
@@ -136,8 +143,9 @@ export function createAutoScroll(options: AutoScrollOptions) {
       return
     }
 
-    // Ignore scroll events triggered by our own scrollToBottom calls.
-    if (!store.userScrolled && isAuto(el)) {
+    // Ignore scroll events triggered by our own scrollToBottom calls, and by the page moving under the
+    // reader (a message measuring itself, the input growing): only the person's own input stops following.
+    if (!store.userScrolled && (isAuto(el) || !moved())) {
       scrollToBottom(false)
       return
     }
@@ -214,6 +222,10 @@ export function createAutoScroll(options: AutoScrollOptions) {
   })
 
   createEventListener(() => store.scrollRef, "wheel", handleWheel, { passive: true })
+  // A touch, a key or dragging the scrollbar can also scroll; they count as the person moving the page.
+  createEventListener(() => store.scrollRef, "pointerdown", mark, { passive: true })
+  createEventListener(() => store.scrollRef, "touchmove", mark, { passive: true })
+  createEventListener(window, "keydown", mark)
 
   onCleanup(() => {
     if (settleTimer) clearTimeout(settleTimer)

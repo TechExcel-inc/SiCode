@@ -15,12 +15,24 @@ import { clearKloudToken } from "@/ead/kloud-sign-in"
 import { HELP_URL } from "./about-popover"
 import { status } from "./status-popover"
 import { useServer } from "@/context/server"
+import { useParams } from "@solidjs/router"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useModels } from "@/context/models"
+import { decode64 } from "@/utils/base64"
+import { remoteDevStep, type RemoteDevStep } from "@/ead/remote-dev-ai"
 
 /**
  * The one account menu, at the far right of the top bar in every view: the EAD Pilot account, the P1 sign-in, the
  * account's Shared AI Coding Servers (a popup to enable them with the user's own SSH key) and whether P1 is linked to Kloud, then the servers and tools, Settings, Help and the version. A dot on the avatar means an account needs
  * signing in again.
  */
+/** AI Help gives up after this long, so a search that wanders never leaves the form waiting. */
+const AI_HELP_LIMIT_MS = 120_000
+/** Then it gets this long to answer from what it found, without searching more. */
+const AI_HELP_WRAP_MS = 45_000
+/** A quick choice from lists AI Help already has. */
+const AI_HELP_QUICK_MS = 120_000
+
 export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onSettings: () => void }) {
   const ead = useEad()
   const p1 = useP1()
@@ -28,6 +40,123 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
   const platform = usePlatform()
   const server = useServer()
   const dialog = useDialog()
+  const params = useParams()
+  const globalSDK = useGlobalSDK()
+  const models = useModels()
+
+  // AI Help in Remote Dev Servers: a hidden, read-only session in the open project answers with the model picked
+  // last, so it can read deploy scripts and docs. Without an open project there is none, and Pilot answers instead.
+  const project = () => decode64(params.dir) ?? ""
+  // quick: the answer is chosen from what the prompt already holds, with no tools, so it comes in seconds.
+  const askProject = async (
+    prompt: string,
+    signal?: AbortSignal,
+    onStep?: (step: RemoteDevStep) => void,
+    options?: { quick?: boolean },
+  ) => {
+    const client = globalSDK.createClient({ directory: project(), throwOnError: true })
+    const created = await client.session.create({ title: language.t("shared.ai.session") })
+    const id = created.data!.id
+    // A one-session-only model is refused in a regular session; without a recent pick, the first model shown.
+    const recent = models.recent.list().find((item) => !models.find(item)?.oneSession)
+    const shown = models
+      .list()
+      .find((item) => !item.oneSession && models.visible({ providerID: item.provider.id, modelID: item.id }))
+    const model = recent ?? (shown ? { providerID: shown.provider.id, modelID: shown.id } : undefined)
+    const chosen = model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}
+    const textOf = (parts: { type: string; text?: string }[] | undefined) =>
+      (parts ?? []).flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n")
+
+    // Stopped by the admin: the session is stopped so it uses no more of the model.
+    const abort = () => void client.session.abort({ sessionID: id }).catch(() => undefined)
+    signal?.addEventListener("abort", abort)
+    // What the agent is doing, read every second and a half from its messages so far, for the progress line.
+    let seen = ""
+    const watcher = onStep
+      ? setInterval(() => {
+          void client.session
+            .messages({ sessionID: id })
+            .then((res) => {
+              const parts = (res.data ?? []).flatMap((message) => message.parts)
+              const last = parts.filter((part) => part.type === "tool").at(-1)
+              const step =
+                last && last.type === "tool"
+                  ? remoteDevStep(last.tool, last.state.input as Record<string, unknown>)
+                  : remoteDevStep(undefined, undefined)
+              const key = `${step.key}:${step.value}`
+              if (key !== seen && !finishing) {
+                seen = key
+                onStep(step)
+              }
+            })
+            .catch(() => undefined)
+        }, 1_500)
+      : undefined
+    let finishing = false
+    // Runs one prompt, stopping it after `limit`; says whether it ran out of time.
+    const within = async (limit: number, body: Parameters<typeof client.session.prompt>[0]) => {
+      let late = false
+      const timer = setTimeout(() => {
+        late = true
+        abort()
+      }, limit)
+      try {
+        const res = await client.session.prompt(body).catch((err) => {
+          if (late || signal?.aborted) return undefined
+          throw err
+        })
+        return { late, text: textOf(res?.data?.parts as { type: string; text?: string }[] | undefined) }
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+    try {
+      if (options?.quick) {
+        const quick = await within(AI_HELP_QUICK_MS, {
+          sessionID: id,
+          agent: "lookup",
+          ...chosen,
+          tools: { "*": false },
+          parts: [{ type: "text", text: prompt }],
+        })
+        if (signal?.aborted) throw new Error(language.t("shared.ai.stopped"))
+        if (quick.late || !quick.text.trim()) throw new Error(language.t("shared.ai.timeout"))
+        return quick.text
+      }
+      const first = await within(AI_HELP_LIMIT_MS, {
+        sessionID: id,
+        agent: "lookup",
+        ...chosen,
+        parts: [{ type: "text", text: prompt }],
+      })
+      if (signal?.aborted) throw new Error(language.t("shared.ai.stopped"))
+      if (!first.late) return first.text
+      // Out of time: what it read so far is kept, and it answers from that with no more searching.
+      finishing = true
+      onStep?.({ key: "wrap", value: "" })
+      const last = await within(AI_HELP_WRAP_MS, {
+        sessionID: id,
+        agent: "lookup",
+        ...chosen,
+        tools: { "*": false },
+        parts: [
+          {
+            type: "text",
+            text:
+              "Time is up. Do not search or read anything more. Reply now with only the JSON object described above, " +
+              "from what you have found so far; leave out what you did not find and say so in reply.",
+          },
+        ],
+      })
+      if (signal?.aborted) throw new Error(language.t("shared.ai.stopped"))
+      if (last.late || !last.text.trim()) throw new Error(language.t("shared.ai.timeout"))
+      return last.text
+    } finally {
+      if (watcher) clearInterval(watcher)
+      signal?.removeEventListener("abort", abort)
+      void client.session.delete({ sessionID: id }).catch(() => undefined)
+    }
+  }
 
   // Read in the background with a plain signal, never a resource: a resource read before its first answer holds the
   // window on "Loading" until EAD Pilot replies. Tried again a few times, since right after the app starts EAD Pilot
@@ -162,6 +291,7 @@ export function AccountMenu(props: { onSignIn: () => void; onP1: () => void; onS
                     tenantId={profile()?.tenantId}
                     userId={profile()?.userId}
                     onChanged={() => ead.refreshSharedServer()}
+                    ask={project() ? askProject : undefined}
                   />
                 ))}
             >

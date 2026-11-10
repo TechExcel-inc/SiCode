@@ -21,6 +21,8 @@ export interface DialogProps extends ParentProps {
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
   transition?: boolean
+  /** Only the close button closes it, not Escape or a click outside. */
+  sticky?: boolean
 }
 
 const grips = [-1, 0, 1].flatMap((x) => [-1, 0, 1].filter((y) => x || y).map((y) => [x, y] as const))
@@ -53,6 +55,7 @@ export function Dialog(props: DialogProps) {
       data-size={props.size || "normal"}
       data-transition={props.transition ? true : undefined}
       data-resizable={props.resize ? true : undefined}
+      data-sticky={props.sticky ? true : undefined}
     >
       <div
         data-slot="dialog-container"
@@ -69,6 +72,12 @@ export function Dialog(props: DialogProps) {
           classList={{
             ...(props.classList ?? {}),
             [props.class ?? ""]: !!props.class,
+          }}
+          onInteractOutside={(e) => {
+            if (props.sticky) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (props.sticky) e.preventDefault()
           }}
           onOpenAutoFocus={(e) => {
             const target = e.currentTarget as HTMLElement | null

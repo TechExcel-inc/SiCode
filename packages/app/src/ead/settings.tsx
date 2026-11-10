@@ -12,6 +12,7 @@ import {
   loadSharedServers,
   renew,
   repoKey,
+  repoPlace,
   type RepoPlace,
   type ServerProduct,
   type SharedServer,
@@ -364,12 +365,10 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       const hits = (hub.products ?? []).filter((item) => item.repos.some((row) => repoKey(row.repository) === key))
       const product = prefer.flatMap((id) => hits.filter((item) => item.productId === id))[0] ?? hits[0]
       if (!product) return
-      const found =
-        product.repos.find((row) => repoKey(row.repository) === key && row.section === "CURRENT") ??
-        product.repos.find((row) => repoKey(row.repository) === key)!
-      const server = hub.servers.find((item) => item.serverId === found.serverId)
-      if (server) enable(server)
-      return { product, repo: found, server, servers: hub.servers }
+      const found = repoPlace(product, repo, hub.servers)
+      if (found?.server) enable(found.server)
+      found?.publish.forEach((item) => enable(item.server))
+      return found
     }
     // The Local Server or Shared Server choice: per session, and the last one per repo for new sessions. On the
     // Shared Server unless chosen otherwise.

@@ -62,11 +62,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const models = useModels()
 
     const id = createMemo(() => params.id || undefined)
-    // A one-time session runs only on its own model; the server enforces it, the composer just shows it.
-    const locked = createMemo(() => {
+    const once = createMemo(() => {
       const session = id()
-      return session ? sync.session.get(session)?.oneTime?.model : undefined
+      return session ? sync.session.get(session)?.oneTime : undefined
     })
+    // A one-time model wins over every other choice; the server enforces it, the composer just shows it.
+    const locked = createMemo(() => once()?.model)
     const list = createMemo(() => sync.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
@@ -301,10 +302,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         if (!entry) return
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
-      /** True in a one-time session, where the model can't be changed. */
-      locked: () => !!locked(),
+      /** True in an older one-time session of its own, where the model can't be changed. */
+      locked: () => !!locked() && !once()?.inPlace,
+      /** True while this session runs on a one-time model; picking a regular model ends that. */
+      once: () => !!once()?.inPlace,
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        if (locked()) return
+        if (locked() && !once()?.inPlace) return
+        const session = id()
+        if (session && once()?.inPlace) void sdk.client.session.oneTime.finish({ sessionID: session })
         batch(() => {
           setStore("last", {
             type: "model",

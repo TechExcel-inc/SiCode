@@ -965,6 +965,7 @@ export type SessionOneTime = {
     variant?: string
   }
   originSessionID?: string
+  inPlace?: boolean
   status: "open" | "closed"
   requests: number
   limit?: number
@@ -3468,6 +3469,80 @@ export type SessionOneTimeOpenResponses = {
 }
 
 export type SessionOneTimeOpenResponse = SessionOneTimeOpenResponses[keyof SessionOneTimeOpenResponses]
+
+export type SessionOneTimeStartData = {
+  body?: {
+    model: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/one-time/start"
+}
+
+export type SessionOneTimeStartErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionOneTimeStartError = SessionOneTimeStartErrors[keyof SessionOneTimeStartErrors]
+
+export type SessionOneTimeStartResponses = {
+  /**
+   * The session
+   */
+  200: Session
+}
+
+export type SessionOneTimeStartResponse = SessionOneTimeStartResponses[keyof SessionOneTimeStartResponses]
+
+export type SessionOneTimeFinishData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/one-time/finish"
+}
+
+export type SessionOneTimeFinishErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionOneTimeFinishError = SessionOneTimeFinishErrors[keyof SessionOneTimeFinishErrors]
+
+export type SessionOneTimeFinishResponses = {
+  /**
+   * The session
+   */
+  200: Session
+}
+
+export type SessionOneTimeFinishResponse = SessionOneTimeFinishResponses[keyof SessionOneTimeFinishResponses]
 
 export type SessionOneTimeDoneData = {
   body?: {

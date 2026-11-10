@@ -133,6 +133,8 @@ export namespace Session {
         variant: z.string().optional(),
       }),
       originSessionID: SessionID.zod.optional(),
+      /** Running inside the session it was started from, rather than in a session of its own. */
+      inPlace: z.boolean().optional(),
       status: z.enum(["open", "closed"]),
       requests: z.number(),
       limit: z.number().optional(),
@@ -359,7 +361,7 @@ export namespace Session {
     readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
     readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
     readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
-    readonly setOneTime: (input: { sessionID: SessionID; oneTime: OneTime }) => Effect.Effect<void>
+    readonly setOneTime: (input: { sessionID: SessionID; oneTime: OneTime | null }) => Effect.Effect<void>
     /** One-time sessions opened from this session. */
     readonly byOrigin: (originID: SessionID) => Effect.Effect<Info[]>
     readonly setRevert: (input: {
@@ -516,7 +518,13 @@ export namespace Session {
             .from(SessionTable)
             .leftJoin(MessageTable, eq(MessageTable.session_id, SessionTable.id))
             .where(
-              and(eq(SessionTable.project_id, project), isNull(MessageTable.id), lt(SessionTable.time_updated, before)),
+              // A one-time session waits for its first request, with the moved draft in the input; Done removes it if unused.
+              and(
+                eq(SessionTable.project_id, project),
+                isNull(MessageTable.id),
+                isNull(SessionTable.one_time),
+                lt(SessionTable.time_updated, before),
+              ),
             )
             .all(),
         )
@@ -649,7 +657,7 @@ export namespace Session {
         yield* patch(input.sessionID, { permission: input.permission, time: { updated: Date.now() } })
       })
 
-      const setOneTime = Effect.fn("Session.setOneTime")(function* (input: { sessionID: SessionID; oneTime: OneTime }) {
+      const setOneTime = Effect.fn("Session.setOneTime")(function* (input: { sessionID: SessionID; oneTime: OneTime | null }) {
         yield* patch(input.sessionID, { oneTime: input.oneTime, time: { updated: Date.now() } })
       })
 

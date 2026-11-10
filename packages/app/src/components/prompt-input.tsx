@@ -1539,15 +1539,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     <Show
                       when={!local.model.locked()}
                       fallback={
-                        <Tooltip placement="top" value={language.t("oneTime.open.body")}>
-                          <div
-                            data-action="prompt-model-locked"
-                            class="h-7 flex items-center gap-1.5 px-2 min-w-0 max-w-[320px] text-13-regular text-text-base"
-                          >
-                            <span class="truncate">{local.model.current()?.name}</span>
-                            <OnceTag />
-                          </div>
-                        </Tooltip>
+                        <div
+                          data-action="prompt-model-locked"
+                          class="h-7 flex items-center gap-1.5 px-2 min-w-0 max-w-[320px] text-13-regular text-text-base"
+                        >
+                          <span class="truncate">{local.model.current()?.name}</span>
+                          <OnceTag />
+                        </div>
                       }
                     >
                       <Show
@@ -1616,6 +1614,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             <span class="truncate">
                               {local.model.current()?.name ?? language.t("dialog.model.select.title")}
                             </span>
+                            <Show when={local.model.once()}>
+                              <OnceTag />
+                            </Show>
                             <Icon name="chevron-down" size="small" class="shrink-0" />
                           </ModelSelectorPopover>
                         </TooltipKeybind>

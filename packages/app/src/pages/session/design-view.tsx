@@ -1,5 +1,6 @@
 import { createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
+import { KeepView, useViewShown } from "./keep-view"
 import { useNavigate } from "@solidjs/router"
 import DOMPurify from "dompurify"
 import type Vditor from "vditor"
@@ -177,11 +178,10 @@ export function DesignChatEmpty() {
 }
 
 export function DesignView() {
-  const layout = useLayout()
   return (
-    <Show when={layout.nav.current() === "design"}>
+    <KeepView nav="design">
       <Design />
-    </Show>
+    </KeepView>
   )
 }
 
@@ -466,6 +466,18 @@ function Design() {
     editor?.focus()
   }
 
+  // Leaving the tab saves what was typed, as closing it used to.
+  const shown = useViewShown()
+  createEffect(
+    on(
+      shown,
+      (now) => {
+        if (!now) void save()
+      },
+      { defer: true },
+    ),
+  )
+
   createEffect(
     on(
       () => design.pending,
@@ -612,7 +624,7 @@ function Design() {
       void check()
     })
     const poll = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return
+      if (document.visibilityState !== "visible" || !shown()) return
       void list()
       if (editable()) void check()
     }, POLL)

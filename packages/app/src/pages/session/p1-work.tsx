@@ -33,6 +33,7 @@ import { useP1 } from "@/p1/settings"
 import { kloudP1Servers, type P1Server } from "@/p1/servers"
 import { kloudToken } from "@/ead/kloud-sign-in"
 import { eadHttp } from "@/ead/http"
+import { useViewShown } from "./keep-view"
 import { P1Item } from "./p1-item"
 import { P1Folder } from "./p1-folder"
 import { P1Columns } from "./p1-columns"
@@ -114,8 +115,12 @@ const actions = [
 ] as const
 
 /** P1 work: requirements by folder, as a list or a board. `ask` puts a question to the AI. */
+// Coming back to P1 Work after this long reads the list again, quietly, behind what's already showing.
+const STALE = 5 * 60_000
+
 export function P1Work(props: { ask?: (prompt: string, system: string) => Promise<string> }) {
   const p1 = useP1()
+  const showing = useViewShown()
   let hover: ReturnType<typeof setTimeout> | undefined
   let pane: HTMLElement | undefined
   // The docked editor's width: what you dragged it to, from 300px up to leaving the list 200px.
@@ -521,10 +526,26 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
       .catch(() => undefined)
   }
 
+  // P1 takes a story's or task's change without checking who changed it last, so this asks first: whether it still has
+  // the value this view showed. When someone changed it, the view takes theirs and nothing is saved. When P1 can't say,
+  // the save goes ahead.
+  const unchanged = async (spec: number, story: Story, task: Task | undefined, read: (item: Story & Task) => unknown) => {
+    const was = read((task ?? story) as Story & Task)
+    const list = await roster(p1.server(), p1.token(), state.root, spec, language.locale()).catch(() => undefined)
+    const found = list?.find((item) => item.id === story.id)
+    const now = task ? found?.tasks.find((item) => item.id === task.id) : found
+    if (!list || !now || read(now as Story & Task) === was) return true
+    setState("tales", spec, list)
+    showToast({ title: `#${spec}`, description: language.t("p1.changedElsewhere") })
+    return false
+  }
+
   // A story's new owner from its board chip: shown at once, and the spec's stories read again when P1 refuses.
   const assign = async (spec: number, story: Story, owner: number) => {
     const person = state.crew.find((item) => item.id === owner)?.name ?? ""
+    const fresh = unchanged(spec, story, undefined, (item) => item.owner)
     setState("tales", spec, (list) => list.map((item) => (item.id === story.id ? { ...item, owner, person } : item)))
+    if (!(await fresh)) return
     await retitle(p1.server(), p1.token(), story, { CurrentOwnerId: owner }, language.locale()).catch(
       (err: unknown) => {
         showToast({
@@ -543,7 +564,9 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
   const aim = async (spec: number, story: Story, hours: number) => {
     const next = Math.round(Math.max(0, hours || 0) * 10) / 10
     if (!Number.isFinite(hours) || next === story.target) return
+    const fresh = unchanged(spec, story, undefined, (item) => item.target)
     setState("tales", spec, (list) => list.map((item) => (item.id === story.id ? { ...item, target: next } : item)))
+    if (!(await fresh)) return
     await retitle(p1.server(), p1.token(), story, target(next), language.locale()).catch((err: unknown) => {
       showToast({ variant: "error", title: `#${spec}`, description: err instanceof Error ? err.message : String(err) })
       void roster(p1.server(), p1.token(), state.root, spec, language.locale())
@@ -556,6 +579,7 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
   const rename = async (spec: number, story: Story, task: Task | undefined, name: string) => {
     const next = name.trim()
     if (!next || next === (task ?? story).name) return
+    const fresh = unchanged(spec, story, task, (item) => item.name)
     setState("tales", spec, (list) =>
       list.map((item) =>
         item.id !== story.id
@@ -565,6 +589,7 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
             : { ...item, name: next },
       ),
     )
+    if (!(await fresh)) return
     await (
       task
         ? change(p1.server(), p1.token(), story.project, task.id, fields.name, next, language.locale())
@@ -648,6 +673,7 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
   // A task's new owner from the board, the same way.
   const delegate = async (spec: number, story: Story, task: Task, owner: number) => {
     const person = state.crew.find((item) => item.id === owner)?.name ?? ""
+    const fresh = unchanged(spec, story, task, (item) => item.owner)
     setState("tales", spec, (list) =>
       list.map((item) =>
         item.id === story.id
@@ -655,6 +681,7 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
           : item,
       ),
     )
+    if (!(await fresh)) return
     await change(p1.server(), p1.token(), story.project, task.id, fields.owner, owner, language.locale()).catch(
       (err: unknown) => {
         showToast({
@@ -1333,14 +1360,15 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
     setState("folders", id, "count", list.length)
   }
 
-  const fill = async (root: number, folder: number, query: string, mark = stamp, page = 1) => {
+  // `quiet` keeps what's showing until the new list is here.
+  const fill = async (root: number, folder: number, query: string, mark = stamp, page = 1, quiet = false) => {
     const host = p1.server()
     const token = p1.token()
     if (!host || !token) return
     const mine = ++wave
     // A feature narrows one folder's list; another folder starts from all of it.
     if (folder !== state.folder) setState("feature", undefined)
-    setState({ loading: true, folder, query, root, page })
+    setState({ loading: !quiet, folder, query, root, page })
     // A feature with no specs lists none, as there is nothing to ask P1 for.
     if (state.feature && !state.feature.ids.length) {
       setState({ rows: [], total: 0, groups: [], loading: false, err: "", checked: {}, tales: {} })
@@ -1399,13 +1427,25 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
       groups: list.groups,
       loading: false,
       err: "",
-      checked: {},
-      tales: {},
+      ...(quiet ? {} : { checked: {}, tales: {} }),
       warn: { links, tests },
     })
+    filled = Date.now()
     // Get the requirement dialogs ready for this project and folder while the list is read.
     warm(host, token, root, folder, list.rows[0]?.id ?? 0, p1.user(), language.locale())
   }
+
+  let filled = Date.now()
+  createEffect(
+    on(
+      showing,
+      (now) => {
+        if (!now || !state.root || !state.folder || state.loading || Date.now() - filled < STALE) return
+        void fill(state.root, state.folder, state.query.trim(), stamp, state.page, true)
+      },
+      { defer: true },
+    ),
+  )
 
   const search = (value: string) => {
     setState("query", value)
@@ -1470,6 +1510,7 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
   )
 
   const close = (event: KeyboardEvent) => {
+    if (!showing()) return
     if (event.key === "Escape") setState({ picker: false })
     // ⌘K searches requirements here, as it searches each view's own things.
     if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && finder) {
@@ -1953,6 +1994,7 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
         }
       >
         {/* The top bar's middle: the P1 project and the requirement search, as every view puts what it works in. */}
+        <Show when={showing()}>
         <Portal mount={bar("center")}>
           <div data-component="p1-bar" data-no-drag class="flex items-center gap-1.5 min-w-0">
             <div class="relative shrink-0">
@@ -2062,9 +2104,10 @@ export function P1Work(props: { ask?: (prompt: string, system: string) => Promis
             </Tooltip>
           </div>
         </Portal>
+        </Show>
         {/* Team performance for the selected roadmap month, in the rail second from the bottom: the team's score as a
         gold bar, its high and low on hover, opening the workload and performance report. */}
-        <Show when={work() && document.getElementById("rail-view")}>
+        <Show when={showing() && work() && document.getElementById("rail-view")}>
           {(slot) => (
             <Portal mount={slot()}>
               <Tooltip

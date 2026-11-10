@@ -189,6 +189,40 @@ export namespace Agent {
               native: true,
               hidden: true,
             },
+            // Used by the app to answer one question from the project's files, such as AI Help filling the Remote Dev
+            // Server form. It runs in a hidden session nobody watches, so nothing may ask: it reads, searches and
+            // lists the project and related projects, never .env files, and everything else is refused. Its limits come
+            // after the user's config so they cannot be widened.
+            lookup: {
+              name: "lookup",
+              description: "Reads the project to answer one question for the app. Read-only; never asks.",
+              options: {},
+              // Nobody watches it: after this many steps it must answer with what it found instead of searching on.
+              steps: 10,
+              permission: Permission.merge(
+                defaults,
+                user,
+                Permission.fromConfig({
+                  "*": "deny",
+                  read: {
+                    "*": "allow",
+                    "*.env": "deny",
+                    "*.env.*": "deny",
+                    "*.env.example": "allow",
+                  },
+                  grep: "allow",
+                  glob: "allow",
+                  list: "allow",
+                  external_directory: {
+                    "*": "deny",
+                    ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
+                  },
+                }),
+              ),
+              mode: "primary",
+              native: true,
+              hidden: true,
+            },
             general: {
               name: "general",
               description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,

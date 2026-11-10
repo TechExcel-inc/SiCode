@@ -983,7 +983,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       })
 
       const lastModel = Effect.fnUntraced(function* (sessionID: SessionID) {
-        const match = yield* sessions.findMessage(sessionID, (m) => m.info.role === "user" && !!m.info.model)
+        // Skips requests a one-time model answered: those models only run under their lock.
+        const all = yield* provider.list()
+        const match = yield* sessions.findMessage(
+          sessionID,
+          (m) =>
+            m.info.role === "user" &&
+            !!m.info.model &&
+            !all[m.info.model.providerID]?.models[m.info.model.modelID]?.oneSession,
+        )
         if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
         return yield* provider.defaultModel()
       })
@@ -1023,10 +1031,18 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             throw err
           }
         }
-        if (locked && !input.noReply && session.oneTime)
+        // A background job's notice runs on the same model but isn't a request the person made.
+        const notice = input.parts.every((part) => part.type === "text" && part.synthetic)
+        if (locked && !input.noReply && !notice && session.oneTime)
           yield* sessions.setOneTime({
             sessionID: session.id,
-            oneTime: { ...session.oneTime, requests: session.oneTime.requests + 1 },
+            // The last allowed request ends it: this turn keeps its model, the next one is back on the regular model.
+            oneTime:
+              session.oneTime.inPlace &&
+              session.oneTime.limit !== undefined &&
+              session.oneTime.requests + 1 >= session.oneTime.limit
+                ? null
+                : { ...session.oneTime, requests: session.oneTime.requests + 1 },
           })
 
         const info: MessageV2.User = {

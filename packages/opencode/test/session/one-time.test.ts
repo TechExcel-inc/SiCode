@@ -257,6 +257,103 @@ describe("one-time model lock", () => {
   })
 })
 
+describe("one-time model in the session itself", () => {
+  const start = (id: Session.Info["id"]) => AppRuntime.runPromise(SessionOneTime.start({ sessionID: id, model: premium }))
+  const finish = (id: Session.Info["id"]) => AppRuntime.runPromise(SessionOneTime.finish(id))
+  const send = (id: Session.Info["id"]) =>
+    SessionPrompt.prompt({ sessionID: id, agent: "build", model: regular, parts: [{ type: "text", text: "go" }] })
+
+  test("it stays in this session, runs on the one-time model, and Done returns to the regular model", async () => {
+    const mock = chat()
+    try {
+      await within(async () => {
+        const session = await Session.create({ title: "Work" })
+        const started = await start(session.id)
+        expect(started.id).toBe(session.id)
+        expect(started.oneTime).toMatchObject({ inPlace: true, status: "open", requests: 0, limit: 5 })
+        expect(started.title).toBe("Work")
+
+        const first = await send(session.id)
+        if (first.info.role !== "assistant") throw new Error("expected assistant message")
+        expect(first.info.modelID).toBe(premium.modelID)
+        expect((await Session.get(session.id)).oneTime?.requests).toBe(1)
+
+        await finish(session.id)
+        expect((await Session.get(session.id)).oneTime).toBeUndefined()
+        const second = await send(session.id)
+        if (second.info.role !== "assistant") throw new Error("expected assistant message")
+        expect(second.info.modelID).toBe(regular.modelID)
+      }, mock.server.url.origin)
+    } finally {
+      mock.server.stop(true)
+    }
+  })
+
+  test("the last allowed request still runs on it, then the session is back on the regular model", async () => {
+    const mock = chat()
+    try {
+      await within(async () => {
+        const session = await Session.create({})
+        await start(session.id)
+        for (const _ of [1, 2, 3, 4]) await send(session.id)
+        const last = await send(session.id)
+        if (last.info.role !== "assistant") throw new Error("expected assistant message")
+        expect(last.info.modelID).toBe(premium.modelID)
+        expect((await Session.get(session.id)).oneTime).toBeUndefined()
+        const next = await send(session.id)
+        if (next.info.role !== "assistant") throw new Error("expected assistant message")
+        expect(next.info.modelID).toBe(regular.modelID)
+      }, mock.server.url.origin)
+    } finally {
+      mock.server.stop(true)
+    }
+  })
+
+  test("a message with no model after it ends falls back past the one-time requests", async () => {
+    const mock = chat()
+    try {
+      await within(async () => {
+        const session = await Session.create({})
+        await send(session.id)
+        await start(session.id)
+        await send(session.id)
+        await finish(session.id)
+        const later = await SessionPrompt.prompt({ sessionID: session.id, agent: "build", parts: [{ type: "text", text: "go" }] })
+        if (later.info.role !== "assistant") throw new Error("expected assistant message")
+        expect(later.info.modelID).toBe(regular.modelID)
+      }, mock.server.url.origin)
+    } finally {
+      mock.server.stop(true)
+    }
+  })
+
+  test("a background job's notice doesn't use up a request", async () => {
+    const mock = chat()
+    try {
+      await within(async () => {
+        const session = await Session.create({})
+        await start(session.id)
+        await SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          parts: [{ type: "text", text: "Build finished", synthetic: true }],
+        })
+        expect((await Session.get(session.id)).oneTime?.requests).toBe(0)
+        expect(mock.seen).toContain("premium")
+      }, mock.server.url.origin)
+    } finally {
+      mock.server.stop(true)
+    }
+  })
+
+  test("an older one-time session can't start another", async () => {
+    await within(async () => {
+      const session = await open({ model: premium })
+      await expect(start(session.id)).rejects.toThrow()
+    })
+  })
+})
+
 describe("one-session-only models", () => {
   test("open takes the request limit from the model setting", async () => {
     await within(async () => {
@@ -420,6 +517,14 @@ describe("empty sessions are not kept", () => {
       expect(result.removed).toBe(true)
       await expect(Session.get(session.id)).rejects.toThrow()
       expect((await Session.get(result.targetSessionID)).id).toBe(result.targetSessionID)
+    })
+  })
+
+  test("sweep keeps an empty one-time session, whose input holds the moved draft", async () => {
+    await within(async () => {
+      const once = await open({ model: premium })
+      expect(await Session.sweep(Date.now() + 1)).toBe(0)
+      expect((await Session.get(once.id)).id).toBe(once.id)
     })
   })
 

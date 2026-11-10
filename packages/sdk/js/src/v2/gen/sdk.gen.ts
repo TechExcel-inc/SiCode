@@ -151,10 +151,14 @@ import type {
   SessionMessagesResponses,
   SessionOneTimeDoneErrors,
   SessionOneTimeDoneResponses,
+  SessionOneTimeFinishErrors,
+  SessionOneTimeFinishResponses,
   SessionOneTimeOpenErrors,
   SessionOneTimeOpenResponses,
   SessionOneTimeReopenErrors,
   SessionOneTimeReopenResponses,
+  SessionOneTimeStartErrors,
+  SessionOneTimeStartResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
@@ -1739,6 +1743,87 @@ export class OneTime extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Start a one-time model
+   *
+   * Run this session on a one-session model for a few requests, keeping its conversation.
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      model?: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "model" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionOneTimeStartResponses, SessionOneTimeStartErrors, ThrowOnError>(
+      {
+        url: "/session/{sessionID}/one-time/start",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Finish a one-time model
+   *
+   * Return this session to its regular model.
+   */
+  public finish<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionOneTimeFinishResponses,
+      SessionOneTimeFinishErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/one-time/finish",
+      ...options,
+      ...params,
     })
   }
 

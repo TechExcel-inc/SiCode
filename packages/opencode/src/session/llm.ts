@@ -54,7 +54,7 @@ export namespace LLM {
       const id = own ? sessionID : parentID && find(parentID) ? parentID : undefined
       if (!id) return {}
       const one = own ?? find(id)
-      const plan = one?.originSessionID ? originPlan(one.originSessionID) : undefined
+      const plan = one?.inPlace ? originPlan(id, one.model.modelID) : one?.originSessionID ? originPlan(one.originSessionID) : undefined
       return {
         "x-sicode-one-time": id,
         ...(one?.originSessionID ? { "x-sicode-one-time-origin": one.originSessionID } : {}),
@@ -67,7 +67,7 @@ export namespace LLM {
   }
 
   /** The EAD plan the parent session last used, such as "EAD 3.2"; undefined when it used no EAD plan. */
-  function originPlan(sessionID: string) {
+  function originPlan(sessionID: string, skip?: string) {
     const rows = Database.use((db) =>
       db
         .select({ data: MessageTable.data })
@@ -79,7 +79,7 @@ export namespace LLM {
     )
     for (const row of rows) {
       const info = row.data as { role?: string; model?: { providerID?: string; modelID?: string } }
-      if (info.role !== "user" || !info.model) continue
+      if (info.role !== "user" || !info.model || info.model.modelID === skip) continue
       if (info.model.providerID !== "ead") return
       // Header values must be ASCII; plan names are, but stay safe.
       return /^[\x20-\x7e]+$/.test(info.model.modelID ?? "") ? info.model.modelID : undefined

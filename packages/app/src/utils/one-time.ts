@@ -11,23 +11,3 @@ export function errorText(err: unknown) {
   }
   return String(err ?? "")
 }
-
-type OnceSession = {
-  id: string
-  oneTime?: { originSessionID?: string; status: string; model: { providerID: string; modelID: string } }
-}
-
-/** The open one-time session a parent session already has on this model, if any. */
-export function findOpenOnce<T extends OnceSession>(
-  sessions: T[],
-  origin: string,
-  model: { providerID: string; modelID: string },
-) {
-  return sessions.find(
-    (s) =>
-      s.oneTime?.status === "open" &&
-      s.oneTime.originSessionID === origin &&
-      s.oneTime.model.providerID === model.providerID &&
-      s.oneTime.model.modelID === model.modelID,
-  )
-}

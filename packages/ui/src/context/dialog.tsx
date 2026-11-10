@@ -59,11 +59,13 @@ function init() {
     }, 100)
   }
 
+  const sticky = () => !!document.querySelector('[data-component="dialog"][data-sticky]')
+
   createEffect(() => {
     if (!active()) return
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
+      if (event.key !== "Escape" || sticky()) return
       // A menu or list open inside the dialog closes itself first; the next Escape closes the dialog.
       if (event.target instanceof Element && event.target.closest('[role="menu"],[role="listbox"]')) return
       close()
@@ -107,7 +109,7 @@ function init() {
             }}
           >
             <Kobalte.Portal>
-              <Kobalte.Overlay data-component="dialog-overlay" onClick={close} />
+              <Kobalte.Overlay data-component="dialog-overlay" onClick={() => !sticky() && close()} />
               {element()}
             </Kobalte.Portal>
           </Kobalte>

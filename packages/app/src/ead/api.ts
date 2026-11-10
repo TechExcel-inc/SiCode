@@ -2,6 +2,7 @@ import { STACK_LABELS } from "./stack-types"
 import { eadHttp } from "./http"
 import { applyTopLevel, VIRTUAL_MOVED, type Raw } from "./top-level"
 import { eadApi } from "./urls"
+import { remoteDevFields } from "./remote-dev-ai"
 
 export type Product = {
   productId: number
@@ -1146,6 +1147,8 @@ type OneTimeRow = {
   description?: string
   priceHint?: string
   maxRequests?: number | null
+  contextTokens?: number
+  maxOutputTokens?: number
 }
 
 /** Pilot's One Time Only Models as plans that run only in a one-time session; the gateway routes on the name. */
@@ -1167,6 +1170,8 @@ function oneTimeModels(rows: OneTimeRow[] | undefined): Plan[] {
         suffix: "",
         model: pretty(String(row.modelId || "")),
         slots: { easy: "", reasoning: "", advanced: "", vision: "" },
+        context: row.contextTokens,
+        output: row.maxOutputTokens,
         ...(one ? { oneSession: one } : {}),
       },
     ]
@@ -1399,13 +1404,47 @@ export type SharedServer = {
   name: string
   /** Short name for tags, e.g. "JB Dev". */
   shortName: string
-  os: "windows" | "mac"
+  os: ServerOs
   sshHost: string
   sshPort: number
   sshLogin: string
+  /** How EAD Pilot signs in: with the saved password, or with a saved private key file (such as a cloud server's .pem). */
+  authMethod: ServerAuth
+  /** A key file is saved (never sent back). */
+  hasKey: boolean
   rootFolder: string
+  note: string
+  /** Products are coded on it. */
+  useCoding: boolean
+  /** It's where products publish, as testing or production. */
+  publishRole: "none" | PublishPlace
+  sshEnabled: boolean
+  /** People can see its screen with Remote Desktop (Windows) or Screen Sharing (Mac), on this port. */
+  remoteControl: boolean
+  remotePort: number
+  /** This user may click to see the saved password (a Superadmin). */
+  canViewPassword: boolean
   /** This user has put their own SSH key on the server. */
   enabled: boolean
+  /** Who reached the server last with their SSH key, and when (epoch ms). */
+  lastUser: string
+  lastAt: number
+}
+
+export type ServerOs = "windows" | "mac" | "linux"
+export type ServerAuth = "password" | "key"
+
+export type PublishPlace = "testing" | "production"
+export type PublishSide = "frontend" | "backend"
+
+/** One stretch of a person's SSH logins to a server: logins close together are one row. */
+export type ServerAccess = {
+  accessId: number
+  userId: number
+  userName: string
+  startedAt: number
+  endedAt: number
+  logins: number
 }
 
 function tenantHeaders(tenantId?: number): Record<string, string> {
@@ -1419,12 +1458,23 @@ function asSharedServer(row: Record<string, unknown>): SharedServer | undefined 
     serverId,
     name: String(row.name ?? ""),
     shortName: String(row.shortName ?? row.name ?? "").slice(0, 12),
-    os: row.os === "mac" ? "mac" : "windows",
+    os: row.os === "mac" || row.os === "linux" ? row.os : "windows",
     sshHost: String(row.sshHost ?? ""),
     sshPort: Number(row.sshPort) || 22,
     sshLogin: String(row.sshLogin ?? ""),
+    authMethod: row.authMethod === "key" ? "key" : "password",
+    hasKey: row.hasKey === true,
     rootFolder: String(row.rootFolder ?? ""),
+    note: String(row.note ?? ""),
+    useCoding: row.useCoding !== false,
+    publishRole: row.publishRole === "testing" || row.publishRole === "production" ? row.publishRole : "none",
+    sshEnabled: row.sshEnabled !== false,
+    remoteControl: row.remoteControl === true,
+    remotePort: Number(row.remotePort) || (row.os === "windows" || !row.os ? 3389 : 5900),
+    canViewPassword: row.canViewPassword === true,
     enabled: row.enabled === true,
+    lastUser: String(row.lastUser ?? ""),
+    lastAt: Number(row.lastAt) || 0,
   }
 }
 
@@ -1474,16 +1524,27 @@ export function enableSharedServer(
   return sharedServerAction(http, `/shared-ai-coding-servers/${serverId}/enable`, token, tenantId, { publicKey })
 }
 
-/** A server as an account Superadmin saves it; a blank password keeps the saved one. */
+/**
+ * A server as an account Superadmin saves it; a blank password or key keeps the saved one. With a key file the
+ * password is the key's passphrase (blank when it has none).
+ */
 export type SharedServerInput = {
   name: string
   shortName: string
-  os: "windows" | "mac"
+  os: ServerOs
   sshHost: string
   sshPort: number
   sshLogin: string
+  authMethod: ServerAuth
+  privateKey: string
   password: string
   rootFolder: string
+  note: string
+  useCoding: boolean
+  publishRole: SharedServer["publishRole"]
+  sshEnabled: boolean
+  remoteControl: boolean
+  remotePort: number
 }
 
 /** Whether this user may add, edit and delete the account's servers (an account admin); only an explicit no says no. */
@@ -1506,8 +1567,169 @@ export function saveSharedServer(
     : sharedServerAction(http, "/shared-ai-coding-servers", token, tenantId, input)
 }
 
+/** The saved password, for a Superadmin who clicked to see it. EAD Pilot records each look. */
+export async function loadServerPassword(token: string, serverId: number, tenantId?: number, http: Http = eadHttp()) {
+  const data = (await call(http, `/shared-ai-coding-servers/${serverId}/password`, token, {
+    headers: tenantHeaders(tenantId),
+  })) as { password?: string } | null
+  return data?.password ?? ""
+}
+
+/** Who reached the server with their SSH key, newest first. */
+export async function loadServerAccess(token: string, serverId: number, tenantId?: number, http: Http = eadHttp()) {
+  const data = await call(http, `/shared-ai-coding-servers/${serverId}/activity`, token, {
+    headers: tenantHeaders(tenantId),
+  })
+  return (Array.isArray(data) ? data : []) as ServerAccess[]
+}
+
 export async function deleteSharedServer(token: string, serverId: number, tenantId?: number, http: Http = eadHttp()) {
   await sharedServerAction(http, `/shared-ai-coding-servers/${serverId}`, token, tenantId, undefined, "DELETE")
+}
+
+/** Puts the account's servers in this order, first to last (admins only). */
+export async function reorderSharedServers(token: string, serverIds: number[], tenantId?: number, http: Http = eadHttp()) {
+  await sharedServerAction(http, "/shared-ai-coding-servers/order", token, tenantId, { serverIds }, "PUT")
+}
+
+/** A git checkout EAD Pilot found on a Shared Server, and its origin remote. */
+export type ServerCheckout = { folder: string; remote: string; branch?: string }
+
+/** A place on a publish server where builds can go, as EAD Pilot read it over SSH. */
+export type PublishTarget = {
+  kind: "site" | "service" | "container"
+  name: string
+  folder: string
+  /** Addresses people open it at, https and named hosts first. */
+  urls: string[]
+  /** What it is: "IIS", "nginx, proxies to …", "service running, java.exe kloud.jar". */
+  detail: string
+}
+
+/** EAD Pilot signs in to a publish server and lists its web sites, services and containers (only reads). */
+export async function loadPublishTargets(token: string, serverId: number, tenantId?: number, http: Http = eadHttp()) {
+  const res = await http(`${eadApi()}/shared-ai-coding-servers/${serverId}/publish-targets`, {
+    method: "POST",
+    headers: { ...headers(token), ...tenantHeaders(tenantId), "Content-Type": "application/json" },
+    body: "{}",
+  })
+  if (res.status === 401) throw new Error("AUTH_EXPIRED")
+  const data = (await readJson(res).catch(() => null)) as unknown
+  if (!res.ok) {
+    const body = data as Record<string, unknown> | null
+    const message = body && typeof body.message === "string" && body.message.trim() ? body.message : `HTTP ${res.status}`
+    throw new Error(message)
+  }
+  return (Array.isArray(data) ? data : []).flatMap((item): PublishTarget[] => {
+    if (!item || typeof item !== "object") return []
+    const row = item as Record<string, unknown>
+    const kind = row.kind === "site" || row.kind === "service" || row.kind === "container" ? row.kind : undefined
+    if (!kind || typeof row.name !== "string" || !row.name) return []
+    return [
+      {
+        kind,
+        name: row.name,
+        folder: typeof row.folder === "string" ? row.folder : "",
+        urls: Array.isArray(row.urls) ? row.urls.filter((url): url is string => typeof url === "string") : [],
+        detail: typeof row.detail === "string" ? row.detail : "",
+      },
+    ]
+  })
+}
+
+/**
+ * EAD Pilot signs in to the server with its saved login and finds where the product's repos are checked out
+ * (admins only). `matches` holds a folder per repo definition whose remote names exactly one checkout.
+ */
+export async function findRepoFolders(
+  token: string,
+  serverId: number,
+  productId: number,
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
+  const res = await http(`${eadApi()}/shared-ai-coding-servers/${serverId}/find-folders`, {
+    method: "POST",
+    headers: { ...headers(token), ...tenantHeaders(tenantId), "Content-Type": "application/json" },
+    body: JSON.stringify({ productId }),
+  })
+  if (res.status === 401) throw new Error("AUTH_EXPIRED")
+  const data = (await readJson(res).catch(() => null)) as Record<string, unknown> | null
+  if (!res.ok) {
+    const message = data && typeof data.message === "string" && data.message.trim() ? data.message : `HTTP ${res.status}`
+    throw new Error(message)
+  }
+  const raw = data?.matches && typeof data.matches === "object" ? (data.matches as Record<string, unknown>) : {}
+  const matches = Object.fromEntries(
+    Object.entries(raw).flatMap(([key, value]) => (typeof value === "string" && value ? [[key, value]] : [])),
+  ) as Record<string, string>
+  const checkouts = (Array.isArray(data?.checkouts) ? data.checkouts : []).flatMap((item) =>
+    item && typeof item === "object" && typeof (item as ServerCheckout).folder === "string"
+      ? [
+          {
+            folder: (item as ServerCheckout).folder,
+            remote: String((item as ServerCheckout).remote ?? ""),
+            branch: String((item as ServerCheckout).branch ?? ""),
+          },
+        ]
+      : [],
+  )
+  // Where the server was searched: its Default clone folder, or the usual places when that holds no repos.
+  const searched = (Array.isArray(data?.searched) ? data.searched : []).filter((item): item is string => typeof item === "string")
+  // Repos checked out more than once, with every folder, when EAD Pilot could not tell which one is used.
+  const many = data?.candidates && typeof data.candidates === "object" ? (data.candidates as Record<string, unknown>) : {}
+  const candidates = Object.fromEntries(
+    Object.entries(many).flatMap(([key, value]) =>
+      Array.isArray(value) ? [[key, value.filter((item): item is string => typeof item === "string")]] : [],
+    ),
+  ) as Record<string, string[]>
+  return { matches, checkouts, searched, candidates }
+}
+
+/** The form fields AI Help may fill; a password is never among them. */
+export type RemoteDevServerFields = Partial<
+  Pick<
+    SharedServerInput,
+    | "name"
+    | "os"
+    | "sshHost"
+    | "sshPort"
+    | "sshLogin"
+    | "authMethod"
+    | "rootFolder"
+    | "note"
+    | "useCoding"
+    | "publishRole"
+    | "sshEnabled"
+    | "remoteControl"
+    | "remotePort"
+  >
+>
+
+/**
+ * AI Help in the New / Edit Remote Dev Server form (admins only): EAD Pilot asks a model to fill the form from the
+ * admin's description. Returns the checked fields to change and a sentence for the admin.
+ */
+export async function remoteDevServerAiHelp(
+  token: string,
+  prompt: string,
+  form: RemoteDevServerFields,
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
+  const res = await http(`${eadApi()}/shared-ai-coding-servers/ai-help`, {
+    method: "POST",
+    headers: { ...headers(token), ...tenantHeaders(tenantId), "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, form }),
+  })
+  if (res.status === 401) throw new Error("AUTH_EXPIRED")
+  const data = (await readJson(res).catch(() => null)) as Record<string, unknown> | null
+  if (!res.ok) {
+    const message = data && typeof data.message === "string" && data.message.trim() ? data.message : `HTTP ${res.status}`
+    throw new Error(message)
+  }
+  const raw = data?.fields && typeof data.fields === "object" ? (data.fields as Record<string, unknown>) : {}
+  return { fields: remoteDevFields(raw), reply: typeof data?.reply === "string" ? data.reply : "" }
 }
 
 /** Takes this user's key off the server. */
@@ -1555,8 +1777,28 @@ export function repoSourceType(repo: Pick<ServerRepo, "role" | "sourceCodeType" 
   return front
 }
 
-/** A product with a Source Code Schema, and where each of its repos is developed. */
-export type ServerProduct = { productId: number; name: string; repos: ServerRepo[] }
+/** Where a product publishes for testing or production. */
+export type ProductPublish = {
+  environment: PublishPlace
+  side: PublishSide
+  serverId: number
+  folder: string
+  url: string
+}
+
+/** A product with a Source Code Schema, where each of its repos is developed, and where it publishes. */
+export type ServerProduct = {
+  productId: number
+  name: string
+  repos: ServerRepo[]
+  servers: { serverId: number; remoteCoding: boolean }[]
+  publish: ProductPublish[]
+}
+
+/** Whether the product is coded on the server; it is unless an admin turned that off. */
+export function remoteCoding(product: Pick<ServerProduct, "servers"> | undefined, serverId: number | undefined) {
+  return product?.servers.find((item) => item.serverId === serverId)?.remoteCoding ?? true
+}
 
 /** owner/repo in lower case, from a GitHub URL or owner/repo. */
 export function repoKey(value: string) {
@@ -1594,7 +1836,27 @@ function asServerProducts(data: unknown): ServerProduct[] {
         } satisfies ServerRepo,
       ]
     })
-    return [{ productId, name: String(item.name ?? ""), repos }]
+    const servers = (Array.isArray(item.servers) ? item.servers : []).flatMap((raw) => {
+      const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
+      const serverId = Number(row?.serverId)
+      if (!row || !(serverId > 0)) return []
+      return [{ serverId, remoteCoding: row.remoteCoding !== false }]
+    })
+    const publish = (Array.isArray(item.publish) ? item.publish : []).flatMap((raw) => {
+      const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
+      const serverId = Number(row?.serverId)
+      if (!row || !(serverId > 0) || (row.environment !== "testing" && row.environment !== "production")) return []
+      return [
+        {
+          environment: row.environment as PublishPlace,
+          side: (row.side === "frontend" ? "frontend" : "backend") as PublishSide,
+          serverId,
+          folder: String(row.folder ?? ""),
+          url: String(row.url ?? ""),
+        },
+      ]
+    })
+    return [{ productId, name: String(item.name ?? ""), repos, servers, publish }]
   })
 }
 
@@ -1605,8 +1867,8 @@ export async function loadServerProducts(token: string, tenantId?: number, http:
   )
 }
 
-/** This person's view of the Shared Coding Servers dialog: which servers are expanded, and its size. */
-export type ServerView = { open: Record<string, boolean>; width: number; height: number }
+/** This person's view of the Shared Coding Servers dialog: the chosen server, and its size. */
+export type ServerView = { server: number; width: number; height: number }
 
 const serverView = "sicode_shared_servers_view"
 
@@ -1648,6 +1910,31 @@ export async function saveServerView(
   })
 }
 
+/** Sets whether a product on a Shared Server is coded there (admins only). */
+export function saveRemoteCoding(
+  token: string,
+  serverId: number,
+  productId: number,
+  on: boolean,
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
+  const path = `/shared-ai-coding-servers/${serverId}/products/${productId}/access`
+  return sharedServerAction(http, path, token, tenantId, { remoteCoding: on }, "PUT")
+}
+
+/** Replaces where a product publishes (admins only). */
+export function saveProductPublish(
+  token: string,
+  productId: number,
+  destinations: ProductPublish[],
+  tenantId?: number,
+  http: Http = eadHttp(),
+) {
+  const path = `/shared-ai-coding-servers/products/${productId}/publish`
+  return sharedServerAction(http, path, token, tenantId, { destinations }, "PUT")
+}
+
 /** Sets the repos a Shared Server develops and builds (admins only); returns the products again. */
 export async function saveServerRepos(
   token: string,
@@ -1678,6 +1965,36 @@ export type RepoPlace = {
   server?: SharedServer
   /** Every server of the account, to name where the product's other repos are. */
   servers: SharedServer[]
+  /** Where the product publishes, on servers this account still has. */
+  publish: (ProductPublish & { server: SharedServer })[]
+}
+
+/**
+ * Where a repo of a product is developed. On a server with the product's remote coding off, its repos count as on the
+ * Local Server.
+ */
+export function repoPlace(product: ServerProduct, repository: string, servers: SharedServer[]): RepoPlace | undefined {
+  const local = {
+    ...product,
+    repos: product.repos.map((row) =>
+      row.serverId && !remoteCoding(product, row.serverId) ? { ...row, serverId: undefined, folder: "" } : row,
+    ),
+  }
+  const pick = <T extends { repository: string; section: string }>(rows: T[]) =>
+    rows.find((row) => repoKey(row.repository) === repoKey(repository) && row.section === "CURRENT") ??
+    rows.find((row) => repoKey(row.repository) === repoKey(repository))
+  const repo = pick(local.repos)
+  if (!repo) return
+  return {
+    product: local,
+    repo,
+    server: servers.find((item) => item.serverId === repo.serverId),
+    servers,
+    publish: product.publish.flatMap((item) => {
+      const server = servers.find((row) => row.serverId === item.serverId)
+      return server ? [{ ...item, server }] : []
+    }),
+  }
 }
 
 /** Where SiCode keeps the private key it made when the user enabled the server (desktop shared_server_key). */
@@ -1694,7 +2011,7 @@ export function sharedServerKeyPath(serverId: number) {
 export function formatSharedServerPrompt(place: RepoPlace | undefined, remote: boolean, here: string) {
   if (!place) return
   const others = place.product.repos.filter((repo) => repo !== place.repo)
-  if (!place.repo.serverId && !others.some((repo) => repo.serverId)) return
+  if (!place.repo.serverId && !others.some((repo) => repo.serverId) && !place.publish.length) return
   const where = (repo: ServerRepo) => {
     const server = place.servers.find((item) => item.serverId === repo.serverId)
     return server
@@ -1713,7 +2030,30 @@ export function formatSharedServerPrompt(place: RepoPlace | undefined, remote: b
       `- ${repo.name || repo.repository} (${repo.repository}, ${repo.section === "LEGACY" ? "legacy" : "current"}, ${kind(repo)}): ${where(repo)}`,
   )
   const intro = `This project is the repo ${place.repo.repository} ("${place.repo.name}", ${kind(place.repo)}) of the product "${place.product.name}".`
-  const rest = list.length ? [`The product's other repos:`, ...list] : []
+  const sshTo = (item: SharedServer) =>
+    `ssh -i ${sharedServerKeyPath(item.serverId)} -p ${item.sshPort} -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${item.sshLogin}@${item.sshHost}`
+  const publishing = () => {
+    const name = place.product.name
+    const line = (environment: PublishPlace) => {
+      const targets = place.publish.filter((item) => item.environment === environment)
+      if (!targets.length)
+        return [
+          `No ${environment} destination is set for "${name}". If the user asks to publish there, say so and ask where it should go.`,
+        ]
+      return targets.map((target) => {
+        const reach = target.server.enabled
+          ? `Reach it with: ${sshTo(target.server)} "<command>"`
+          : `This user's SSH key isn't on it yet; tell the user it couldn't be set up, or to ask an account admin to check "${target.server.name}" in Shared Servers.`
+        return `The ${target.side === "frontend" ? "front end" : "server end"} of "${name}" publishes for ${environment} to the Shared Server ${target.server.shortName}${target.serverId === place.repo.serverId ? " (the computer it's coded on)" : ""}, ${/[\\/~:]/.test(target.folder) ? `in the folder ${target.folder}` : `as the service ${target.folder}`}.${target.url ? ` Check it at ${target.url} afterward.` : ""} ${reach}`
+      })
+    }
+    return [
+      ...line("testing"),
+      ...line("production"),
+      `Publish only when the user asks, and confirm with the user before every production publish.`,
+    ]
+  }
+  const rest = [...publishing(), ...(list.length ? [`The product's other repos:`, ...list] : [])]
   const server = place.server
   if (!place.repo.serverId || !remote) {
     return [
@@ -1742,7 +2082,7 @@ export function formatSharedServerPrompt(place: RepoPlace | undefined, remote: b
   }
   const windows = server.os === "windows"
   const key = sharedServerKeyPath(server.serverId)
-  const ssh = `ssh -i ${key} -p ${server.sshPort} -o BatchMode=yes -o StrictHostKeyChecking=accept-new ${server.sshLogin}@${server.sshHost}`
+  const ssh = sshTo(server)
   const folder = place.repo.folder || server.rootFolder
   return [
     `<shared-ai-coding-server>`,

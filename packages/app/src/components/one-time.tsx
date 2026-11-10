@@ -10,7 +10,7 @@ import { usePrompt } from "@/context/prompt"
 import { useProviders } from "@/hooks/use-providers"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { OnceDetails } from "./model-tooltip"
-import { errorText, findOpenOnce } from "@/utils/one-time"
+import { errorText } from "@/utils/one-time"
 
 /** A one-session-only model as the picker lists it. */
 export type OnceModel = {
@@ -49,9 +49,9 @@ export function OnceTag(props: { closed?: boolean; class?: string }) {
 }
 
 /**
- * Picking a one-session-only model: go to this session's open one-time session on that model, or open a new one,
- * with no confirmation in between. Whatever is typed in the composer goes along, unsent, so it is sent only when the
- * person presses Send in the one-time session.
+ * Picking a one-session-only model runs this session on it, with no confirmation in between: the banner
+ * shows the price and what is typed in the composer stays there. With no session yet, one is made first,
+ * and what is typed goes along, unsent.
  */
 export function useOpenOnce() {
   const sdk = useSDK()
@@ -62,33 +62,31 @@ export function useOpenOnce() {
   const navigate = useNavigate()
 
   return async (model: OnceModel) => {
-    const origin = params.id || undefined
     const pick = { providerID: model.provider.id, modelID: model.id }
-    const existing = origin ? findOpenOnce(sync.data.session ?? [], origin, pick) : undefined
-    const id =
-      existing?.id ??
-      (await sdk.client.session.oneTime
-        .open({ originSessionID: origin, model: pick })
-        .then((res) => {
-          if (!res.data) throw new Error(language.t("common.requestFailed"))
-          return res.data.id
-        })
-        .catch((err: unknown) => {
-          fail(language.t("oneTime.open.failed"), err)
-          return undefined
-        }))
-    if (!id) return
-    const draft = prompt.current()
+    const current = params.id
+    const running = current ? sync.session.get(current)?.oneTime : undefined
+    // Already on this model: keep its request count.
+    if (running?.model.providerID === pick.providerID && running.model.modelID === pick.modelID) return
+    const id = await (async () => {
+      const made = current ? undefined : (await sdk.client.session.create()).data?.id
+      const sessionID = current ?? made
+      if (!sessionID) throw new Error(language.t("common.requestFailed"))
+      const res = await sdk.client.session.oneTime.start({ sessionID, model: pick })
+      if (!res.data) throw new Error(language.t("common.requestFailed"))
+      return sessionID
+    })().catch((err: unknown) => {
+      fail(language.t("oneTime.open.failed"), err)
+      return undefined
+    })
+    if (!id || current) return
     if (prompt.dirty()) {
-      const scope = { dir: params.dir!, id }
-      prompt.set(draft, undefined, scope)
+      prompt.set(prompt.current(), undefined, { dir: params.dir!, id })
       prompt.reset()
     }
     navigate(`/${params.dir}/session/${id}`)
   }
 }
 
-/** The bar above the composer in an open one-time session: the model, its price and usage, and the two ways out. */
 export function OneTimeBanner(props: { session: Session }): JSX.Element {
   const sdk = useSDK()
   const sync = useSync()
@@ -106,6 +104,15 @@ export function OneTimeBanner(props: { session: Session }): JSX.Element {
   const model = useModelName()
   const info = () =>
     providers.all().find((p) => p.id === one().model.providerID)?.models[one().model.modelID]?.oneSession
+
+  /** Back to the regular model, in this same session. */
+  const stop = async () => {
+    setBusy(true)
+    await sdk.client.session.oneTime
+      .finish({ sessionID: props.session.id })
+      .catch((err: unknown) => fail(language.t("oneTime.done.failed"), err))
+    setBusy(false)
+  }
 
   /** Close the session, add its answer to where the person goes next, and go there. */
   const finish = async (goTo: "origin" | "new") => {
@@ -153,8 +160,27 @@ export function OneTimeBanner(props: { session: Session }): JSX.Element {
           </Show>
         </span>
       </Tooltip>
+      <Show when={one().inPlace && one().limit}>
+        {(limit) => (
+          <span class="shrink-0 text-text-weak">
+            {language.t("oneTime.banner.requests", { used: one().requests, limit: limit() })}
+          </span>
+        )}
+      </Show>
       <span class="flex-1" />
-      <Show when={origin()}>
+      <Show when={one().inPlace}>
+        <Button
+          variant="primary"
+          size="small"
+          class="shrink-0"
+          data-action="one-time-done"
+          disabled={busy()}
+          onClick={stop}
+        >
+          {language.t("oneTime.banner.done")}
+        </Button>
+      </Show>
+      <Show when={!one().inPlace && origin()}>
         <Button
           variant="primary"
           size="small"
@@ -166,16 +192,18 @@ export function OneTimeBanner(props: { session: Session }): JSX.Element {
           {language.t("oneTime.banner.doneBack")}
         </Button>
       </Show>
-      <Button
-        variant={origin() ? "secondary" : "primary"}
-        size="small"
-        class="shrink-0"
-        data-action="one-time-done-new"
-        disabled={busy()}
-        onClick={() => finish("new")}
-      >
-        {language.t("oneTime.banner.doneNew")}
-      </Button>
+      <Show when={!one().inPlace}>
+        <Button
+          variant={origin() ? "secondary" : "primary"}
+          size="small"
+          class="shrink-0"
+          data-action="one-time-done-new"
+          disabled={busy()}
+          onClick={() => finish("new")}
+        >
+          {language.t("oneTime.banner.doneNew")}
+        </Button>
+      </Show>
     </div>
   )
 }
