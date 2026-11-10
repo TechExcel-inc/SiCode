@@ -22,41 +22,85 @@
   border-top-right-radius: 0;
 }
 
-/* A question or permission request waits on the person: it is the one thing on screen that moves. */
+/* A question or permission request waits on the person: it is the one thing on screen that moves. A calm warm
+   outline breathes around the whole prompt, drawn above its panels so no part of it hides the light, and its icon
+   gently swells in time; everything else (step rings, spinners, shimmering text) stops. */
 [data-component="dock-prompt"] {
+  position: relative;
   border-radius: 12px;
-  animation: dock-prompt-attention 1600ms ease-in-out infinite;
+  animation: dock-prompt-in 260ms ease-out;
 }
 
-@keyframes dock-prompt-attention {
+[data-component="dock-prompt"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: 20;
+  border-radius: 13px;
+  border: 1.5px solid var(--icon-warning-base);
+  pointer-events: none;
+  animation: dock-prompt-breathe 2400ms ease-in-out infinite;
+}
+
+@keyframes dock-prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes dock-prompt-breathe {
   0%,
   100% {
-    box-shadow: 0 0 0 1px var(--icon-warning-base);
+    opacity: 0.35;
+    box-shadow: 0 0 0 0 transparent;
   }
   50% {
-    box-shadow:
-      0 0 0 2px var(--icon-warning-base),
-      0 0 16px 2px color-mix(in srgb, var(--icon-warning-base) 45%, transparent);
+    opacity: 1;
+    box-shadow: 0 0 18px 3px color-mix(in srgb, var(--icon-warning-base) 50%, transparent);
   }
 }
 
-:root:has([data-component="dock-prompt"]) [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
+[data-component="dock-prompt"] [data-slot="permission-icon"] [data-component="icon"] {
+  animation: dock-prompt-beat 2400ms ease-in-out infinite;
+}
+
+@keyframes dock-prompt-beat {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+:root[data-dock-prompt] [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
   animation: none;
   opacity: 0;
 }
 
-:root:has([data-component="dock-prompt"]) [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
+:root[data-dock-prompt] [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
   opacity: 1;
 }
 
-:root:has([data-component="dock-prompt"]) [data-component="spinner"] *,
-:root:has([data-component="dock-prompt"]) [data-slot="session-turn-step-icon"] * {
-  animation-play-state: paused;
+:root[data-dock-prompt] [data-slot="session-turn-step-ring"],
+:root[data-dock-prompt] [data-component="spinner"],
+:root[data-dock-prompt] [data-component="spinner"] *,
+:root[data-dock-prompt] .animate-spin,
+:root[data-dock-prompt] .animate-pulse {
+  animation: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="dock-prompt"] {
+  [data-component="dock-prompt"],
+  [data-component="dock-prompt"]::after,
+  [data-component="dock-prompt"] [data-slot="permission-icon"] [data-component="icon"] {
     animation: none;
-    box-shadow: 0 0 0 2px var(--icon-warning-base);
+  }
+  [data-component="dock-prompt"]::after {
+    opacity: 1;
   }
 }

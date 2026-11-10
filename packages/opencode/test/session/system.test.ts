@@ -19,6 +19,8 @@ describe("session.system", () => {
     expect(text).toContain("with the question tool")
     expect(text).toContain("set each choice's image")
     expect(text).toContain("check them with the design_review tool")
+    expect(text).toContain("is a UI design, not an SVG")
+    expect(text).toContain("never drop the work you made")
     expect(visuals("cli")).toEqual([])
   })
 
@@ -27,6 +29,8 @@ describe("session.system", () => {
     expect(text).toContain("start a new list for it with todowrite")
     expect(text).toContain("mark them cancelled")
     expect(text).toContain("keep the same list")
+    expect(text).toContain("Mark a step completed only when it was really done")
+    expect(text).toContain("do not point the user to /help")
     expect(stepGuidance("cli")).toEqual([])
   })
 

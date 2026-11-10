@@ -1,8 +1,9 @@
 Have a model that can see check your design options before you show them to the person.
 
-Use it whenever you designed something visual as SVG (icons, logos, small UI pieces, diagrams) and are about to present options. EAD Pilot draws every option the way the app shows it (at 20, 40 and 160 px, in the app's text colour on its dark background), compares it with the image the person attached, and returns a verdict per option: "pass", or "fix" with concrete problems and exact SVG changes.
+Use it whenever you designed small SVG options (icons, logos, small UI pieces) and are about to present them. It is not for full app screens or mockups: those are UI designs in design/<Name>.design/, checked with design_shot. EAD Pilot draws every option the way the app shows it (at 20, 40 and 160 px, in the app's text colour on its dark background), compares it with the image the person attached, and returns a verdict per option: "pass", or "fix" with concrete problems and exact SVG changes.
 
+- `request` is the person's latest request, in their words, not an earlier brief.
 - Send every option with its label (for example "A. Node tree") and its complete <svg>...</svg>.
 - Fix the options marked "fix" exactly as told, then review again. Do at most two rounds of fixes.
-- Show the person only options that pass. If an option still fails after two rounds, leave it out or say plainly what is still wrong.
+- Show the person every option that passes. An option that still fails after two rounds is shown too, with one line on what is still wrong: never drop the work.
 - When the tool says review is not available, say so in one line and present the options as they are.

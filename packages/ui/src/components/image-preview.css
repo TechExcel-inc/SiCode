@@ -6,23 +6,19 @@
   align-items: center;
   justify-content: center;
 
+  /* The preview takes the whole window but a 16 px margin, so a wide design gets the full width. */
   [data-slot="image-preview-container"] {
     position: relative;
     z-index: 50;
-    width: min(calc(100vw - 32px), 90vw);
-    max-width: 1200px;
-    height: min(calc(100vh - 32px), 90vh);
+    width: calc(100vw - 32px);
+    height: calc(100vh - 32px);
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
 
     [data-slot="image-preview-content"] {
       display: flex;
       flex-direction: column;
-      align-items: center;
       width: 100%;
-      max-height: 100%;
+      height: 100%;
       border-radius: var(--radius-lg);
       background: var(--surface-raised-stronger-non-alpha);
       box-shadow:
@@ -37,32 +33,43 @@
 
       [data-slot="image-preview-header"] {
         display: flex;
-        padding: 8px 8px 0;
+        gap: 4px;
+        padding: 6px 8px;
         justify-content: flex-end;
         align-items: center;
-        align-self: stretch;
+        flex-shrink: 0;
       }
 
       [data-slot="image-preview-body"] {
-        width: 100%;
+        flex: 1;
+        min-height: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 16px;
-        overflow: auto;
+        padding: 0 12px 12px;
+        overflow: hidden;
       }
 
+      /* Fit: the image, SVG or bitmap, grows or shrinks to the space and keeps its shape. */
       [data-slot="image-preview-image"] {
-        max-width: 100%;
-        max-height: calc(90vh - 100px);
+        width: 100%;
+        height: 100%;
         object-fit: contain;
-        border-radius: var(--radius-md);
+        cursor: zoom-in;
       }
 
-      /* SVGs have no fixed pixel size, so give them room to scale up. */
-      [data-slot="image-preview-image"][src^="data:image/svg+xml"] {
-        width: min(100%, calc(90vh - 100px));
-        height: auto;
+      /* Actual size: the image at its own pixels; scroll to see the rest. */
+      [data-slot="image-preview-body"][data-actual] {
+        display: block;
+        overflow: auto;
+
+        [data-slot="image-preview-image"] {
+          width: auto;
+          height: auto;
+          max-width: none;
+          margin: 0 auto;
+          cursor: zoom-out;
+        }
       }
     }
   }

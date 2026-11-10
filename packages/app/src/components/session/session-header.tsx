@@ -28,7 +28,6 @@ import { displayName, workspaceKey } from "@/pages/layout/helpers"
 import { projectActions } from "@/pages/layout/project-actions"
 import { RecentProjectPicker } from "@/components/recent-project-picker"
 import { useEad } from "@/ead/settings"
-import { design } from "@/pages/session/design-state"
 
 const OPEN_APPS = [
   "vscode",
@@ -277,11 +276,14 @@ export function SessionHeader() {
   const code = createMemo(() => ["agent", "code"].includes(layout.nav.current()))
   // EAD keeps the current project button: the product it shows is the current project repo's product.
   const eadNav = createMemo(() => layout.nav.current() === "ead")
+  // Design keeps it too: designs are saved in the current project, and its related projects' designs show beside them.
   const centerMount = createMemo(() =>
-    code() || eadNav() ? document.getElementById("opencode-titlebar-center") : undefined,
+    code() || eadNav() || layout.nav.current() === "design"
+      ? document.getElementById("opencode-titlebar-center")
+      : undefined,
   )
   const rightMount = createMemo(() => document.getElementById("opencode-titlebar-right"))
-  // Design names the open design and EAD the product beside the project; P1 Work fills the bar itself.
+  // P1 Work fills the bar itself.
   const ead = useEad()
   const cowork = useCowork()
   // The product whose mind map the button opens: the EAD view's product, or the current project repo's product.
@@ -290,14 +292,6 @@ export function SessionHeader() {
     if (found) return { productId: found.product.productId, name: found.product.name }
     return ead.productId() ? { productId: ead.productId(), name: ead.productName() } : undefined
   })
-  const viewMount = createMemo(() =>
-    layout.nav.current() === "design" ? document.getElementById("opencode-titlebar-center") : undefined,
-  )
-  const view = createMemo(() =>
-    layout.nav.current() === "design"
-      ? { icon: "design" as const, name: design.title, none: language.t("bar.design.none") }
-      : { icon: "ead" as const, name: ead.productName(), none: language.t("bar.ead.none") },
-  )
 
   return (
     <>
@@ -371,7 +365,8 @@ export function SessionHeader() {
                   onClick={() => {
                     // The mind map is EAD Pilot's: it covers the window over whichever view is open.
                     const product = mindmapProduct()
-                    if (product && product.productId !== ead.productId()) ead.setProduct(product.productId, product.name)
+                    if (product && product.productId !== ead.productId())
+                      ead.setProduct(product.productId, product.name)
                     queuePilot({ kind: "mindmap" })
                     openPilot(layout.pluginPanel, () => ead.bumpPilot())
                   }}
@@ -415,25 +410,6 @@ export function SessionHeader() {
                   />
                 </Tooltip>
               </Show>
-            </div>
-          </Portal>
-        )}
-      </Show>
-      <Show when={viewMount()}>
-        {(mount) => (
-          <Portal mount={mount()}>
-            <div
-              data-component="header-view-context"
-              class="hidden md:flex max-w-[320px] min-w-0 h-7 px-2 items-center gap-1.5 rounded-md"
-              title={view().name || view().none}
-            >
-              <Icon name={view().icon} size="small" class="shrink-0 text-icon-weak" />
-              <span
-                class="min-w-0 truncate text-12-medium"
-                classList={{ "text-text-strong": !!view().name, "text-text-weak": !view().name }}
-              >
-                {view().name || view().none}
-              </span>
             </div>
           </Portal>
         )}

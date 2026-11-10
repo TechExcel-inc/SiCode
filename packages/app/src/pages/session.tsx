@@ -73,7 +73,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { RailPlaceholder } from "@/pages/session/rail-placeholder"
 import { DesignChatEmpty, DesignChatHeader, DesignView, useDesignLinks } from "@/pages/session/design-view"
-import { design } from "@/pages/session/design-state"
+import { design, setDesign } from "@/pages/session/design-state"
 import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { formatServerError } from "@/utils/server-errors"
 import { type FollowupItem, useFollowup } from "@/context/followup"
@@ -2124,6 +2124,13 @@ export default function Page() {
               focusReviewDiff(path)
             }}
             onOpenOutput={(path) => {
+              // A design (anything in a design/ or wiki/ folder, or a .design folder) opens large in the Design tab;
+              // the Agent tab keeps the session, so going back continues the work.
+              if (/(^|[\\/])(design|wiki)[\\/]|\.design([\\/]|$)/i.test(path)) {
+                setDesign("pending", path)
+                layout.nav.set("design")
+                return
+              }
               const root = sdk.directory.replace(/[\\/]+$/, "")
               const inside = path === root || path.startsWith(root + "/") || path.startsWith(root + "\\")
               if (!inside) {

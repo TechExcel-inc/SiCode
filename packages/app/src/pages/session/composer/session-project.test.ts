@@ -64,6 +64,7 @@ describe("session project switch", () => {
     expect(carried({ fresh: true, parts, prompt: "brief", from: "KloudCode" })).toEqual([
       { type: "text", text: "Fix the login in CoWork" },
       { type: "file", mime: "image/png", url: "data:x", filename: "a.png" },
+      { type: "text", text: "(Moved here from a session in KloudCode.)", synthetic: true },
     ])
   })
 

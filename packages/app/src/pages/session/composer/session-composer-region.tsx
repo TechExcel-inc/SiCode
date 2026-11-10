@@ -193,7 +193,7 @@ export function SessionComposerRegion(props: {
       >
         <Show when={props.state.questionRequest()} keyed>
           {(request) => (
-            <div class="max-h-[60vh] overflow-y-auto -mx-1 px-1">
+            <div class="max-h-[60vh] overflow-y-auto -mx-4 px-4 -mt-3 pt-3">
               <SessionQuestionCard request={request} onSubmit={props.onResponseSubmit} />
             </div>
           )}

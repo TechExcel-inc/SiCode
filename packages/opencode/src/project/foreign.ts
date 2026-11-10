@@ -72,4 +72,28 @@ export namespace Foreign {
   export function stays(session: string, worktree: string) {
     return kept.get(session)?.has(worktree) === true
   }
+
+  /** Sessions the person started by moving work here, with the project folder the work came from. */
+  const moved = new Map<string, string>()
+
+  export function arrive(session: string, from: string) {
+    moved.set(session, from)
+  }
+
+  export function origin(session: string) {
+    return moved.get(session)
+  }
+
+  /**
+   * The projects a session's work was moved from, read from the session itself so it survives a restart:
+   * the app ends the first message of moved work with "(Continued from a session in <name>.)" or a hidden
+   * "(Moved here from a session in <name>.)".
+   */
+  export function came(messages: { info: { role: string }; parts: { type: string; text?: string }[] }[]) {
+    return messages
+      .filter((message) => message.info.role === "user")
+      .flatMap((message) => message.parts)
+      .flatMap((part) => (part.type === "text" && part.text ? [...part.text.matchAll(/\((?:Continued|Moved here) from a session in (.+?)\.\)/g)] : []))
+      .map((match) => match[1]!)
+  }
 }

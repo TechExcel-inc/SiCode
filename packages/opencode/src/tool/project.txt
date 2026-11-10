@@ -2,6 +2,8 @@ Use this tool when the work the user asks for belongs to a different project tha
 
 Call it as soon as you can tell the work is for another project: before you edit any file there, and on a new session before you start the work. Reading another project's files for reference does not need it.
 
+Switch only when another project's own files must change. A design, mockup or picture of another project's screens, an analysis, or a question about it stays in this session. Work that was moved here from another project stays here: never send it back.
+
 The user chooses:
 - Move: the work continues in a new session in that project, carrying the prompt you write. Stop working here and reply in one short sentence.
 - Keep: the work stays in this session. Work on the other project with absolute paths and follow its AGENTS.md.
@@ -9,3 +11,4 @@ The user chooses:
 Parameters:
 - project: the other project's folder, exactly as listed.
 - prompt: the task for that project, written so a new session can start on it without this conversation: what to change, where, and why, with any detail the user gave.
+- changes: the files or folders in that project the work must change. If you cannot name any, the work does not belong there: do not call this tool.

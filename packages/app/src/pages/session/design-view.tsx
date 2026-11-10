@@ -17,6 +17,7 @@ import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useCowork } from "@/context/cowork"
 import { useSync } from "@/context/sync"
 import { design, setDesign } from "./design-state"
 import { Gallery, type Type } from "./design-gallery"
@@ -135,6 +136,16 @@ const dark = () => document.documentElement.dataset.colorScheme === "dark"
 export function useDesignLinks() {
   const sdk = useSDK()
   const layout = useLayout()
+  const cowork = useCowork()
+  // The repo a written file is in: a related project's design folder is shown in the Design tab too.
+  const owner = (file: string) => {
+    const value = file.replace(/\\/g, "/")
+    return (
+      cowork
+        .relatedDirs(sdk.directory)
+        .find((dir) => value.startsWith(dir.replace(/\\/g, "/").replace(/\/+$/, "") + "/")) ?? sdk.directory
+    )
+  }
   // Subagents write on behalf of the session that started them; link the doc to that one.
   const top = async (id: string): Promise<string> => {
     const info = await sdk.client.session
@@ -149,17 +160,19 @@ export function useDesignLinks() {
       // refreshes its card; a plain change does not, so panning the canvas is not an edit.
       const detail = event.details as { type: string; properties?: { file?: unknown; event?: unknown } }
       if (detail.type === "file.watcher.updated" && detail.properties?.event !== "change") {
-        const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, sdk.directory) : undefined
+        const file =
+          typeof detail.properties?.file === "string" ? page(detail.properties.file, sdk.directory) : undefined
         if (file && kind(file) === "design") layout.design.touch(sdk.directory, file, "edited")
         return
       }
       if (event.details.type !== "file.edited") return
       const id = event.details.properties.sessionID
-      const file = page(event.details.properties.file, sdk.directory)
+      const where = owner(event.details.properties.file)
+      const file = page(event.details.properties.file, where)
       if (!file) return
-      layout.design.touch(sdk.directory, file, "edited")
+      layout.design.touch(where, file, "edited")
       if (!id || kind(file) !== "markdown") return
-      void top(id).then((session) => layout.design.link(sdk.directory, file, session))
+      void top(id).then((session) => layout.design.link(where, file, session))
     })
     onCleanup(stop)
   })
@@ -188,12 +201,20 @@ export function DesignChatEmpty() {
     <div class="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
       <div class="text-14-medium text-text-strong">
         {language.t(
-          design.empty ? "design.chat.screens.title" : design.blank ? "design.chat.image.title" : "design.chat.empty.title",
+          design.empty
+            ? "design.chat.screens.title"
+            : design.blank
+              ? "design.chat.image.title"
+              : "design.chat.empty.title",
         )}
       </div>
       <div class="text-13-regular text-text-weak max-w-xs">
         {language.t(
-          design.empty ? "design.chat.screens.body" : design.blank ? "design.chat.image.body" : "design.chat.empty.body",
+          design.empty
+            ? "design.chat.screens.body"
+            : design.blank
+              ? "design.chat.image.body"
+              : "design.chat.empty.body",
         )}
       </div>
     </div>
@@ -218,7 +239,16 @@ function Design() {
   const dialog = useDialog()
   const sync = useSync()
   const { params } = useSessionKey()
+  const cowork = useCowork()
   const [state, setState] = createStore({
+    // The repo whose design folder is on screen: "" for the current project, else a related project's folder.
+    home: "",
+    // The gallery's tab: "" lists every repo's designs, else one repo's folder.
+    tab: "",
+    // A folder inside the repo's design folder the gallery is narrowed to, such as design/sub; "" for all.
+    folder: "",
+    // Where the open design was opened from: "agent" when clicked in a session, so Back returns there.
+    from: "",
     pages: [] as string[],
     listed: false,
     active: "",
@@ -237,6 +267,59 @@ function Design() {
     screen: "",
     screens: -1,
   })
+  // Every file call goes to the repo on screen; paths stay relative to it.
+  const dir = () => state.home || sdk.directory
+  const client = createMemo(() => (state.home ? sdk.createClient({ directory: state.home }) : sdk.client))
+  // A related project's file is named by its full path in the chat, which runs in the current project.
+  const full = (path: string) => (state.home ? `${state.home}/${path}` : path)
+  // The current project first, then its related projects, each with its own design folder.
+  const homes = createMemo(() => [
+    sdk.directory,
+    ...cowork.relatedDirs(sdk.directory).filter((item) => item !== sdk.directory),
+  ])
+  const go = async (to: string) => {
+    if (to === dir()) return
+    await close()
+    setState("home", to === sdk.directory ? "" : to)
+  }
+  const clients = new Map<string, ReturnType<typeof sdk.createClient>>()
+  const reach = (home: string) => {
+    if (home === sdk.directory) return sdk.client
+    const known = clients.get(home)
+    if (known) return known
+    const made = sdk.createClient({ directory: home })
+    clients.set(home, made)
+    return made
+  }
+  // The gallery lists every repo's designs: the current project's by their path in it, a related project's by
+  // its folder and that path, so each item finds its repo again.
+  const split = (key: string) => {
+    const value = key.replace(/\\/g, "/")
+    const home = homes()
+      .slice(1)
+      .find((item) => value.startsWith(item.replace(/\\/g, "/").replace(/\/+$/, "") + "/"))
+    return home
+      ? { home, rel: value.slice(home.replace(/\\/g, "/").replace(/\/+$/, "").length + 1) }
+      : { home: sdk.directory, rel: key }
+  }
+  const named = (home: string) => home.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? home
+  const visible = createMemo(() =>
+    state.pages.filter((key) => {
+      const item = split(key)
+      if (state.tab && item.home !== state.tab) return false
+      return !state.folder || item.rel.startsWith(state.folder + "/")
+    }),
+  )
+  // The gallery item's key for a path in the repo on screen: the same key the gallery and its recency use.
+  const keyOf = (path: string) => (state.home ? `${state.home}/${path}` : path)
+  const count = (home: string) => state.pages.filter((key) => split(key).home === home).length
+  // Acting on a gallery item first points the view at its repo.
+  const at = (key: string) => {
+    const item = split(key)
+    setState("home", item.home === sdk.directory ? "" : item.home)
+    return item.rel
+  }
+
   let host: HTMLDivElement | undefined
   let editor: Vditor | undefined
   let ready = false
@@ -250,15 +333,15 @@ function Design() {
   // Markdown last loaded from or written to disk for the open page; anything else on disk is an outside edit.
   let last = ""
 
-  const walk = async (dir: string): Promise<string[]> => {
-    const nodes = await sdk.client.file
+  const walk = async (dir: string, c = client()): Promise<string[]> => {
+    const nodes = await c.file
       .list({ path: dir })
       .then((res) => res.data ?? [])
       .catch(() => [])
     const nested = await Promise.all(
       nodes
         .filter((node) => node.type === "directory" && !node.ignored && !folder(node.name))
-        .map((node) => walk(node.path)),
+        .map((node) => walk(node.path, c)),
     )
     return [
       // A design is keyed by its folder with forward slashes, the way file events name it.
@@ -271,13 +354,13 @@ function Design() {
   }
 
   // Every file in a design folder, relative to it.
-  const files = async (dir: string, base = dir): Promise<string[]> => {
-    const nodes = await sdk.client.file
+  const files = async (dir: string, base = dir, c = client()): Promise<string[]> => {
+    const nodes = await c.file
       .list({ path: dir })
       .then((res) => res.data ?? [])
       .catch(() => [])
     const nested = await Promise.all(
-      nodes.filter((node) => node.type === "directory").map((node) => files(node.path, base)),
+      nodes.filter((node) => node.type === "directory").map((node) => files(node.path, base, c)),
     )
     return [
       ...nodes
@@ -296,7 +379,13 @@ function Design() {
 
   // Polled; the list only changes (and re-renders) when the files on disk do.
   const list = async () => {
-    const next = await Promise.all([walk(ROOT), walk(LEGACY)]).then((all) => all.flat())
+    const next = await Promise.all(
+      homes().map(async (home) => {
+        const c = reach(home)
+        const found = await Promise.all([walk(ROOT, c), walk(LEGACY, c)]).then((all) => all.flat())
+        return home === sdk.directory ? found : found.map((path) => `${home}/${path}`)
+      }),
+    ).then((all) => all.flat())
     if (gone) return
     if (next.join("\n") !== state.pages.join("\n")) setState("pages", next)
     if (!state.listed) setState("listed", true)
@@ -305,7 +394,8 @@ function Design() {
   const untitled = (type: Type) => {
     const base = language.t(type.untitled)
     const names = [base, ...Array.from({ length: 98 }, (_, i) => `${base} ${i + 2}`)]
-    return names.find((name) => !state.pages.includes(`${ROOT}/${name}.${type.ext}`)) ?? base
+    const taken = state.pages.filter((key) => split(key).home === dir()).map((key) => split(key).rel)
+    return names.find((name) => !taken.includes(`${ROOT}/${name}.${type.ext}`)) ?? base
   }
 
   const pick = () => {
@@ -326,7 +416,7 @@ function Design() {
   // The chat beside a doc is the session that wrote it. A doc without one gets a blank chat, and the
   // session is only created when the first message is sent (see the params.id effect below).
   const chat = async (path: string) => {
-    const id = layout.design.session(sdk.directory, path)
+    const id = layout.design.session(dir(), path)
     const alive = id
       ? await sdk.client.session
           .get({ sessionID: id })
@@ -354,7 +444,7 @@ function Design() {
       () => params.id,
       (id, prev) => {
         if (!id || prev || !state.active) return
-        if (!layout.design.session(sdk.directory, state.active)) layout.design.link(sdk.directory, state.active, id)
+        if (!layout.design.session(dir(), state.active)) layout.design.link(dir(), state.active, id)
       },
       { defer: true },
     ),
@@ -363,8 +453,8 @@ function Design() {
   const editable = createMemo(() => kind(state.active) === "markdown")
 
   const load = (path: string) =>
-    sdk.client.file
-      .read({ path })
+    client()
+      .file.read({ path })
       .then((res) => res.data)
       .catch(() => undefined)
 
@@ -409,10 +499,10 @@ function Design() {
     dirty = false
     const content = editor.getValue().trim() + "\n"
     setState("status", "saving")
-    await sdk.client.file
-      .write({ path, content })
+    await client()
+      .file.write({ path, content })
       .then(() => {
-        layout.design.touch(sdk.directory, path, "edited")
+        layout.design.touch(dir(), path, "edited")
         if (state.active === path) last = content
         setState({ status: state.active === path && !dirty ? "saved" : state.status, conflict: false })
       })
@@ -451,8 +541,8 @@ function Design() {
       await Promise.all(
         state.changed.map((name) =>
           name in snap
-            ? sdk.client.file.write({ path: `${path}/${name}`, content: snap[name] })
-            : sdk.client.file.remove({ path: `${path}/${name}` }),
+            ? client().file.write({ path: `${path}/${name}`, content: snap[name] })
+            : client().file.remove({ path: `${path}/${name}` }),
         ),
       ).catch(() => undefined)
       setState({ snap: undefined, changed: [], status: "saved", stamp: state.stamp + 1 })
@@ -460,7 +550,7 @@ function Design() {
     }
     const prev = state.undo
     if (prev === undefined || !path) return
-    await sdk.client.file.write({ path, content: prev })
+    await client().file.write({ path, content: prev })
     if (state.active !== path) return
     setState({ undo: undefined, status: "saved" })
     if (editable()) return show(prev)
@@ -529,13 +619,13 @@ function Design() {
     // Word files mean nothing to the agent as raw bytes.
     const want =
       kind(path) === "design"
-        ? [`${path}/${LAYOUT}`, ...(state.screen ? [`${path}/${state.screen}`] : [])]
+        ? [full(`${path}/${LAYOUT}`), ...(state.screen ? [full(`${path}/${state.screen}`)] : [])]
         : kind(path) === "docx"
           ? []
-          : [path]
+          : [full(path)]
     const items = () => prompt.context.items().filter((item) => item.type === "file" && !item.selection)
     items()
-      .filter((item) => page(item.path, sdk.directory) && !want.includes(item.path))
+      .filter((item) => page(item.path, dir()) && !want.includes(item.path))
       .forEach((item) => prompt.context.remove(item.key))
     want
       .filter((file) => !items().some((item) => item.path === file))
@@ -553,7 +643,9 @@ function Design() {
   const open = async (path: string) => {
     if (timer !== undefined) window.clearTimeout(timer)
     await save()
-    layout.design.open(sdk.directory, path)
+    layout.design.open(dir(), path)
+    // Remembered under the current project too, so the Design tab reopens on it next time.
+    if (state.home) layout.design.open(sdk.directory, keyOf(path))
     if (kind(path) === "design") {
       setState({
         active: path,
@@ -601,16 +693,52 @@ function Design() {
       (path) => {
         if (!path) return
         setDesign("pending", "")
-        void open(path)
+        setState("from", "agent")
+        // A design clicked in a session may be a full path, in this project or a related one: open it in its repo.
+        const value = path.replace(/\\/g, "/")
+        const where =
+          homes().find((item) => value.startsWith(item.replace(/\\/g, "/").replace(/\/+$/, "") + "/")) ?? dir()
+        const key = page(value, where)
+        if (!key) return
+        void (where === dir() ? Promise.resolve() : go(where)).then(() => open(key))
       },
     ),
   )
 
   // Back to the gallery; the doc's typing is saved and it is no longer attached to the chat.
+  // The path across the top, always shown: Design (every repo), then the repo, then folders inside its design
+  // folder, then the open design. Each stop but the last opens the gallery there.
+  const trail = createMemo(() => {
+    const home = state.active ? dir() : state.tab
+    const folder = state.active ? state.active.split("/").slice(0, -1).join("/") : state.folder
+    const parts = folder ? folder.split("/") : []
+    const stops = [
+      { name: language.t("design.root"), home: "", folder: "" },
+      ...(home && homes().length > 1 ? [{ name: named(home), home, folder: "" }] : []),
+      // The repo's design folder is the root; only the older wiki folder is named.
+      ...parts.flatMap((name, i) =>
+        i === 0 && name !== LEGACY ? [] : [{ name, home, folder: parts.slice(0, i + 1).join("/") }],
+      ),
+    ]
+    return { stops, leaf: state.active ? title(state.active).split("/").pop() : "" }
+  })
+  // Show the gallery at one repo and folder.
+  const browse = async (home: string, folder: string) => {
+    if (state.active) await close()
+    setState({ tab: homes().length > 1 ? home : "", folder })
+  }
+  // Back goes where the design was opened from: the session it was clicked in, or the gallery.
+  const back = async () => {
+    const from = state.from
+    await close()
+    if (from === "agent") layout.nav.set("agent")
+  }
+
   const close = async () => {
     await flush()
     setState({
       active: "",
+      from: "",
       file: undefined,
       undo: undefined,
       conflict: false,
@@ -622,7 +750,7 @@ function Design() {
     })
     prompt.context
       .items()
-      .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory))
+      .filter((item) => item.type === "file" && !item.selection && page(item.path, dir()))
       .forEach((item) => prompt.context.remove(item.key))
   }
 
@@ -630,7 +758,7 @@ function Design() {
     const name = untitled(type)
     const path = `${ROOT}/${name}.${type.ext}`
     // A UI design is a folder; writing its layout creates it.
-    await sdk.client.file.write({ path: type.id === "ui" ? `${path}/${LAYOUT}` : path, content: type.content(name) })
+    await client().file.write({ path: type.id === "ui" ? `${path}/${LAYOUT}` : path, content: type.content(name) })
     fresh = type.ext === "md"
     await list()
     await open(path)
@@ -649,13 +777,15 @@ function Design() {
   const rename = async (path: string, name: string) => {
     const base = slug(name)
     if (!base) return
-    const dir = path.slice(0, path.lastIndexOf("/"))
+    const parent = path.slice(0, path.lastIndexOf("/"))
     const ext = path.slice(path.lastIndexOf("."))
-    const to = `${dir}/${base}${ext}`
+    const to = `${parent}/${base}${ext}`
     if (to === path) return
-    const res = await sdk.client.file.move({ from: path, to }).catch((err: unknown) => ({ error: err }))
+    const res = await client()
+      .file.move({ from: path, to })
+      .catch((err: unknown) => ({ error: err }))
     if ("error" in res && res.error) return fail(res.error)
-    layout.design.moved(sdk.directory, path, to)
+    layout.design.moved(dir(), path, to)
     await list()
   }
 
@@ -676,9 +806,11 @@ function Design() {
               data-action="design-delete-confirm"
               onClick={async () => {
                 dialog.close()
-                const res = await sdk.client.file.remove({ path }).catch((err: unknown) => ({ error: err }))
+                const res = await client()
+                  .file.remove({ path })
+                  .catch((err: unknown) => ({ error: err }))
                 if ("error" in res && res.error) return fail(res.error)
-                layout.design.moved(sdk.directory, path)
+                layout.design.moved(dir(), path)
                 await list()
               }}
             >
@@ -696,7 +828,12 @@ function Design() {
 
   onMount(() => {
     setDesign("flush", () => flush)
-    void list()
+    // Coming back to the Design tab shows the design viewed last.
+    void list().then(() => {
+      const last = layout.design.last(sdk.directory)
+      if (state.active || design.pending || !last || !state.pages.includes(last)) return
+      void open(at(last))
+    })
     void import("vditor").then((mod) => {
       if (gone || !host) return
       const value = dark()
@@ -744,7 +881,7 @@ function Design() {
     const stop = sdk.event.listen((event) => {
       const detail = event.details as { type: string; properties?: { file?: unknown } }
       if (detail.type !== "file.edited" && detail.type !== "file.watcher.updated") return
-      const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, sdk.directory) : undefined
+      const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, dir()) : undefined
       if (!file) return
       if (!state.pages.includes(file)) void list()
       if (file !== state.active) return
@@ -771,7 +908,7 @@ function Design() {
     // The open page is only attached while the Design tab is on screen.
     prompt.context
       .items()
-      .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory))
+      .filter((item) => item.type === "file" && !item.selection && page(item.path, dir()))
       .forEach((item) => prompt.context.remove(item.key))
   })
 
@@ -793,37 +930,123 @@ function Design() {
       style={{ right: state.active && layout.code.chat() ? `${layout.code.width()}px` : "0px" }}
     >
       <Show when={!state.active}>
-        <Gallery
-          pages={state.pages}
-          listed={state.listed}
-          kind={kind}
-          title={title}
-          load={load}
-          screens={(path) => files(path)}
-          onOpen={(path) => void open(path)}
-          onCreate={(type) => void create(type)}
-          onRename={(path, name) => void rename(path, name)}
-          onDelete={remove}
-        />
+        <div class="flex-1 min-w-0 h-full flex flex-col">
+          <div class="shrink-0 h-12 px-4 flex items-center border-b border-border-weaker-base">
+            <nav data-component="design-path" class="min-w-0 flex items-center gap-1 text-13-regular text-text-weak">
+              <For each={trail().stops}>
+                {(item, i) => (
+                  <>
+                    <Show when={i() > 0}>
+                      <span>/</span>
+                    </Show>
+                    <Show
+                      when={i() < trail().stops.length - 1 || trail().leaf}
+                      fallback={<span class="text-14-medium text-text-strong truncate">{item.name}</span>}
+                    >
+                      <button
+                        type="button"
+                        data-action="design-path"
+                        class="hover:text-text-strong"
+                        onClick={() => void browse(item.home, item.folder)}
+                      >
+                        {item.name}
+                      </button>
+                    </Show>
+                  </>
+                )}
+              </For>
+              <Show when={trail().leaf}>
+                <span>/</span>
+                <span class="text-14-medium text-text-strong truncate">{trail().leaf}</span>
+              </Show>
+            </nav>
+          </div>
+          <Show when={!state.tab && !state.folder && homes().length > 1}>
+            <div data-component="design-homes" class="shrink-0 px-4 pt-3 flex items-center gap-1 flex-wrap">
+              <For each={homes()}>
+                {(item) => (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    data-action="design-home"
+                    onClick={() => setState({ tab: item, folder: "" })}
+                  >
+                    {language.t("design.homes.repo", { name: named(item), count: count(item) })}
+                  </Button>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Gallery
+            pages={visible()}
+            listed={state.listed}
+            kind={(key) => kind(split(key).rel)}
+            title={(key) => title(split(key).rel)}
+            load={(key) => {
+              const item = split(key)
+              return reach(item.home)
+                .file.read({ path: item.rel })
+                .then((res) => res.data)
+                .catch(() => undefined)
+            }}
+            screens={(key) => {
+              const item = split(key)
+              return files(item.rel, item.rel, reach(item.home))
+            }}
+            onOpen={(key) => void open(at(key))}
+            onCreate={(type) => {
+              setState("home", state.tab && state.tab !== sdk.directory ? state.tab : "")
+              void create(type)
+            }}
+            onRename={(key, name) => void rename(at(key), name)}
+            onDelete={(key) => remove(at(key))}
+          />
+        </div>
       </Show>
 
       <section class="flex-1 min-w-0 h-full flex flex-col" classList={{ hidden: !state.active }}>
         <Show when={state.active}>
           <div class="shrink-0 h-12 pl-2 pr-4 flex items-center gap-2 border-b border-border-weaker-base">
-            <Tooltip placement="bottom" value={language.t("design.back")}>
+            <Tooltip
+              placement="bottom"
+              value={language.t(state.from === "agent" ? "design.back.session" : "design.back")}
+            >
               <IconButton
                 icon="chevron-left"
                 variant="ghost"
                 data-action="design-back"
-                aria-label={language.t("design.back")}
-                onClick={() => void close()}
+                aria-label={language.t(state.from === "agent" ? "design.back.session" : "design.back")}
+                onClick={() => void back()}
               />
             </Tooltip>
-            <div class="min-w-0 flex items-center gap-1 text-12-regular text-text-weak">
-              <span>{root(state.active)}</span>
-              <span>/</span>
-              <span class="text-14-medium text-text-strong truncate">{title(state.active)}</span>
-            </div>
+            <nav data-component="design-path" class="min-w-0 flex items-center gap-1 text-13-regular text-text-weak">
+              <For each={trail().stops}>
+                {(item, i) => (
+                  <>
+                    <Show when={i() > 0}>
+                      <span>/</span>
+                    </Show>
+                    <Show
+                      when={i() < trail().stops.length - 1 || trail().leaf}
+                      fallback={<span class="text-14-medium text-text-strong truncate">{item.name}</span>}
+                    >
+                      <button
+                        type="button"
+                        data-action="design-path"
+                        class="hover:text-text-strong"
+                        onClick={() => void browse(item.home, item.folder)}
+                      >
+                        {item.name}
+                      </button>
+                    </Show>
+                  </>
+                )}
+              </For>
+              <Show when={trail().leaf}>
+                <span>/</span>
+                <span class="text-14-medium text-text-strong truncate">{trail().leaf}</span>
+              </Show>
+            </nav>
             <div class="flex-1" />
             <span
               class="text-12-regular"
@@ -846,7 +1069,7 @@ function Design() {
                   variant="ghost"
                   data-action="design-open"
                   aria-label={language.t("design.open")}
-                  onClick={() => void platform.openPath?.(`${sdk.directory}/${state.active}`)}
+                  onClick={() => void platform.openPath?.(`${dir()}/${state.active}`)}
                 />
               </Tooltip>
             </Show>
@@ -884,6 +1107,8 @@ function Design() {
           </Show>
           <Show when={kind(state.active) === "design"}>
             <DesignCanvas
+              client={client()}
+              dir={dir()}
               path={state.active}
               busy={busy()}
               stamp={state.stamp}

@@ -51,6 +51,9 @@ const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/i.test(target.tagName))
 
 export function DesignCanvas(props: {
+  // The repo the design lives in (the current project or a related one) and the client that writes there.
+  client: ReturnType<typeof useSDK>["client"]
+  dir: string
   // The design folder, such as design/Requirements.design.
   path: string
   busy: boolean
@@ -161,9 +164,20 @@ export function DesignCanvas(props: {
     ),
   )
 
-  createEffect(on(() => props.stamp, () => void all(), { defer: true }))
+  createEffect(
+    on(
+      () => props.stamp,
+      () => void all(),
+      { defer: true },
+    ),
+  )
 
-  createEffect(on(() => state.selected, (name) => props.onSelect(name)))
+  createEffect(
+    on(
+      () => state.selected,
+      (name) => props.onSelect(name),
+    ),
+  )
 
   // ---- saving layout and view ----
 
@@ -173,7 +187,7 @@ export function DesignCanvas(props: {
     const edited = Object.keys(touched).length > 0
     touched = {}
     last = next.trim()
-    await sdk.client.file.write({ path: rel(LAYOUT), content: next }).catch(() => undefined)
+    await props.client.file.write({ path: rel(LAYOUT), content: next }).catch(() => undefined)
     if (edited) props.onEdit()
   }
 
@@ -196,7 +210,7 @@ export function DesignCanvas(props: {
   // ---- live updates from the assistant and other windows ----
 
   onMount(() => {
-    const dir = sdk.directory.replace(/\\/g, "/").replace(/\/+$/, "")
+    const dir = props.dir.replace(/\\/g, "/").replace(/\/+$/, "")
     const stop = sdk.event.listen((event) => {
       const detail = event.details as { type: string; properties?: { file?: unknown; event?: unknown } }
       if (detail.type !== "file.edited" && detail.type !== "file.watcher.updated") return
@@ -247,7 +261,10 @@ export function DesignCanvas(props: {
   const reveal = (name: string) => {
     const item = state.canvas.screens[name]
     if (!item || !state.size.w) return
-    const zoom = Math.min(state.view.zoom, fit({ x: item.x, y: item.y - STRIP, w: item.w, h: item.h + STRIP }, state.size.w, state.size.h).zoom)
+    const zoom = Math.min(
+      state.view.zoom,
+      fit({ x: item.x, y: item.y - STRIP, w: item.w, h: item.h + STRIP }, state.size.w, state.size.h).zoom,
+    )
     setState("view", {
       zoom,
       x: state.size.w / 2 - (item.x + item.w / 2) * zoom,
@@ -275,11 +292,7 @@ export function DesignCanvas(props: {
 
   const pan = (event: PointerEvent) => {
     const origin = { ...state.view }
-    drag(
-      event,
-      (dx, dy) => setState("view", { ...origin, x: origin.x + dx, y: origin.y + dy }),
-      keep,
-    )
+    drag(event, (dx, dy) => setState("view", { ...origin, x: origin.x + dx, y: origin.y + dy }), keep)
   }
 
   const background = (event: PointerEvent) => {
@@ -298,9 +311,7 @@ export function DesignCanvas(props: {
     if (state.space) return pan(event)
     const origin = { ...state.canvas.screens[name] }
     const zoom = state.view.zoom
-    drag(event, (dx, dy) =>
-      change(name, { x: Math.round(origin.x + dx / zoom), y: Math.round(origin.y + dy / zoom) }),
-    )
+    drag(event, (dx, dy) => change(name, { x: Math.round(origin.x + dx / zoom), y: Math.round(origin.y + dy / zoom) }))
   }
 
   const resizing = (event: PointerEvent, name: string) => {
@@ -416,7 +427,9 @@ export function DesignCanvas(props: {
   })
 
   const finish = async (name: string, html: string) => {
-    const res = await sdk.client.file.write({ path: rel(name), content: html }).catch((err: unknown) => ({ error: err }))
+    const res = await props.client.file
+      .write({ path: rel(name), content: html })
+      .catch((err: unknown) => ({ error: err }))
     if ("error" in res && res.error) {
       showToast({ title: language.t("design.editor.failed") })
       return
@@ -469,8 +482,7 @@ export function DesignCanvas(props: {
       files.map(async (file) => {
         const item = await props.load(rel(file))
         if (!item) return
-        const data =
-          item.encoding === "base64" ? bytes(item) : new TextEncoder().encode(item.content.trimEnd() + "\n")
+        const data = item.encoding === "base64" ? bytes(item) : new TextEncoder().encode(item.content.trimEnd() + "\n")
         return [`${named(props.path)}.design/${file}`, data] as const
       }),
     )
@@ -782,7 +794,9 @@ export function DesignCanvas(props: {
                     srcdoc={src()}
                     title={f().title}
                     class="block border-0 bg-white shrink-0"
-                    style={f().fluid ? { width: "100%", height: "100%" } : { width: `${f().w}px`, height: `${f().h}px` }}
+                    style={
+                      f().fluid ? { width: "100%", height: "100%" } : { width: `${f().w}px`, height: `${f().h}px` }
+                    }
                   />
                 </div>
               )}

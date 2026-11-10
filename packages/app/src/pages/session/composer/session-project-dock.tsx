@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import type { QuestionRequest, UserMessage } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
@@ -132,7 +132,12 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
     >
       <div data-slot="permission-row">
         <span data-slot="permission-spacer" aria-hidden="true" />
-        <code class="text-12-regular text-text-base break-all">{props.target.project}</code>
+        <div class="flex flex-col gap-1 min-w-0">
+          <Show when={props.target.changes}>
+            <span class="text-13-regular text-text-strong break-words">{props.target.changes}</span>
+          </Show>
+          <code class="text-12-regular text-text-weak break-all">{props.target.project}</code>
+        </div>
       </div>
     </DockPrompt>
   )

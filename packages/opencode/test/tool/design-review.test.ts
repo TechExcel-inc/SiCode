@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatReview, referenceImages, reviewEndpoint } from "../../src/tool/design-review"
+import { formatReview, latestRequest, referenceImages, reviewEndpoint, screen } from "../../src/tool/design-review"
 
 const message = (role: string, parts: unknown[]) => ({ info: { role }, parts }) as never
 
@@ -16,6 +16,25 @@ describe("tool.design_review", () => {
     ]
     expect(referenceImages(messages)).toEqual(["data:image/png;base64,RAIL"])
     expect(referenceImages([])).toEqual([])
+  })
+
+  test("judges against the person's latest words, not a handed-over brief", () => {
+    const messages = [
+      message("user", [{ type: "text", text: "Design-only task: show only ID ascending" }]),
+      message("assistant", [{ type: "text", text: "..." }]),
+      message("user", [
+        { type: "text", text: "Show the primary and the secondary sort column" },
+        { type: "text", text: "(note)", synthetic: true },
+      ]),
+    ]
+    expect(latestRequest(messages)).toBe("Show the primary and the secondary sort column")
+    expect(latestRequest([])).toBe("")
+  })
+
+  test("tells a whole screen from a small piece", () => {
+    expect(screen('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2560 1600"></svg>')).toBe(true)
+    expect(screen('<svg width="1440" height="980"></svg>')).toBe(true)
+    expect(screen('<svg viewBox="0 0 24 24"><path d="M1 1"/></svg>')).toBe(false)
   })
 
   test("calls Pilot's review endpoint beside the chat endpoint", () => {

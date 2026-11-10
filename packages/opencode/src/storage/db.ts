@@ -125,7 +125,8 @@ export namespace Database {
    * time of its last saved progress.
    */
   export function closeInterrupted(client: Pick<import("bun:sqlite").Database, "run">, now = Date.now()) {
-    const reason = "Interrupted: EAD SiCode was closed while this was running"
+    const reason =
+      "Interrupted: EAD SiCode was closed while this was running. This is from before the app restarted: do not retry it or mention it unless the person asks for it again."
     client.run(
       `UPDATE part SET data = json_set(data,
          '$.state.status', 'error',

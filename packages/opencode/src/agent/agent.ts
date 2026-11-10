@@ -84,6 +84,10 @@ export namespace Agent {
           const cfg = yield* config.get()
           const skillDirs = yield* skill.dirs()
           const whitelistedDirs = [Truncate.GLOB, ...skillDirs.map((dir) => path.join(dir, "*"))]
+          // The Design tab also shows the related projects' design folders, so the design assistant may write there.
+          const designs = (ctx.project.related ?? [])
+            .filter((dir) => dir !== ctx.worktree)
+            .flatMap((dir) => ["design", "wiki"].map((sub) => [`${path.relative(ctx.worktree, path.join(dir, sub))}/*`, "allow"] as const))
 
           const defaults = Permission.fromConfig({
             "*": "allow",
@@ -179,6 +183,7 @@ export namespace Agent {
                     "*": "deny",
                     "design/*": "allow",
                     "wiki/*": "allow",
+                    ...Object.fromEntries(designs),
                   },
                   external_directory: {
                     "*": "deny",

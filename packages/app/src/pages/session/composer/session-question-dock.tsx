@@ -131,7 +131,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const cards = createMemo(() => options().some((opt) => !!opt.image))
   const count = createMemo(() => options().length + 1)
 
+  // One question needs no "1 of 1": its own short header (such as "Project") names it.
   const summary = createMemo(() => {
+    if (total() === 1) return question()?.header || language.t("session.question.one")
     const n = Math.min(store.tab + 1, total())
     return language.t("session.question.progress", { current: n, total: total() })
   })
@@ -420,21 +422,23 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       header={
         <>
           <div data-slot="question-header-title">{summary()}</div>
-          <div data-slot="question-progress">
-            <For each={questions()}>
-              {(_, i) => (
-                <button
-                  type="button"
-                  data-slot="question-progress-segment"
-                  data-active={i() === store.tab}
-                  data-answered={answered(i())}
-                  disabled={sending()}
-                  onClick={() => jump(i())}
-                  aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
-                />
-              )}
-            </For>
-          </div>
+          <Show when={total() > 1}>
+            <div data-slot="question-progress">
+              <For each={questions()}>
+                {(_, i) => (
+                  <button
+                    type="button"
+                    data-slot="question-progress-segment"
+                    data-active={i() === store.tab}
+                    data-answered={answered(i())}
+                    disabled={sending()}
+                    onClick={() => jump(i())}
+                    aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
         </>
       }
       footer={

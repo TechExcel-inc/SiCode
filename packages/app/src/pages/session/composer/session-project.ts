@@ -1,6 +1,6 @@
 import type { FilePartInput, Part, QuestionRequest, TextPartInput } from "@opencode-ai/sdk/v2"
 
-export type ProjectSwitch = { project: string; prompt: string }
+export type ProjectSwitch = { project: string; prompt: string; changes?: string }
 
 /** The project_switch call a question belongs to, or undefined for an ordinary question. */
 export function projectSwitch(request: QuestionRequest, parts: Record<string, Part[] | undefined>) {
@@ -13,7 +13,8 @@ export function projectSwitch(request: QuestionRequest, parts: Record<string, Pa
   const meta = "metadata" in part.state ? (part.state.metadata as { project?: unknown } | undefined) : undefined
   const project = typeof meta?.project === "string" && meta.project ? meta.project : input.project
   if (typeof project !== "string" || !project) return
-  return { project, prompt: typeof input.prompt === "string" ? input.prompt : "" }
+  const changes = typeof input.changes === "string" ? input.changes.trim() : ""
+  return { project, prompt: typeof input.prompt === "string" ? input.prompt : "", ...(changes ? { changes } : {}) }
 }
 
 /** What the new session starts with: the person's own first message, or the agent's brief mid-conversation. */
@@ -21,11 +22,15 @@ export function carried(input: { fresh: boolean; parts: Part[]; prompt: string; 
   if (!input.fresh) {
     return [{ type: "text" as const, text: `${input.prompt}\n\n(Continued from a session in ${input.from}.)` }]
   }
-  return input.parts.flatMap((part): Array<TextPartInput | FilePartInput> => {
-    if (part.type === "text" && !part.synthetic && part.text.trim()) return [{ type: "text", text: part.text }]
-    if (part.type === "file") return [{ type: "file", mime: part.mime, url: part.url, filename: part.filename }]
-    return []
-  })
+  // A hidden note says where the work came from, so the new session never offers to move it back.
+  return [
+    ...input.parts.flatMap((part): Array<TextPartInput | FilePartInput> => {
+      if (part.type === "text" && !part.synthetic && part.text.trim()) return [{ type: "text", text: part.text }]
+      if (part.type === "file") return [{ type: "file", mime: part.mime, url: part.url, filename: part.filename }]
+      return []
+    }),
+    { type: "text" as const, text: `(Moved here from a session in ${input.from}.)`, synthetic: true },
+  ]
 }
 
 export type SessionSuggestion = { title: string; project?: string; reason?: string }

@@ -54,12 +54,13 @@ export function visuals(client: string) {
     [
       `The user reads your replies in the EAD SiCode desktop app, which shows images inside the conversation as thumbnails that open large on click.`,
       `When you show something visual (icon or logo options, diagrams, mockups, generated images), show it in your reply instead of opening a browser, a full-window page or an HTML preview file (for example in /tmp):`,
-      `  - For SVG, put each complete <svg>...</svg> in its own \`\`\`svg code block. Each block appears as a picture, with its code one click away.`,
-      `  - For image files, save them inside the project (for example under a designs/ folder) and reference them with markdown image syntax, such as ![Option A](designs/option-a.png). Images outside the project folder are not shown.`,
+      `  - For SVG, save each option as its own file under design/ (for example design/sort-icon-a.svg), so it is kept in the Design tab, and also put its complete <svg>...</svg> in its own \`\`\`svg code block. Each block appears as a picture, with its code one click away.`,
+      `  - For image files, save them under the project's design/ folder and reference them with markdown image syntax, such as ![Option A](design/option-a.png). Images outside the project folder are not shown.`,
       `  - Images from http(s) URLs can be shown with the same syntax.`,
       `Label each option with a letter and a short name (for example "A. Hub & Spoke"). Several sizes or states of one option can sit side by side in the same reply.`,
       `After showing the options, ask the user which one they want with the question tool, one choice per option letter, and set each choice's image to that option's picture (its complete <svg>...</svg>, or its image path inside the project). The app shows those choices as picture cards the user can enlarge and pick with one click.`,
-      `Before you show design options as SVG, check them with the design_review tool when it is available: a model that can see draws them as the app shows them and compares them with the person's image. Fix the options it marks "fix" and check again, at most two rounds, and show only options that pass.`,
+      `A mockup of an app screen, or of several screens, is a UI design, not an SVG: make a folder design/<Name>.design/ holding canvas.json and one complete HTML file per screen, which the Design tab shows as a canvas. canvas.json looks like {"v":1,"title":"Requirements","screens":{"List.html":{"x":0,"y":0,"w":1440,"h":980,"title":"List","fluid":true}},"order":["List.html"]}. Each screen loads nothing from the network: inline CSS, system fonts, images only from the design's assets/ folder. Look at each screen with the design_shot tool when it is available, fix what you see, and show the person the screen's picture. SVG is for icons, logos, small UI pieces and diagrams.`,
+      `Before you show small SVG options (icons, logos, small UI pieces), check them with the design_review tool when it is available: a model that can see draws them as the app shows them and compares them with the person's latest request and image. Fix what it marks "fix" and check again, at most two rounds. An option that still fails is still shown, with one line on what is still wrong: never drop the work you made.`,
     ].join("\n"),
   ]
 }
@@ -76,6 +77,8 @@ export function stepGuidance(client: string) {
       `  - When the user sends a new, different request, start a new list for it with todowrite. Do not carry over steps from an earlier request.`,
       `  - Before you end a reply, bring the list up to date: mark finished steps completed. If steps will not be done now (the user postponed or dropped them, or they turned out unnecessary), mark them cancelled.`,
       `  - When the user asks you to continue, keep the same list and carry on with its open steps.`,
+      `  - Mark a step completed only when it was really done. A step you tried and could not finish is not completed: leave it in progress and say in your reply what stopped it.`,
+      `End a reply with the result: what you made or changed, where it is, and anything left undone. Do not mention tool calls cut off by an earlier restart, and do not point the user to /help.`,
     ].join("\n"),
   ]
 }

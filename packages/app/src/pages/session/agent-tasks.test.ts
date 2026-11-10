@@ -102,6 +102,23 @@ describe("sessionTasks", () => {
     expect(currentTask(messages, { ...parts, u2: [text("u2", "continue")] })?.id).toBe("u1")
   })
 
+  test("steps left open when the work moved to another project are cancelled, not waiting here", () => {
+    const messages = [user("u1"), reply("a1", "u1"), reply("a2", "u1")]
+    const list = todos(["Inspect sorting", "in_progress"], ["Create design", "pending"])
+    const parts: Record<string, Part[]> = {
+      u1: [text("u1", "Design the sort control")],
+      a1: [tool("a1", "todowrite", list)],
+      a2: [tool("a2", "project_switch", { project: "P1_VP12" }, "completed", { metadata: { project: "/p/P1_VP12", session: "ses_new" } })],
+    }
+    const task = currentTask(messages, parts)!
+    expect(task.steps.map((step) => step.status)).toEqual(["cancelled", "cancelled"])
+    expect(task.finished).toBe(true)
+
+    // Kept here instead: the steps stay open.
+    const kept = { ...parts, a2: [tool("a2", "project_switch", { project: "P1_VP12" }, "completed", { metadata: { project: "/p/P1_VP12" } })] }
+    expect(currentTask(messages, kept)!.finished).toBe(false)
+  })
+
   test("checklists match when half the shorter one's steps are shared", () => {
     const steps = (...names: string[]) => names.map((content) => ({ content, status: "pending" }))
     expect(sameChecklist(steps("A", "B", "C", "D"), steps("a", "b", "X"))).toBe(true)

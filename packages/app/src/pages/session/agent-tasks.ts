@@ -44,6 +44,17 @@ function checklists(parts: Part[]): TaskStep[][] {
   })
 }
 
+/** The work moved to a session in another project (project_switch answered "moved"): it goes on there. */
+function moved(parts: Part[]) {
+  return parts.some(
+    (part) =>
+      part.type === "tool" &&
+      part.tool === "project_switch" &&
+      part.state.status === "completed" &&
+      typeof (part.state.metadata as { session?: unknown } | undefined)?.session === "string",
+  )
+}
+
 /** Two checklists are the same task when at least half the steps of the shorter one appear in both. */
 export function sameChecklist(a: TaskStep[], b: TaskStep[]) {
   if (a.length === 0 || b.length === 0) return false
@@ -115,14 +126,18 @@ export function sessionTasks(messages: Message[], parts: Record<string, Part[] |
       }
       // Documents, images and pages are listed under documents, so code is source files only.
       const code = [...byFile.values()].filter((row) => outputGroup(row.file) === "code")
+      // Steps left open when the work moved to another project's session are not waiting here.
+      const steps = moved(draft.answers.flatMap((answer) => parts[answer.id] ?? []))
+        ? draft.steps.map((step) => (CLOSED.has(step.status) ? step : { ...step, status: "cancelled" }))
+        : draft.steps
       const inFolder = (path: string) => code.some((row) => path === row.file || path.endsWith(`/${row.file}`))
       return {
         id: draft.id,
         title: draft.title,
         requests: draft.requests.map((request) => request.id),
-        steps: draft.steps,
-        done: draft.steps.filter((step) => step.status === "completed").length,
-        finished: draft.steps.every((step) => CLOSED.has(step.status)),
+        steps,
+        done: steps.filter((step) => step.status === "completed").length,
+        finished: steps.every((step) => CLOSED.has(step.status)),
         cost: draft.answers.reduce((sum, answer) => sum + (answer.role === "assistant" ? answer.cost : 0), 0),
         documents: outputs.filter((item) => item.group !== "code"),
         code,

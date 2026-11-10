@@ -37,6 +37,24 @@ export function referenceImages(messages: MessageV2.WithParts[]): string[] {
     .slice(0, 4)
 }
 
+/** The text of the person's latest message: the reviewer judges against it, not an earlier handed-over brief. */
+export function latestRequest(messages: MessageV2.WithParts[]): string {
+  const user = messages.findLast((message) => message.info.role === "user")
+  if (!user) return ""
+  return user.parts
+    .filter((part): part is MessageV2.TextPart => part.type === "text" && !part.synthetic)
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n")
+}
+
+/** The review draws options at 20 to 160 px: an SVG wider than this is a whole screen, not an icon. */
+export function screen(svg: string): boolean {
+  const box = svg.match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)/i)
+  const width = svg.match(/<svg[^>]*\swidth\s*=\s*["']([\d.]+)/i)
+  return Number(box?.[1] ?? width?.[1] ?? 0) > 800
+}
+
 /** Pilot's review endpoint, from the EAD provider's base URL (which ends in /v1). */
 export function reviewEndpoint(baseURL: string): string {
   return `${baseURL.replace(/\/+$/, "")}/design/review`
@@ -85,12 +103,21 @@ export const DesignReviewTool = Tool.define(
               output: formatReview({ available: false, reason: "this session is not using an EAD Pilot plan" }),
             }
           }
+          if (params.options.some((option) => screen(option.svg))) {
+            return {
+              title: "Design review",
+              metadata: {},
+              output:
+                "These are full screens, which design_review cannot judge: it checks small SVG pieces drawn at 20 to 160 px. Make the screens a UI design in design/<Name>.design/ (canvas.json plus one HTML file per screen), look at them with design_shot, and show the person the result.",
+            }
+          }
+          const latest = latestRequest(ctx.messages)
           yield* ctx.metadata({ title: `Checking ${params.options.length} designs against your screenshot` })
           const review = yield* HttpClientRequest.post(reviewEndpoint(base)).pipe(
             HttpClientRequest.setHeaders({ Authorization: `Bearer ${ead.key}` }),
             HttpClientRequest.bodyJson({
               model: plan,
-              request: params.request,
+              request: latest && latest !== params.request ? `${latest}\n\n(In short: ${params.request})` : params.request,
               options: params.options,
               images: referenceImages(ctx.messages),
             }),
