@@ -304,8 +304,6 @@ pub fn run() {
     #[cfg(debug_assertions)]
     export_types(&builder);
 
-    cli::sweep_sidecar_processes();
-
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus existing window when another instance is launched
@@ -335,6 +333,10 @@ pub fn run() {
         .plugin(tauri_plugin_decorum::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            // Only the first instance gets here: a second launch hands off to it in the single-instance
+            // plugin and exits, so it must not sweep the running window's sidecar.
+            cli::sweep_sidecar_processes();
+
             let handle = app.handle().clone();
 
             let log_dir = app
