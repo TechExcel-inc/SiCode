@@ -475,7 +475,7 @@ async fn initialize(app: AppHandle) {
     let needs_migration = !sqlite_file_exists();
     let sqlite_done = needs_migration.then(|| {
         tracing::info!(
-            path = %opencode_db_path().expect("failed to get db path").display(),
+            path = %sicode_db_path().expect("failed to get db path").display(),
             "Sqlite file not found, waiting for it to be generated"
         );
 
@@ -503,8 +503,25 @@ async fn initialize(app: AppHandle) {
     // This is only used to drive the loading window progress - the main window is shown immediately.
     let loading_task = tokio::spawn({
         async move {
-            if let Some(sqlite_done_rx) = sqlite_done {
-                let _ = sqlite_done_rx.await;
+            if let Some(task) = sqlite_done {
+                // The sidecar only prints sqlite-migration:done when it creates the db.
+                // If that line is missed, or the file already exists under another name,
+                // waiting on the event alone leaves the boot screen up forever.
+                let appeared = async {
+                    loop {
+                        if sqlite_file_exists() {
+                            return;
+                        }
+                        sleep(Duration::from_millis(200)).await;
+                    }
+                };
+                tokio::select! {
+                    _ = task => {}
+                    _ = appeared => tracing::info!("Sqlite database is present"),
+                    _ = sleep(Duration::from_secs(120)) => {
+                        tracing::warn!("Sqlite migration wait timed out, continuing");
+                    }
+                }
             }
 
             // Wait for sidecar to become healthy (for loading window progress)
@@ -585,25 +602,30 @@ fn get_sidecar_port() -> u32 {
 }
 
 fn sqlite_file_exists() -> bool {
-    let Ok(path) = opencode_db_path() else {
+    let Ok(home) = data_home() else {
         return true;
     };
 
-    path.exists()
+    // Brand.db is sicode.db. A KloudCode database is copied across on startup and
+    // does not print sqlite-migration:done, so it counts as already present too.
+    home.join("sicode").join("sicode.db").exists()
+        || home.join("kloudcode").join("kloudcode.db").exists()
 }
 
-fn opencode_db_path() -> Result<PathBuf, &'static str> {
+fn sicode_db_path() -> Result<PathBuf, &'static str> {
+    Ok(data_home()?.join("sicode").join("sicode.db"))
+}
+
+fn data_home() -> Result<PathBuf, &'static str> {
     let xdg_data_home = env::var_os("XDG_DATA_HOME").filter(|v| !v.is_empty());
 
-    let data_home = match xdg_data_home {
-        Some(v) => PathBuf::from(v),
+    match xdg_data_home {
+        Some(v) => Ok(PathBuf::from(v)),
         None => {
             let home = dirs::home_dir().ok_or("cannot determine home directory")?;
-            home.join(".local").join("share")
+            Ok(home.join(".local").join("share"))
         }
-    };
-
-    Ok(data_home.join("opencode").join("opencode.db"))
+    }
 }
 
 // Creates a `once` listener for the specified event and returns a future that resolves
