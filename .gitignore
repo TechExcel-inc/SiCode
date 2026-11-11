@@ -32,3 +32,6 @@ tsconfig.tsbuildinfo
 dist-win
 dist-mac
 dist-mac-debug
+
+# Local server notes and keys. Never commit.
+/sys_info/
