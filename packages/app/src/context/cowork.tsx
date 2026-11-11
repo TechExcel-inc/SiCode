@@ -6,7 +6,8 @@ import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { getFilename } from "@opencode-ai/util/path"
 import { DialogGitHub } from "@/components/dialog-github"
-import { me } from "@/ead/api"
+import { me, repoKey } from "@/ead/api"
+import { owner } from "@/ead/primary"
 import { tokenUser } from "@/ead/auth"
 import { cowork, CoworkFail, githubRepo, type CoworkProject, type CoworkRelated } from "@/ead/cowork"
 import { useEad } from "@/ead/settings"
@@ -140,12 +141,39 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       }
       return store.repos[id] || undefined
     }
+    /**
+     * Links a folder's project to a product, or unlinks it (null). A project's own repo is its Primary
+     * Repository, and that belongs to one product: when another of the person's Pilot projects already codes
+     * a different product from the same repo, nothing is linked and `taken` names that product.
+     */
     const linkProduct = async (dir: string, productId: number | null) => {
       const id = projectOf(dir)
       const client = api()
-      if (!id || !client) return
+      if (!id || !client) return {}
+      const project = productId ? await client.project(id).catch(() => undefined) : undefined
+      const repo = project?.repoOwner && project.repoName ? `${project.repoOwner}/${project.repoName}` : ""
+      if (productId && repo) {
+        const same = (await client.recent({ limit: 100 }).catch(() => [] as CoworkProject[])).filter(
+          (item) => item.projectId !== id && repoKey(`${item.repoOwner}/${item.repoName}`) === repoKey(repo),
+        )
+        const rows = await Promise.all(
+          same.map(async (item) => ({
+            projectId: item.projectId,
+            repo,
+            productId:
+              store.products[item.projectId] ??
+              (await client
+                .product(item.projectId)
+                .then((found) => found.productId ?? 0)
+                .catch(() => 0)),
+          })),
+        )
+        const taken = owner(rows, { projectId: id, repo, productId })
+        if (taken) return { taken: taken.productId, repo }
+      }
       const found = await client.linkProduct(id, productId)
       setStore("products", id, found.productId ?? 0)
+      return {}
     }
     const folderOf = (projectId: number) =>
       Object.values(store.links).find((link) => link.projectId === projectId)?.directory
@@ -360,6 +388,8 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       user,
       tenant: () => tenant() ?? undefined,
       signedIn: () => !!api(),
+      /** The CoWork API as the signed-in person, or undefined while signed out. */
+      client: () => api(),
       github: () => store.github,
       connect,
       link,

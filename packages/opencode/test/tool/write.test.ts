@@ -121,6 +121,22 @@ describe("tool.write", () => {
     )
   })
 
+  describe("edit permission", () => {
+    it.live("asks with the path inside the project, even without a git repo", () =>
+      provideTmpdirInstance((dir) =>
+        Effect.gen(function* () {
+          const asked: string[] = []
+          const next = {
+            ...ctx,
+            ask: (req: { patterns: string[] }) => Effect.sync(() => void asked.push(...req.patterns)),
+          } as Tool.Context
+          yield* run({ filePath: path.join(dir, "design", "app.design", "home.html"), content: "<p>hi</p>" }, next)
+          expect(asked.map((item) => item.replaceAll("\\", "/"))).toEqual(["design/app.design/home.html"])
+        }),
+      ),
+    )
+  })
+
   describe("existing file overwrite", () => {
     it.live("overwrites existing file content", () =>
       provideTmpdirInstance((dir) =>

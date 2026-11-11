@@ -185,7 +185,8 @@ export const FileRoutes = lazy(() =>
       "/file/content",
       describeRoute({
         summary: "Write file",
-        description: "Write text content to a file inside the project, creating parent directories as needed.",
+        description:
+          "Write content to a file inside the project, creating parent directories as needed. With encoding base64 the content is decoded to bytes first, so images can be written too.",
         operationId: "file.write",
         responses: {
           200: {
@@ -203,11 +204,12 @@ export const FileRoutes = lazy(() =>
         z.object({
           path: z.string(),
           content: z.string(),
+          encoding: z.enum(["utf8", "base64"]).optional(),
         }),
       ),
       async (c) => {
         const body = c.req.valid("json")
-        await AppRuntime.runPromise(File.Service.use((svc) => svc.write(body.path, body.content)))
+        await AppRuntime.runPromise(File.Service.use((svc) => svc.write(body.path, body.content, body.encoding)))
         return c.json(true)
       },
     )

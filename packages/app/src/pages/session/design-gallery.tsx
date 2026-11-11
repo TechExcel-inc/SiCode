@@ -2,6 +2,7 @@ import { createEffect, createMemo, For, Match, on, onCleanup, Show, Switch } fro
 import { createStore } from "solid-js/store"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import type { FileContent } from "@opencode-ai/sdk/v2"
+import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -82,6 +83,13 @@ export function Gallery(props: {
   onCreate: (type: Type) => void
   onRename: (path: string, name: string) => void
   onDelete: (path: string) => void
+  // Name, project and the project's product.
+  onProps: (path: string) => void
+  // Designs shared through EAD Pilot: whose they are, and the switch between mine and teammates'.
+  // owner names the teammate who owns a design (nothing for mine); theirs cannot be renamed, moved or deleted.
+  owner?: (path: string) => string | undefined
+  who?: "" | "me" | "others"
+  onWho?: (who: "" | "me" | "others") => void
 }) {
   const sdk = useSDK()
   const layout = useLayout()
@@ -142,12 +150,17 @@ export function Gallery(props: {
             <DropdownMenu.Item data-action="design-pin" onSelect={() => layout.design.pin(sdk.directory, path)}>
               <DropdownMenu.ItemLabel>{language.t(pinned() ? "design.unpin" : "design.pin")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
-            <DropdownMenu.Item data-action="design-rename" onSelect={() => setState("renaming", path)}>
-              <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item data-action="design-delete" onSelect={() => props.onDelete(path)}>
-              <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
+            <Show when={!props.owner?.(path)}>
+              <DropdownMenu.Item data-action="design-rename" onSelect={() => setState("renaming", path)}>
+                <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item data-action="design-props" onSelect={() => props.onProps(path)}>
+                <DropdownMenu.ItemLabel>{language.t("design.props")}</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item data-action="design-delete" onSelect={() => props.onDelete(path)}>
+                <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+            </Show>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu>
@@ -194,6 +207,13 @@ export function Gallery(props: {
     <div class="flex items-center gap-1.5 text-12-regular text-text-weak min-w-0">
       <Show when={layout.design.pins(sdk.directory).includes(path)}>
         <Icon name="pin" size="small" class="shrink-0" />
+      </Show>
+      <Show when={props.owner?.(path)}>
+        {(who) => (
+          <span data-slot="design-card-owner" class="shrink-0 text-text-base">
+            {language.t("design.share.by", { name: who() })}
+          </span>
+        )}
       </Show>
       <span class="truncate">{meta(path)}</span>
     </div>
@@ -246,6 +266,22 @@ export function Gallery(props: {
               )}
             </For>
             <div class="flex-1" />
+            <Show when={props.onWho}>
+              <div data-component="design-who" class="flex items-center gap-0.5 mr-2">
+                <For each={["", "me", "others"] as const}>
+                  {(item) => (
+                    <Button
+                      size="small"
+                      variant={(props.who ?? "") === item ? "secondary" : "ghost"}
+                      data-action={`design-who-${item || "all"}`}
+                      onClick={() => props.onWho?.(item)}
+                    >
+                      {language.t(item === "me" ? "design.share.mine" : item === "others" ? "design.share.others" : "design.share.all")}
+                    </Button>
+                  )}
+                </For>
+              </div>
+            </Show>
             <Show
               when={state.query !== undefined}
               fallback={

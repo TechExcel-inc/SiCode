@@ -335,7 +335,7 @@ export namespace File {
     readonly init: () => Effect.Effect<void>
     readonly status: () => Effect.Effect<File.Info[]>
     readonly read: (file: string) => Effect.Effect<File.Content>
-    readonly write: (file: string, content: string) => Effect.Effect<void>
+    readonly write: (file: string, content: string, encoding?: "utf8" | "base64") => Effect.Effect<void>
     readonly move: (from: string, to: string) => Effect.Effect<void>
     readonly remove: (file: string) => Effect.Effect<void>
     readonly list: (dir?: string) => Effect.Effect<File.Node[]>
@@ -511,10 +511,17 @@ export namespace File {
         })
       })
 
-      const write: Interface["write"] = Effect.fn("File.write")(function* (file: string, content: string) {
+      const write: Interface["write"] = Effect.fn("File.write")(function* (
+        file: string,
+        content: string,
+        encoding?: "utf8" | "base64",
+      ) {
         const full = path.join(Instance.directory, file)
         if (!Instance.containsPath(full)) throw new Error("Access denied: path escapes project directory")
-        yield* appFs.writeWithDirs(full, content).pipe(Effect.orDie)
+        // base64 carries bytes, such as a design's images copied from another project.
+        yield* appFs
+          .writeWithDirs(full, encoding === "base64" ? Buffer.from(content, "base64") : content)
+          .pipe(Effect.orDie)
       })
 
       const move: Interface["move"] = Effect.fn("File.move")(function* (from: string, to: string) {

@@ -35,6 +35,24 @@ export type CoworkDevice = { deviceCode: string; userCode: string; verificationU
 
 export type CoworkConnect = { status: "PENDING" | "CONNECTED" | "EXPIRED" | "DENIED"; account?: CoworkAccount; interval?: number }
 
+/** One file of a design shared in Pilot; ready is false while its owner has not uploaded it yet. */
+export type CoworkDesignFile = { name: string; size: number; sha256: string; ready: boolean }
+
+/** A design shared in a Pilot project. Its owner (the person who first saved it) is the only one who changes it. */
+export type CoworkDesign = {
+  designId: number
+  projectId: number
+  path: string
+  kind: string
+  title: string
+  ownerUserId: number
+  ownerName: string
+  fileCount: number
+  totalBytes: number
+  updatedAt: string
+  files: CoworkDesignFile[]
+}
+
 export type CoworkSessionState = "OPEN" | "FINISHED" | "ARCHIVED"
 
 export type CoworkSession = {
@@ -223,6 +241,25 @@ export function cowork(token: string, tenant?: number, http: Http = eadHttp()) {
       send<CoworkRelated[]>("POST", `/projects/${projectId}/related`, { relatedProjectId }),
     unrelate: (projectId: number, relatedProjectId: number) =>
       send<void>("DELETE", `/projects/${projectId}/related/${relatedProjectId}`),
+
+    /** The project's shared designs: everyone's, only mine, or everyone else's. */
+    designs: (projectId: number, owner?: "me" | "others") =>
+      send<CoworkDesign[]>("GET", `/projects/${projectId}/designs${query({ owner })}`),
+    /** Lists a design's files; the answer names the files Pilot still needs (see uploadDesign). */
+    saveDesign: (
+      projectId: number,
+      body: { path: string; kind: string; title: string; files: { name: string; size: number; sha256: string }[] },
+    ) => send<{ design: CoworkDesign; missing: string[] }>("PUT", `/projects/${projectId}/designs`, body),
+    uploadDesign: (projectId: number, body: { path: string; name: string; content: string }) =>
+      send<CoworkDesign>("PUT", `/projects/${projectId}/designs/files`, body),
+    /** One file of a design, base64. */
+    designFile: (projectId: number, path: string, name: string) =>
+      send<{ name: string; size: number; sha256: string; content: string }>(
+        "GET",
+        `/projects/${projectId}/designs/files${query({ path, name })}`,
+      ),
+    deleteDesign: (projectId: number, path: string) =>
+      send<void>("DELETE", `/projects/${projectId}/designs${query({ path })}`),
 
     sessions: (input: { projectIds?: number[]; state?: CoworkSessionState[]; q?: string; cursor?: string; limit?: number } = {}) =>
       send<{ sessions: CoworkSession[]; next?: string }>(

@@ -19,6 +19,74 @@ export type ProjectLink = {
   timeLinked: number
 }
 
+export type EventServerConnected = {
+  type: "server.connected"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventGlobalDisposed = {
+  type: "global.disposed"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventTuiPromptAppend = {
+  type: "tui.prompt.append"
+  properties: {
+    text: string
+  }
+}
+
+export type EventTuiCommandExecute = {
+  type: "tui.command.execute"
+  properties: {
+    command:
+      | "session.list"
+      | "session.new"
+      | "session.share"
+      | "session.interrupt"
+      | "session.compact"
+      | "session.page.up"
+      | "session.page.down"
+      | "session.line.up"
+      | "session.line.down"
+      | "session.half.page.up"
+      | "session.half.page.down"
+      | "session.first"
+      | "session.last"
+      | "prompt.clear"
+      | "prompt.submit"
+      | "agent.cycle"
+      | string
+  }
+}
+
+export type EventTuiToastShow = {
+  type: "tui.toast.show"
+  properties: {
+    title?: string
+    message: string
+    variant: "info" | "success" | "warning" | "error"
+    /**
+     * Duration in milliseconds
+     */
+    duration?: number
+  }
+}
+
+export type EventTuiSessionSelect = {
+  type: "tui.session.select"
+  properties: {
+    /**
+     * Session ID to navigate to
+     */
+    sessionID: string
+  }
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -90,20 +158,6 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
-  }
-}
-
-export type EventServerConnected = {
-  type: "server.connected"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventGlobalDisposed = {
-  type: "global.disposed"
-  properties: {
-    [key: string]: unknown
   }
 }
 
@@ -400,60 +454,6 @@ export type EventSessionIdle = {
 export type EventSessionCompacted = {
   type: "session.compacted"
   properties: {
-    sessionID: string
-  }
-}
-
-export type EventTuiPromptAppend = {
-  type: "tui.prompt.append"
-  properties: {
-    text: string
-  }
-}
-
-export type EventTuiCommandExecute = {
-  type: "tui.command.execute"
-  properties: {
-    command:
-      | "session.list"
-      | "session.new"
-      | "session.share"
-      | "session.interrupt"
-      | "session.compact"
-      | "session.page.up"
-      | "session.page.down"
-      | "session.line.up"
-      | "session.line.down"
-      | "session.half.page.up"
-      | "session.half.page.down"
-      | "session.first"
-      | "session.last"
-      | "prompt.clear"
-      | "prompt.submit"
-      | "agent.cycle"
-      | string
-  }
-}
-
-export type EventTuiToastShow = {
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    /**
-     * Duration in milliseconds
-     */
-    duration?: number
-  }
-}
-
-export type EventTuiSessionSelect = {
-  type: "tui.session.select"
-  properties: {
-    /**
-     * Session ID to navigate to
-     */
     sessionID: string
   }
 }
@@ -1159,12 +1159,16 @@ export type GlobalEvent = {
   project?: string
   workspace?: string
   payload:
+    | EventServerConnected
+    | EventGlobalDisposed
+    | EventTuiPromptAppend
+    | EventTuiCommandExecute
+    | EventTuiToastShow
+    | EventTuiSessionSelect
     | EventProjectUpdated
     | EventServerInstanceDisposed
     | EventInstallationUpdated
     | EventInstallationUpdateAvailable
-    | EventServerConnected
-    | EventGlobalDisposed
     | EventFileEdited
     | EventFileWatcherUpdated
     | EventLspClientDiagnostics
@@ -1181,10 +1185,6 @@ export type GlobalEvent = {
     | EventSessionStatus
     | EventSessionIdle
     | EventSessionCompacted
-    | EventTuiPromptAppend
-    | EventTuiCommandExecute
-    | EventTuiToastShow
-    | EventTuiSessionSelect
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
     | EventCommandExecuted
@@ -2148,12 +2148,16 @@ export type File = {
 }
 
 export type Event =
+  | EventServerConnected
+  | EventGlobalDisposed
+  | EventTuiPromptAppend
+  | EventTuiCommandExecute
+  | EventTuiToastShow
+  | EventTuiSessionSelect
   | EventProjectUpdated
   | EventServerInstanceDisposed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
-  | EventServerConnected
-  | EventGlobalDisposed
   | EventFileEdited
   | EventFileWatcherUpdated
   | EventLspClientDiagnostics
@@ -2170,10 +2174,6 @@ export type Event =
   | EventSessionStatus
   | EventSessionIdle
   | EventSessionCompacted
-  | EventTuiPromptAppend
-  | EventTuiCommandExecute
-  | EventTuiToastShow
-  | EventTuiSessionSelect
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
@@ -5191,6 +5191,7 @@ export type FileWriteData = {
   body?: {
     path: string
     content: string
+    encoding?: "utf8" | "base64"
   }
   path?: never
   query?: {

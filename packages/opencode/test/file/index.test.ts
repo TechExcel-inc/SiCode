@@ -20,6 +20,8 @@ const read = (file: string) => run(File.Service.use((svc) => svc.read(file)))
 const list = (dir?: string) => run(File.Service.use((svc) => svc.list(dir)))
 const move = (from: string, to: string) => run(File.Service.use((svc) => svc.move(from, to)))
 const remove = (file: string) => run(File.Service.use((svc) => svc.remove(file)))
+const write = (file: string, content: string, encoding?: "utf8" | "base64") =>
+  run(File.Service.use((svc) => svc.write(file, content, encoding)))
 const search = (input: { query: string; limit?: number; dirs?: boolean; type?: "file" | "directory" }) =>
   run(File.Service.use((svc) => svc.search(input)))
 
@@ -93,6 +95,26 @@ describe("file/index Filesystem patterns", () => {
         fn: async () => {
           const result = await read("multiline.txt")
           expect(result.content).toBe("line1\nline2\nline3")
+        },
+      })
+    })
+  })
+
+  describe("write()", () => {
+    test("writes text, or bytes from base64, and never outside the project", async () => {
+      await using tmp = await tmpdir()
+      const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])
+
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          await write("design/A.design/List.html", "<p>hi</p>")
+          await write("design/A.design/assets/logo.png", Buffer.from(png).toString("base64"), "base64")
+          expect(await fs.readFile(path.join(tmp.path, "design", "A.design", "List.html"), "utf-8")).toBe("<p>hi</p>")
+          expect([...(await fs.readFile(path.join(tmp.path, "design", "A.design", "assets", "logo.png")))]).toEqual([
+            ...png,
+          ])
+          await expect(write("../outside.png", "AA==", "base64")).rejects.toThrow()
         },
       })
     })

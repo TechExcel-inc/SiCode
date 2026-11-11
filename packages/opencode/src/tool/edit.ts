@@ -79,7 +79,7 @@ export const EditTool = Tool.define(
                 diff = trimDiff(createTwoFilesPatch(filePath, filePath, contentOld, contentNew))
                 yield* ctx.ask({
                   permission: "edit",
-                  patterns: [path.relative(Instance.worktree, filePath)],
+                  patterns: [Instance.relative(filePath)],
                   always: ["*"],
                   metadata: {
                     filepath: filePath,
@@ -119,7 +119,7 @@ export const EditTool = Tool.define(
               )
               yield* ctx.ask({
                 permission: "edit",
-                patterns: [path.relative(Instance.worktree, filePath)],
+                patterns: [Instance.relative(filePath)],
                 always: ["*"],
                 metadata: {
                   filepath: filePath,
