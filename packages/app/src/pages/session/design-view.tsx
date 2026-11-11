@@ -1,5 +1,5 @@
 import { createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { KeepView, useViewShown } from "./keep-view"
 import { useNavigate } from "@solidjs/router"
 import DOMPurify from "dompurify"
@@ -23,7 +23,11 @@ import { design, setDesign } from "./design-state"
 import { Gallery, type Type } from "./design-gallery"
 import { useSessionKey } from "./session-layout"
 import { DesignCanvas } from "./design-canvas"
+import { DesignProperties } from "./design-properties"
 import { LAYOUT } from "./design-format"
+import { decode, mine, parseKey, pilotKey, publish, remote } from "./design-share"
+import type { CoworkDesign } from "@/ead/cowork"
+import { CoworkFail } from "@/ead/cowork"
 import "vditor/dist/index.css"
 import "./design.css"
 
@@ -32,6 +36,9 @@ const ROOT = "design"
 const LEGACY = "wiki"
 const DELAY = 800
 const POLL = 4000
+// How often teammates' designs are read from EAD Pilot, and how long after a change a design is sent there.
+const SHARE = 30_000
+const PUSH = 3000
 // Vditor's runtime scripts (markdown engine, icons, languages, diagrams), served by the app; see vite.js.
 const CDN = "/vditor"
 
@@ -84,6 +91,18 @@ const page = (file: string, dir: string) => {
 }
 
 const same = (a: string, b: string) => a.trim() === b.trim()
+
+// A path with forward slashes, as Pilot and file events name it.
+const slash = (path: string) => path.replace(/\\/g, "/")
+
+// Two folder paths name the same project, whatever their slashes, trailing slash or letter case.
+const alike = (a: string, b: string) => {
+  const norm = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+  return norm(a) === norm(b)
+}
+
+// The gallery tab that lists the designs of projects not related to this one.
+const OTHERS = "\u0000others"
 
 const bytes = (file: FileContent) => Uint8Array.from(atob(file.content), (c) => c.charCodeAt(0))
 
@@ -266,6 +285,13 @@ function Design() {
     // The design's selected screen and how many screens it has.
     screen: "",
     screens: -1,
+    // Designs shared through EAD Pilot, by gallery key: a design on this computer by its usual key, a design
+    // only in Pilot by its pilot: key (listed in remote). who narrows the gallery to mine or teammates'.
+    shared: {} as Record<string, CoworkDesign>,
+    remote: [] as string[],
+    who: "" as "" | "me" | "others",
+    // The open design when it is read from Pilot rather than from disk.
+    viewing: undefined as { projectId: number; design: CoworkDesign } | undefined,
   })
   // Every file call goes to the repo on screen; paths stay relative to it.
   const dir = () => state.home || sdk.directory
@@ -277,6 +303,15 @@ function Design() {
     sdk.directory,
     ...cowork.relatedDirs(sdk.directory).filter((item) => item !== sdk.directory),
   ])
+  // Every other project open in the app. Their designs are listed under Others, so a design whose project is
+  // not related to this one never goes missing from the Design tab.
+  const others = createMemo(() =>
+    layout.projects
+      .list()
+      .map((item) => item.worktree)
+      .filter((item) => !!item && item !== "/" && !homes().some((home) => alike(home, item))),
+  )
+  const all = createMemo(() => [...homes(), ...others()])
   const go = async (to: string) => {
     if (to === dir()) return
     await close()
@@ -294,8 +329,11 @@ function Design() {
   // The gallery lists every repo's designs: the current project's by their path in it, a related project's by
   // its folder and that path, so each item finds its repo again.
   const split = (key: string) => {
+    // A design only in Pilot belongs to the repo of its Pilot project, when that repo is on this computer.
+    const shared = parseKey(key)
+    if (shared) return { home: cowork.folderOf(shared.projectId) ?? sdk.directory, rel: shared.path }
     const value = key.replace(/\\/g, "/")
-    const home = homes()
+    const home = all()
       .slice(1)
       .find((item) => value.startsWith(item.replace(/\\/g, "/").replace(/\/+$/, "") + "/"))
     return home
@@ -303,9 +341,17 @@ function Design() {
       : { home: sdk.directory, rel: key }
   }
   const named = (home: string) => home.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? home
+  // Whose a gallery item is: a teammate's name when it is theirs in Pilot, nothing when it is mine.
+  const owner = (key: string) => {
+    const found = state.shared[key]
+    return found && !mine(found, cowork.user()) ? found.ownerName : undefined
+  }
   const visible = createMemo(() =>
-    state.pages.filter((key) => {
+    [...state.pages, ...state.remote].filter((key) => {
+      if (state.who === "me" && owner(key)) return false
+      if (state.who === "others" && !owner(key)) return false
       const item = split(key)
+      if (state.tab === OTHERS) return others().includes(item.home)
       if (state.tab && item.home !== state.tab) return false
       return !state.folder || item.rel.startsWith(state.folder + "/")
     }),
@@ -313,6 +359,7 @@ function Design() {
   // The gallery item's key for a path in the repo on screen: the same key the gallery and its recency use.
   const keyOf = (path: string) => (state.home ? `${state.home}/${path}` : path)
   const count = (home: string) => state.pages.filter((key) => split(key).home === home).length
+  const stray = createMemo(() => state.pages.filter((key) => others().includes(split(key).home)).length)
   // Acting on a gallery item first points the view at its repo.
   const at = (key: string) => {
     const item = split(key)
@@ -380,7 +427,7 @@ function Design() {
   // Polled; the list only changes (and re-renders) when the files on disk do.
   const list = async () => {
     const next = await Promise.all(
-      homes().map(async (home) => {
+      all().map(async (home) => {
         const c = reach(home)
         const found = await Promise.all([walk(ROOT, c), walk(LEGACY, c)]).then((all) => all.flat())
         return home === sdk.directory ? found : found.map((path) => `${home}/${path}`)
@@ -389,6 +436,141 @@ function Design() {
     if (gone) return
     if (next.join("\n") !== state.pages.join("\n")) setState("pages", next)
     if (!state.listed) setState("listed", true)
+    void share()
+  }
+
+  // ---- designs shared through EAD Pilot ----
+
+  // Each file read from Pilot once per version (project, design, name and hash).
+  const fetched = new Map<string, Promise<FileContent | undefined>>()
+  // A file of a design in Pilot by its full path: the design's own path, or a file inside its folder.
+  const pilotRead = (projectId: number, found: CoworkDesign, path: string) => {
+    const name =
+      path === found.path ? "" : path.startsWith(found.path + "/") ? path.slice(found.path.length + 1) : undefined
+    const file = name === undefined ? undefined : found.files.find((item) => item.name === name && item.ready)
+    const api = cowork.client()
+    if (!file || !api) return Promise.resolve(undefined)
+    const id = `${projectId}|${found.path}|${file.name}|${file.sha256}`
+    const known = fetched.get(id)
+    if (known) return known
+    const made = api
+      .designFile(projectId, found.path, file.name)
+      .then((res) => decode(file.name || found.path, res.content))
+      .catch(() => {
+        fetched.delete(id)
+        return undefined
+      })
+    fetched.set(id, made)
+    return made
+  }
+  const pilotFiles = (found: CoworkDesign) => found.files.filter((item) => item.ready && item.name).map((item) => item.name)
+  // The Pilot design a pilot: key (or a file inside it) points to.
+  const sharedOf = (key: string) => {
+    const item = parseKey(key)
+    if (!item) return
+    const found = Object.values(state.shared).find(
+      (entry) => entry.projectId === item.projectId && (item.path === entry.path || item.path.startsWith(entry.path + "/")),
+    )
+    return found && { projectId: item.projectId, design: found, path: item.path }
+  }
+  const linked = createMemo(() => !!cowork.client() && homes().some((home) => !!cowork.projectOf(home)))
+
+  // Reads which designs Pilot has for this project and its related ones: whose each local design is, and
+  // teammates' designs that are not on this computer yet.
+  let shareAt = 0
+  const share = async (force?: boolean) => {
+    const api = cowork.client()
+    if (!api) {
+      if (state.remote.length || Object.keys(state.shared).length) setState({ shared: {}, remote: [] })
+      return
+    }
+    if (!force && Date.now() - shareAt < SHARE) return
+    shareAt = Date.now()
+    const user = cowork.user()
+    const lists = await Promise.all(
+      homes().map(async (home) => {
+        const id = cowork.projectOf(home)
+        if (!id) return []
+        const found = await api.designs(id).catch(() => [] as CoworkDesign[])
+        return found.map((item) => ({ home, item }))
+      }),
+    )
+    if (gone) return
+    const shared: Record<string, CoworkDesign> = {}
+    const extra: string[] = []
+    for (const entry of lists.flat()) {
+      const local = entry.home === sdk.directory ? entry.item.path : `${entry.home}/${entry.item.path}`
+      // A single file on Windows is listed with backslashes; Pilot always names it with forward slashes.
+      const page = state.pages.find((item) => slash(item) === slash(local))
+      if (page) {
+        shared[page] = entry.item
+        continue
+      }
+      // Mine but not here: removed on this computer, or saved on another one.
+      if (mine(entry.item, user)) continue
+      const key = pilotKey(entry.item.projectId, entry.item.path)
+      shared[key] = entry.item
+      extra.push(key)
+    }
+    setState("shared", reconcile(shared))
+    if (extra.join("\n") !== state.remote.join("\n")) setState("remote", extra)
+  }
+
+  // Sends my design to Pilot a moment after I changed it, so teammates see it. A design that is someone
+  // else's in Pilot is never sent; files that only arrived from git are not sent either, since only
+  // changes made here (by hand or by the assistant) call this.
+  const pushing = new Map<string, number>()
+  const push = (home: string, path: string) => {
+    const key = home === sdk.directory ? path : `${home}/${path}`
+    const prev = pushing.get(key)
+    if (prev !== undefined) window.clearTimeout(prev)
+    pushing.set(
+      key,
+      window.setTimeout(() => {
+        pushing.delete(key)
+        void send(home, path)
+      }, PUSH),
+    )
+  }
+  const send = async (home: string, path: string) => {
+    const api = cowork.client()
+    const id = cowork.projectOf(home)
+    const key = home === sdk.directory ? path : `${home}/${path}`
+    const what = kind(path)
+    if (!api || !id || !what || !mine(state.shared[key], cowork.user())) return
+    const c = reach(home)
+    const names = what === "design" ? await files(path, path, c) : [""]
+    const items = await Promise.all(
+      names.map(async (name) => ({
+        name,
+        file: await c.file
+          .read({ path: name ? `${path}/${name}` : path })
+          .then((res) => res.data)
+          .catch(() => undefined),
+      })),
+    )
+    if (items.length === 0 || items.some((item) => !item.file || (item.file.type === "binary" && !item.file.content))) return
+    const saved = await publish(api, id, {
+      path: slash(path),
+      kind: what,
+      title: title(path).split("/").pop() || path,
+      files: items.map((item) => ({ name: item.name, file: item.file! })),
+    }).catch((err: unknown) => {
+      // Someone else's design, or too large to share: it stays on this computer only.
+      console.warn("[design] not shared", path, err instanceof CoworkFail ? err.code : err)
+      return undefined
+    })
+    if (saved && !gone) setState("shared", key, saved)
+  }
+  // My design was removed or renamed here: take it out of Pilot as well.
+  const unshare = (home: string, path: string) => {
+    const api = cowork.client()
+    const id = cowork.projectOf(home)
+    const key = home === sdk.directory ? path : `${home}/${path}`
+    const found = state.shared[key]
+    if (!api || !id || !found || !mine(found, cowork.user())) return
+    setState("shared", reconcile(Object.fromEntries(Object.entries(state.shared).filter((entry) => entry[0] !== key))))
+    void api.deleteDesign(id, slash(path)).catch(() => undefined)
   }
 
   const untitled = (type: Type) => {
@@ -434,7 +616,8 @@ function Design() {
     on(
       () => [state.active, params.id, state.screen] as const,
       ([path]) => {
-        if (path) attach(path)
+        // A design read from Pilot has no files on this computer for the chat to read.
+        if (path && !state.viewing) attach(path)
       },
     ),
   )
@@ -450,13 +633,18 @@ function Design() {
     ),
   )
 
-  const editable = createMemo(() => kind(state.active) === "markdown")
+  // A teammate's design, read from Pilot or from this computer: shown, never changed.
+  const theirs = createMemo(() => !!state.viewing || (!!state.active && !!owner(keyOf(state.active))))
+  const editable = createMemo(() => kind(state.active) === "markdown" && !theirs())
 
-  const load = (path: string) =>
-    client()
+  const load = (path: string) => {
+    const shared = state.viewing
+    if (shared) return pilotRead(shared.projectId, shared.design, path)
+    return client()
       .file.read({ path })
       .then((res) => res.data)
       .catch(() => undefined)
+  }
 
   const read = (path: string) => load(path).then((file) => (file ? file.content : undefined))
 
@@ -503,6 +691,7 @@ function Design() {
       .file.write({ path, content })
       .then(() => {
         layout.design.touch(dir(), path, "edited")
+        push(dir(), path)
         if (state.active === path) last = content
         setState({ status: state.active === path && !dirty ? "saved" : state.status, conflict: false })
       })
@@ -546,6 +735,7 @@ function Design() {
         ),
       ).catch(() => undefined)
       setState({ snap: undefined, changed: [], status: "saved", stamp: state.stamp + 1 })
+      push(dir(), path)
       return
     }
     const prev = state.undo
@@ -694,10 +884,10 @@ function Design() {
         if (!path) return
         setDesign("pending", "")
         setState("from", "agent")
-        // A design clicked in a session may be a full path, in this project or a related one: open it in its repo.
+        // A design clicked in a session may be a full path, in this project or any other open one: open it there.
         const value = path.replace(/\\/g, "/")
         const where =
-          homes().find((item) => value.startsWith(item.replace(/\\/g, "/").replace(/\/+$/, "") + "/")) ?? dir()
+          all().find((item) => value.startsWith(item.replace(/\\/g, "/").replace(/\/+$/, "") + "/")) ?? dir()
         const key = page(value, where)
         if (!key) return
         void (where === dir() ? Promise.resolve() : go(where)).then(() => open(key))
@@ -712,9 +902,11 @@ function Design() {
     const home = state.active ? dir() : state.tab
     const folder = state.active ? state.active.split("/").slice(0, -1).join("/") : state.folder
     const parts = folder ? folder.split("/") : []
+    const stray = home === OTHERS || others().includes(home)
     const stops = [
       { name: language.t("design.root"), home: "", folder: "" },
-      ...(home && homes().length > 1 ? [{ name: named(home), home, folder: "" }] : []),
+      ...(stray ? [{ name: language.t("design.others"), home: OTHERS, folder: "" }] : []),
+      ...(home && home !== OTHERS && all().length > 1 ? [{ name: named(home), home, folder: "" }] : []),
       // The repo's design folder is the root; only the older wiki folder is named.
       ...parts.flatMap((name, i) =>
         i === 0 && name !== LEGACY ? [] : [{ name, home, folder: parts.slice(0, i + 1).join("/") }],
@@ -725,7 +917,7 @@ function Design() {
   // Show the gallery at one repo and folder.
   const browse = async (home: string, folder: string) => {
     if (state.active) await close()
-    setState({ tab: homes().length > 1 ? home : "", folder })
+    setState({ tab: all().length > 1 ? home : "", folder })
   }
   // Back goes where the design was opened from: the session it was clicked in, or the gallery.
   const back = async () => {
@@ -739,6 +931,7 @@ function Design() {
     setState({
       active: "",
       from: "",
+      viewing: undefined,
       file: undefined,
       undo: undefined,
       conflict: false,
@@ -760,6 +953,7 @@ function Design() {
     // A UI design is a folder; writing its layout creates it.
     await client().file.write({ path: type.id === "ui" ? `${path}/${LAYOUT}` : path, content: type.content(name) })
     fresh = type.ext === "md"
+    push(dir(), path)
     await list()
     await open(path)
     if (type.id !== "image" && type.id !== "ui") return
@@ -786,6 +980,8 @@ function Design() {
       .catch((err: unknown) => ({ error: err }))
     if ("error" in res && res.error) return fail(res.error)
     layout.design.moved(dir(), path, to)
+    unshare(dir(), path)
+    push(dir(), to)
     await list()
   }
 
@@ -811,6 +1007,7 @@ function Design() {
                   .catch((err: unknown) => ({ error: err }))
                 if ("error" in res && res.error) return fail(res.error)
                 layout.design.moved(dir(), path)
+                unshare(dir(), path)
                 await list()
               }}
             >
@@ -820,6 +1017,166 @@ function Design() {
         </div>
       </Dialog>
     ))
+
+  // Moves a design into another project's design folder: a doc, or a .design folder with its screens and
+  // images. Every file is copied there first and the original removed only after, so nothing is lost on a
+  // failure. Returns the error to show, or nothing.
+  const transfer = async (path: string, to: string, target: string) => {
+    const src = reach(dir())
+    const dst = reach(to)
+    const end = target.split("/").pop()!.toLowerCase()
+    const taken = await dst.file
+      .list({ path: ROOT })
+      .then((res) => res.data ?? [])
+      .catch(() => [])
+    if (taken.some((node) => node.name.toLowerCase() === end))
+      return language.t("design.props.exists", { name: title(target), project: named(to) })
+    const names = kind(path) === "design" ? await files(path, path, src) : [""]
+    const items = await Promise.all(
+      names.map(async (file) => ({
+        file,
+        item: await src.file
+          .read({ path: file ? `${path}/${file}` : path })
+          .then((res) => res.data)
+          .catch(() => undefined),
+      })),
+    )
+    // A file the server can only read as empty bytes would arrive empty, so it is not moved at all.
+    const lost = items.find((entry) => !entry.item || (entry.item.type === "binary" && !entry.item.content))
+    if (lost) return language.t("design.props.binary", { file: lost.file || title(path) })
+    const copied = await Promise.all(
+      items.map((entry) =>
+        dst.file
+          .write({
+            path: entry.file ? `${target}/${entry.file}` : target,
+            // Text comes back trimmed; it is saved with its final newline again.
+            content:
+              entry.item!.encoding === "base64" || !entry.item!.content ? entry.item!.content : entry.item!.content + "\n",
+            encoding: entry.item!.encoding === "base64" ? "base64" : undefined,
+          })
+          .then(() => "")
+          .catch((err: unknown) => (err instanceof Error ? err.message : String(err))),
+      ),
+    )
+    const error = copied.find(Boolean)
+    if (error) return error
+    const res = await src.file.remove({ path }).catch((err: unknown) => ({ error: err }))
+    if ("error" in res && res.error) return res.error instanceof Error ? res.error.message : String(res.error)
+    layout.design.moved(dir(), path)
+    // In Pilot it now belongs to the other project.
+    unshare(dir(), path)
+    push(to, target)
+  }
+
+  // A teammate's design that is only in Pilot: read from there and shown read-only.
+  const openShared = async (key: string) => {
+    const found = sharedOf(key)
+    if (!found) return
+    if (state.active) await close()
+    const path = found.design.path
+    setState({
+      viewing: { projectId: found.projectId, design: found.design },
+      active: path,
+      status: "idle",
+      conflict: false,
+      file: undefined,
+      loading: kind(path) !== "design",
+      undo: undefined,
+      snap: undefined,
+      changed: [],
+      screen: "",
+      screens: -1,
+    })
+    if (kind(path) !== "design") await preview(path)
+  }
+
+  // A copy of a teammate's design in this project's design folder, which is then mine to change.
+  const copy = async () => {
+    const path = state.active
+    const source = state.viewing
+    const what = kind(path)
+    if (!path || !what) return
+    const get = (name: string) => {
+      const full = name ? `${path}/${name}` : path
+      if (source) return pilotRead(source.projectId, source.design, full)
+      return client()
+        .file.read({ path: full })
+        .then((res) => res.data)
+        .catch(() => undefined)
+    }
+    const names = what === "design" ? (source ? pilotFiles(source.design) : await files(path)) : [""]
+    const items = await Promise.all(names.map(async (name) => ({ name, file: await get(name) })))
+    const lost = items.find((item) => !item.file || (item.file.type === "binary" && !item.file.content))
+    if (lost) return fail(language.t("design.props.binary", { file: lost.name || title(path) }))
+    const ext = path.slice(path.lastIndexOf("."))
+    const base = slug(language.t("design.share.copyName", { name: title(path).split("/").pop() ?? "" })) || "copy"
+    const taken = new Set(state.pages.filter((key) => split(key).home === sdk.directory).map((key) => split(key).rel))
+    const target =
+      Array.from({ length: 99 }, (_, i) => `${ROOT}/${base}${i ? `-${i + 1}` : ""}${ext}`).find((item) => !taken.has(item)) ??
+      `${ROOT}/${base}-${Date.now()}${ext}`
+    const error = await Promise.all(
+      items.map((item) =>
+        sdk.client.file
+          .write({
+            path: item.name ? `${target}/${item.name}` : target,
+            // Text comes back trimmed; it is saved with its final newline again.
+            content:
+              item.file!.encoding === "base64" || !item.file!.content ? item.file!.content : item.file!.content + "\n",
+            encoding: item.file!.encoding === "base64" ? "base64" : undefined,
+          })
+          .then(() => undefined)
+          .catch((err: unknown) => err),
+      ),
+    ).then((all) => all.find((item) => item !== undefined))
+    if (error) return fail(error)
+    await close()
+    setState("home", "")
+    await list()
+    await open(target)
+    push(sdk.directory, target)
+    showToast({ title: language.t("design.share.copied", { name: title(target).split("/").pop() ?? target }) })
+  }
+
+  // A design's properties: its name and its project, with that project's product and primary repository.
+  const properties = (path: string) => {
+    const from = dir()
+    const name = title(path).split("/").pop() ?? ""
+    dialog.show(() => (
+      <DesignProperties
+        name={name}
+        home={from}
+        homes={all().map((item) => ({
+          dir: item,
+          name: named(item),
+          group: item === sdk.directory ? "current" : homes().includes(item) ? "related" : "other",
+        }))}
+        onSave={async (next) => {
+          const base = slug(next.name)
+          if (!base) return language.t("design.props.name")
+          const ext = path.slice(path.lastIndexOf("."))
+          const active = state.active === path
+          if (next.home === from && base === name) return
+          if (active) await close()
+          if (next.home === from) {
+            await rename(path, base)
+            if (active) await open(`${path.slice(0, path.lastIndexOf("/"))}/${base}${ext}`)
+            return
+          }
+          // In another project a design goes to the root of its design folder.
+          const target = `${ROOT}/${base}${ext}`
+          const error = await transfer(path, next.home, target)
+          if (error) {
+            if (active) await open(path)
+            return error
+          }
+          await list()
+          if (!active) return
+          await go(next.home)
+          await open(target)
+        }}
+      />
+    ))
+  }
 
   const theme = () => {
     const value = dark()
@@ -884,6 +1241,9 @@ function Design() {
       const file = typeof detail.properties?.file === "string" ? page(detail.properties.file, dir()) : undefined
       if (!file) return
       if (!state.pages.includes(file)) void list()
+      // The assistant changed one of my designs here: send it to Pilot too. Files that only arrive from
+      // git (file.watcher.updated) are not sent, so a teammate's design never becomes mine.
+      if (event.details.type === "file.edited" && event.details.properties.sessionID) push(dir(), file)
       if (file !== state.active) return
       if (event.details.type === "file.edited" && event.details.properties.sessionID) ai = true
       void check()
@@ -961,9 +1321,35 @@ function Design() {
               </Show>
             </nav>
           </div>
-          <Show when={!state.tab && !state.folder && homes().length > 1}>
+          <Show when={!state.tab && !state.folder && (homes().length > 1 || stray() > 0)}>
             <div data-component="design-homes" class="shrink-0 px-4 pt-3 flex items-center gap-1 flex-wrap">
               <For each={homes()}>
+                {(item) => (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    data-action="design-home"
+                    onClick={() => setState({ tab: item, folder: "" })}
+                  >
+                    {language.t("design.homes.repo", { name: named(item), count: count(item) })}
+                  </Button>
+                )}
+              </For>
+              <Show when={stray() > 0}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  data-action="design-home-others"
+                  onClick={() => setState({ tab: OTHERS, folder: "" })}
+                >
+                  {language.t("design.homes.repo", { name: language.t("design.others"), count: stray() })}
+                </Button>
+              </Show>
+            </div>
+          </Show>
+          <Show when={state.tab === OTHERS && !state.folder && others().length > 1}>
+            <div data-component="design-others" class="shrink-0 px-4 pt-3 flex items-center gap-1 flex-wrap">
+              <For each={others().filter((item) => count(item) > 0)}>
                 {(item) => (
                   <Button
                     size="small"
@@ -983,6 +1369,8 @@ function Design() {
             kind={(key) => kind(split(key).rel)}
             title={(key) => title(split(key).rel)}
             load={(key) => {
+              const found = sharedOf(key)
+              if (found) return pilotRead(found.projectId, found.design, found.path)
               const item = split(key)
               return reach(item.home)
                 .file.read({ path: item.rel })
@@ -990,15 +1378,22 @@ function Design() {
                 .catch(() => undefined)
             }}
             screens={(key) => {
+              const found = sharedOf(key)
+              if (found) return Promise.resolve(pilotFiles(found.design))
               const item = split(key)
               return files(item.rel, item.rel, reach(item.home))
             }}
-            onOpen={(key) => void open(at(key))}
+            owner={owner}
+            who={state.who}
+            onWho={linked() ? (who) => setState("who", who) : undefined}
+            onOpen={(key) => void (remote(key) ? openShared(key) : open(at(key)))}
             onCreate={(type) => {
-              setState("home", state.tab && state.tab !== sdk.directory ? state.tab : "")
+              // Under Others a new design goes into this project; its properties can move it.
+              setState("home", state.tab && state.tab !== OTHERS && state.tab !== sdk.directory ? state.tab : "")
               void create(type)
             }}
             onRename={(key, name) => void rename(at(key), name)}
+            onProps={(key) => properties(at(key))}
             onDelete={(key) => remove(at(key))}
           />
         </div>
@@ -1062,7 +1457,28 @@ function Design() {
                 {language.t("design.undo")}
               </Button>
             </Show>
-            <Show when={!editable() && platform.openPath}>
+            <Show when={theirs()}>
+              <span data-slot="design-share-readonly" class="text-12-regular text-text-weak truncate">
+                {language.t("design.share.readonly", {
+                  name: state.viewing?.design.ownerName ?? owner(keyOf(state.active)) ?? "",
+                })}
+              </span>
+              <Button size="small" variant="secondary" data-action="design-share-copy" onClick={() => void copy()}>
+                {language.t("design.share.copy")}
+              </Button>
+            </Show>
+            <Show when={!theirs()}>
+              <Tooltip placement="bottom" value={language.t("design.props")}>
+                <IconButton
+                  icon="sliders"
+                  variant="ghost"
+                  data-action="design-props"
+                  aria-label={language.t("design.props")}
+                  onClick={() => properties(state.active)}
+                />
+              </Tooltip>
+            </Show>
+            <Show when={!editable() && !state.viewing && platform.openPath}>
               <Tooltip placement="bottom" value={language.t("design.open")}>
                 <IconButton
                   icon="square-arrow-top-right"
@@ -1113,10 +1529,14 @@ function Design() {
               busy={busy()}
               stamp={state.stamp}
               load={load}
-              files={(path) => files(path)}
+              files={(path) => (state.viewing ? Promise.resolve(pilotFiles(state.viewing.design)) : files(path))}
               onSelect={(name) => setState("screen", name)}
               onCount={(count) => setState("screens", count)}
-              onEdit={() => setState({ snap: undefined, changed: [] })}
+              onEdit={() => {
+                setState({ snap: undefined, changed: [] })
+                push(dir(), state.active)
+              }}
+              readonly={theirs()}
             />
           </Show>
           <Show when={!editable() && kind(state.active) !== "design"}>
@@ -1193,6 +1613,25 @@ function Preview(props: { path: string; file: FileContent }) {
             class="block w-full h-full border-0"
             style={{ background: "#fff" }}
           />
+        )}
+      </Match>
+      <Match when={kind(props.path) === "markdown" && props.file.content}>
+        {(text) => (
+          <div class="max-w-3xl mx-auto px-10 py-8">
+            <div
+              data-component="design-doc"
+              ref={(el) =>
+                void import("vditor").then((mod) =>
+                  mod.default.preview(el, text(), {
+                    cdn: CDN,
+                    mode: dark() ? "dark" : "light",
+                    theme: { current: dark() ? "dark" : "light" },
+                    hljs: { style: dark() ? "native" : "github" },
+                  }),
+                )
+              }
+            />
+          </div>
         )}
       </Match>
       <Match when={kind(props.path) === "docx" && encoded()}>

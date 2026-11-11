@@ -66,6 +66,8 @@ export function DesignCanvas(props: {
   onCount: (count: number) => void
   // The user changed the design by hand, so undoing the AI's change no longer applies.
   onEdit: () => void
+  // Someone else's design: look, pan, zoom, open and play, but never move, resize, rename, edit or save.
+  readonly?: boolean
 }) {
   const sdk = useSDK()
   const language = useLanguage()
@@ -182,6 +184,7 @@ export function DesignCanvas(props: {
   // ---- saving layout and view ----
 
   const write = async (view?: View) => {
+    if (props.readonly) return
     const disk = (await props.load(rel(LAYOUT)))?.content
     const next = merge(disk, touched, view, state.canvas.screens)
     const edited = Object.keys(touched).length > 0
@@ -192,6 +195,7 @@ export function DesignCanvas(props: {
   }
 
   const change = (name: string, frame: Partial<Frame>) => {
+    if (props.readonly) return
     touched[name] = { ...touched[name], ...frame }
     setState("canvas", "screens", name, frame)
     if (timer !== undefined) window.clearTimeout(timer)
@@ -308,7 +312,7 @@ export function DesignCanvas(props: {
     if (event.button !== 0 || state.renaming === name) return
     event.stopPropagation()
     setState("selected", name)
-    if (state.space) return pan(event)
+    if (state.space || props.readonly) return pan(event)
     const origin = { ...state.canvas.screens[name] }
     const zoom = state.view.zoom
     drag(event, (dx, dy) => change(name, { x: Math.round(origin.x + dx / zoom), y: Math.round(origin.y + dy / zoom) }))
@@ -405,7 +409,7 @@ export function DesignCanvas(props: {
 
   let release: (() => void) | undefined
   const edit = (name: string) => {
-    if (props.busy || !state.html[name]) return
+    if (props.busy || props.readonly || !state.html[name]) return
     const wait = new Promise<void>((resolve) => (release = resolve))
     setState({ editing: name, open: "" })
     setDesign({ editing: true, hold: () => wait })
@@ -586,11 +590,12 @@ export function DesignCanvas(props: {
                   {language.t("design.canvas.open")}
                 </Button>
               </Show>
-              <Tooltip placement="bottom" value={language.t("design.canvas.busy")} inactive={!props.busy}>
+              <Tooltip placement="bottom" value={language.t("design.canvas.busy")} inactive={!props.busy || props.readonly}>
                 <Button
                   size="small"
                   variant="ghost"
                   icon="edit"
+                  classList={{ hidden: props.readonly }}
                   data-action="design-canvas-edit"
                   disabled={props.busy || !state.html[name()]}
                   onClick={() => edit(name())}
@@ -665,7 +670,7 @@ export function DesignCanvas(props: {
                           "padding-bottom": `${6 / z()}px`,
                         }}
                         onPointerDown={(event) => moving(event, name)}
-                        onDblClick={() => setState("renaming", name)}
+                        onDblClick={() => !props.readonly && setState("renaming", name)}
                       >
                         <Show when={state.renaming === name} fallback={<span class="truncate">{f().title}</span>}>
                           <input
@@ -745,7 +750,7 @@ export function DesignCanvas(props: {
                             onDblClick={() => state.html[name] && setState("open", name)}
                           />
                         </Show>
-                        <Show when={selected() && !state.play}>
+                        <Show when={selected() && !state.play && !props.readonly}>
                           <div
                             data-slot="design-screen-resize"
                             class="absolute bg-background-base border-border-interactive-base cursor-nwse-resize"

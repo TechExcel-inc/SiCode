@@ -3709,7 +3709,7 @@ export class File extends HeyApiClient {
   /**
    * Write file
    *
-   * Write text content to a file inside the project, creating parent directories as needed.
+   * Write content to a file inside the project, creating parent directories as needed. With encoding base64 the content is decoded to bytes first, so images can be written too.
    */
   public write<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3717,6 +3717,7 @@ export class File extends HeyApiClient {
       workspace?: string
       path?: string
       content?: string
+      encoding?: "utf8" | "base64"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3729,6 +3730,7 @@ export class File extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "body", key: "path" },
             { in: "body", key: "content" },
+            { in: "body", key: "encoding" },
           ],
         },
       ],
